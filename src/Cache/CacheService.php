@@ -3,6 +3,8 @@
  * Redis 缓存服务
  */
 
+namespace SmartBook\Cache;
+
 use Workerman\Redis\Client as RedisClient;
 
 class CacheService

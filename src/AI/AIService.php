@@ -3,6 +3,12 @@
  * AI 服务类 - 统一管理 AI 客户端实例
  */
 
+namespace SmartBook\AI;
+
+use SmartBook\RAG\EmbeddingClient;
+use SmartBook\RAG\VectorStore;
+use SmartBook\RAG\BookRAGAssistant;
+
 class AIService
 {
     private static ?BookRAGAssistant $ragAssistant = null;

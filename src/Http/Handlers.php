@@ -6,6 +6,11 @@
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
+use SmartBook\AI\AIService;
+use SmartBook\Cache\CacheService;
+use SmartBook\Cache\RedisVectorStore;
+use SmartBook\RAG\EmbeddingClient;
+use SmartBook\RAG\VectorStore;
 
 // ===================================
 // HTTP 主入口

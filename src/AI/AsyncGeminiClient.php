@@ -3,6 +3,8 @@
  * 异步 Gemini 客户端（使用 curl_multi）
  */
 
+namespace SmartBook\AI;
+
 class AsyncGeminiClient
 {
     private string $apiKey;

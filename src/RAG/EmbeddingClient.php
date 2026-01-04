@@ -3,6 +3,8 @@
  * 向量嵌入客户端 - 使用 Google Gemini Embedding API
  */
 
+namespace SmartBook\RAG;
+
 class EmbeddingClient
 {
     private string $apiKey;

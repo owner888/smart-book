@@ -3,6 +3,8 @@
  * curl_multi 异步管理器
  */
 
+namespace SmartBook\AI;
+
 class AsyncCurlManager
 {
     private static $multiHandle = null;

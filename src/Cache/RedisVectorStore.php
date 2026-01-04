@@ -1,7 +1,9 @@
 <?php
 /**
- * Redis 向量存储 (基于 Redis 8.0 vectorset)
+ * Redis 8.0 向量存储
  */
+
+namespace SmartBook\Cache;
 
 use Workerman\Redis\Client as RedisClient;
 

@@ -3,6 +3,8 @@
  * 文档分块器
  */
 
+namespace SmartBook\RAG;
+
 class DocumentChunker
 {
     private int $chunkSize;

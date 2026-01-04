@@ -6,12 +6,20 @@ namespace Composer\Autoload;
 
 class ComposerStaticInit54847d6030d29731b0e767d050d22a36
 {
+    public static $files = array (
+        'c5958885e46c5f89de8b0ffc69cb6c06' => __DIR__ . '/../..' . '/src/Http/Handlers.php',
+    );
+
     public static $prefixLengthsPsr4 = array (
         'W' =>
         array (
             'Workerman\\Redis\\' => 16,
             'Workerman\\Coroutine\\' => 20,
             'Workerman\\' => 10,
+        ),
+        'S' =>
+        array (
+            'SmartBook\\' => 10,
         ),
     );
 
@@ -28,6 +36,10 @@ class ComposerStaticInit54847d6030d29731b0e767d050d22a36
         array (
             0 => __DIR__ . '/..' . '/workerman/workerman/src',
             1 => __DIR__ . '/..' . '/workerman/coroutine/src',
+        ),
+        'SmartBook\\' =>
+        array (
+            0 => __DIR__ . '/../..' . '/src',
         ),
     );
 

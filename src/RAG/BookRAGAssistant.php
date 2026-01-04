@@ -3,6 +3,11 @@
  * RAG 书籍助手
  */
 
+namespace SmartBook\RAG;
+
+use SmartBook\AI\GeminiClient;
+use SmartBook\Parser\EpubParser;
+
 class BookRAGAssistant
 {
     private GeminiClient $llm;

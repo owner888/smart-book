@@ -3,11 +3,13 @@
  * EPUB 解析器
  */
 
+namespace SmartBook\Parser;
+
 class EpubParser
 {
     public static function extractText(string $epubPath): string
     {
-        $zip = new ZipArchive();
+        $zip = new \ZipArchive();
         if ($zip->open($epubPath) !== true) return '';
         
         $text = '';
@@ -39,7 +41,7 @@ class EpubParser
     
     public static function extractMetadata(string $epubPath): array
     {
-        $zip = new ZipArchive();
+        $zip = new \ZipArchive();
         if ($zip->open($epubPath) !== true) return [];
         
         $metadata = ['title' => basename($epubPath, '.epub'), 'authors' => '', 'description' => ''];

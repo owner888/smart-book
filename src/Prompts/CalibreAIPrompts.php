@@ -4,6 +4,8 @@
  * 源文件: src/calibre/gui2/dialogs/llm_book.py 和 src/calibre/gui2/viewer/llm.py
  */
 
+namespace SmartBook\Prompts;
+
 class CalibreAIPrompts
 {
     // ===================================

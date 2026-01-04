@@ -3,6 +3,8 @@
  * 向量存储 - 支持混合检索（关键词 + 向量）
  */
 
+namespace SmartBook\RAG;
+
 class VectorStore
 {
     private array $chunks = [];

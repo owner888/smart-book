@@ -9,4 +9,5 @@ return array(
     'Workerman\\Redis\\' => array($vendorDir . '/workerman/redis/src'),
     'Workerman\\Coroutine\\' => array($vendorDir . '/workerman/coroutine/src'),
     'Workerman\\' => array($vendorDir . '/workerman/workerman/src', $vendorDir . '/workerman/coroutine/src'),
+    'SmartBook\\' => array($baseDir . '/src'),
 );

@@ -3,10 +3,33 @@
  * Smart Book 初始化文件
  * 
  * 负责：
- * 1. 加载 .env 文件
- * 2. 加载配置
- * 3. 自动加载类文件
+ * 1. 加载 Composer 自动加载
+ * 2. 加载 .env 文件
+ * 3. 加载配置并定义常量
  */
+
+// ===================================
+// Composer 自动加载
+// ===================================
+
+require __DIR__ . '/vendor/autoload.php';
+
+// ===================================
+// 类型别名（兼容旧代码）
+// ===================================
+
+use SmartBook\AI\GeminiClient;
+use SmartBook\AI\AsyncGeminiClient;
+use SmartBook\AI\AsyncCurlManager;
+use SmartBook\AI\AIService;
+use SmartBook\Cache\CacheService;
+use SmartBook\Cache\RedisVectorStore;
+use SmartBook\RAG\EmbeddingClient;
+use SmartBook\RAG\VectorStore;
+use SmartBook\RAG\DocumentChunker;
+use SmartBook\RAG\BookRAGAssistant;
+use SmartBook\Parser\EpubParser;
+use SmartBook\Prompts\CalibreAIPrompts;
 
 // ===================================
 // 加载 .env 文件
@@ -65,47 +88,3 @@ if (empty(GEMINI_API_KEY)) {
         "   GEMINI_API_KEY=your_api_key_here\n\n" .
         "   或复制模板: cp .env.example .env\n");
 }
-
-// ===================================
-// 自动加载类
-// ===================================
-
-spl_autoload_register(function ($class) {
-    // 类名到文件的映射
-    $classMap = [
-        // AI 客户端
-        'GeminiClient' => __DIR__ . '/src/AI/GeminiClient.php',
-        'AsyncGeminiClient' => __DIR__ . '/src/AI/AsyncGeminiClient.php',
-        'AsyncCurlManager' => __DIR__ . '/src/AI/AsyncCurlManager.php',
-        'OpenAIClient' => __DIR__ . '/ai_prompts.php',  // 临时保留
-        'AIService' => __DIR__ . '/src/AI/AIService.php',
-        
-        // 缓存
-        'CacheService' => __DIR__ . '/src/Cache/CacheService.php',
-        'RedisVectorStore' => __DIR__ . '/src/Cache/RedisVectorStore.php',
-        
-        // RAG
-        'EmbeddingClient' => __DIR__ . '/src/RAG/EmbeddingClient.php',
-        'DocumentChunker' => __DIR__ . '/src/RAG/DocumentChunker.php',
-        'VectorStore' => __DIR__ . '/src/RAG/VectorStore.php',
-        'BookRAGAssistant' => __DIR__ . '/src/RAG/BookRAGAssistant.php',
-        
-        // 解析器
-        'EpubParser' => __DIR__ . '/src/Parser/EpubParser.php',
-        
-        // 提示词
-        'CalibreAIPrompts' => __DIR__ . '/src/Prompts/CalibreAIPrompts.php',
-        'CalibreAIService' => __DIR__ . '/ai_prompts.php',  // 临时保留
-    ];
-    
-    static $loaded = [];
-    
-    if (isset($classMap[$class]) && file_exists($classMap[$class])) {
-        $file = $classMap[$class];
-        // 避免重复加载同一文件
-        if (!isset($loaded[$file])) {
-            require_once $file;
-            $loaded[$file] = true;
-        }
-    }
-});

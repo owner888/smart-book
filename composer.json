@@ -1,6 +1,23 @@
 {
+    "name": "smart-book/ai-server",
+    "description": "Smart Book AI Server - RAG-based book Q&A",
+    "type": "project",
     "require": {
+        "php": ">=8.0",
         "workerman/workerman": "^5.1",
         "workerman/redis": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "SmartBook\\": "src/"
+        },
+        "files": [
+            "src/Http/Handlers.php"
+        ]
+    },
+    "scripts": {
+        "start": "php server.php start",
+        "stop": "php server.php stop",
+        "restart": "php server.php restart"
     }
 }

@@ -3,6 +3,8 @@
  * Google Gemini API 客户端
  */
 
+namespace SmartBook\AI;
+
 class GeminiClient
 {
     private string $apiKey;
