@@ -768,7 +768,7 @@ $httpWorker->onMessage = function (TcpConnection $connection, Request $request) 
             '/api/ask' => handleAskWithCache($connection, $request),
             '/api/chat' => handleChat($request),
             '/api/continue' => handleContinue($request),
-            '/api/stream/ask' => handleStreamAsk($connection, $request),
+            '/api/stream/ask' => AsyncHandleStreamAsk($connection, $request),
             '/api/stream/chat' => handleStreamChat($connection, $request),
             '/api/stream/continue' => handleStreamContinue($connection, $request),
             default => ['error' => 'Not Found', 'path' => $path],

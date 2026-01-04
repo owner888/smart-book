@@ -49,19 +49,26 @@ class EmbeddingClient
     {
         $url = "{$this->baseUrl}/models/{$this->model}:embedContent?key={$this->apiKey}";
         
+        // 在文本末尾添加随机字符绕过代理缓存
+        $nonce = ' ' . substr(md5(uniqid('', true)), 0, 8);
         $data = [
             'model' => "models/{$this->model}",
-            'content' => ['parts' => [['text' => $text]]],
+            'content' => ['parts' => [['text' => $text . $nonce]]],
             'taskType' => $taskType,
         ];
+        
+        $jsonData = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
         
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-            CURLOPT_POSTFIELDS => json_encode($data),
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'Cache-Control: no-cache',
+            ],
+            CURLOPT_POSTFIELDS => $jsonData,
             CURLOPT_TIMEOUT => 30,
         ]);
         
@@ -69,8 +76,7 @@ class EmbeddingClient
         $error = curl_error($ch);
         unset($ch);
         
-        if ($error) {
-            echo "❌ Embedding curl 错误: {$error}\n";
+        if ($error || empty($response)) {
             return [];
         }
         
