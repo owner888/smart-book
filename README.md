@@ -80,6 +80,11 @@ smart-book/
 │   ├── css/main.css
 │   └── js/main.js
 │
+├── tests/                      # 测试文件
+│   ├── test_ai.php
+│   ├── test_rag.php
+│   └── ...
+│
 ├── bootstrap.php               # 初始化/自动加载
 ├── server.php                  # 服务入口
 ├── chat.html                   # Web 聊天界面
