@@ -84,21 +84,26 @@ spl_autoload_register(function ($class) {
         'CacheService' => __DIR__ . '/src/Cache/CacheService.php',
         'RedisVectorStore' => __DIR__ . '/src/Cache/RedisVectorStore.php',
         
-        // RAG
-        'EmbeddingClient' => __DIR__ . '/src/RAG/EmbeddingClient.php',
-        'DocumentChunker' => __DIR__ . '/src/RAG/DocumentChunker.php',
-        'VectorStore' => __DIR__ . '/src/RAG/VectorStore.php',
-        'BookRAGAssistant' => __DIR__ . '/src/RAG/BookRAGAssistant.php',
-        
-        // 解析器
-        'EpubParser' => __DIR__ . '/src/Parser/EpubParser.php',
+        // RAG (临时：仍从旧文件加载)
+        'EmbeddingClient' => __DIR__ . '/rag.php',
+        'DocumentChunker' => __DIR__ . '/rag.php',
+        'VectorStore' => __DIR__ . '/rag.php',
+        'BookRAGAssistant' => __DIR__ . '/rag.php',
+        'EpubParser' => __DIR__ . '/rag.php',
         
         // 提示词
         'CalibreAIPrompts' => __DIR__ . '/src/Prompts/CalibreAIPrompts.php',
-        'CalibreAIService' => __DIR__ . '/src/Prompts/CalibreAIService.php',
+        'CalibreAIService' => __DIR__ . '/ai_prompts.php',
     ];
     
+    static $loaded = [];
+    
     if (isset($classMap[$class]) && file_exists($classMap[$class])) {
-        require_once $classMap[$class];
+        $file = $classMap[$class];
+        // 避免重复加载同一文件
+        if (!isset($loaded[$file])) {
+            require_once $file;
+            $loaded[$file] = true;
+        }
     }
 });
