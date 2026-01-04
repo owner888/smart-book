@@ -20,16 +20,9 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
 // 加载初始化文件
 require_once __DIR__ . '/bootstrap.php';
 
-// 临时：加载旧文件（拆分完成后移除）
-require_once __DIR__ . '/ai_prompts.php';
-require_once __DIR__ . '/rag.php';
-require_once __DIR__ . '/src/Http/Handlers.php';
-
 use Workerman\Worker;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
-use Workerman\Protocols\Http\Response;
-use Workerman\Redis\Client as RedisClient;
 use SmartBook\AI\AsyncCurlManager;
 use SmartBook\Cache\CacheService;
 use SmartBook\Cache\RedisVectorStore;
