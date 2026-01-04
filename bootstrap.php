@@ -15,23 +15,6 @@
 require __DIR__ . '/vendor/autoload.php';
 
 // ===================================
-// 类型别名（兼容旧代码）
-// ===================================
-
-use SmartBook\AI\GeminiClient;
-use SmartBook\AI\AsyncGeminiClient;
-use SmartBook\AI\AsyncCurlManager;
-use SmartBook\AI\AIService;
-use SmartBook\Cache\CacheService;
-use SmartBook\Cache\RedisVectorStore;
-use SmartBook\RAG\EmbeddingClient;
-use SmartBook\RAG\VectorStore;
-use SmartBook\RAG\DocumentChunker;
-use SmartBook\RAG\BookRAGAssistant;
-use SmartBook\Parser\EpubParser;
-use SmartBook\Prompts\CalibreAIPrompts;
-
-// ===================================
 // 加载 .env 文件
 // ===================================
 
