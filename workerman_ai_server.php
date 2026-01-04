@@ -658,7 +658,7 @@ EOT;
 // ===================================
 
 $httpWorker = new Worker('http://0.0.0.0:8088');
-$httpWorker->count = 4;
+$httpWorker->count = 1;
 $httpWorker->name = 'AI-HTTP-Server';
 
 // Worker 启动时初始化 Redis 和 AsyncCurlManager
@@ -1273,7 +1273,7 @@ function sendSSE(TcpConnection $connection, string $event, string $data): void
 // ===================================
 
 $wsWorker = new Worker('websocket://0.0.0.0:8081');
-$wsWorker->count = 4;
+$wsWorker->count = 1;
 $wsWorker->name = 'AI-WebSocket-Server';
 
 $wsWorker->onConnect = function (TcpConnection $connection) {
