@@ -699,6 +699,10 @@
         let currentAssistant = 'book';
         let isLoading = false;
         let conversationHistory = [];
+        let currentMessageDiv = null;
+        let currentContent = '';
+        let currentSources = null;
+        let abortController = null;
         
         // 助手配置
         const assistants = {
@@ -707,7 +711,7 @@
                 avatar: '📚',
                 color: '#4caf50',
                 systemPrompt: '我是书籍问答助手，可以帮你分析《西游记》的内容。你可以问我关于书中人物、情节、主题等问题。',
-                endpoint: '/api/ask',
+                action: 'ask',
                 useRAG: true
             },
             continue: {
@@ -715,7 +719,7 @@
                 avatar: '✍️',
                 color: '#ff9800',
                 systemPrompt: '我是小说续写助手，擅长模仿《西游记》的章回体风格续写故事。告诉我你想要的情节设定，我会为你创作新章节。',
-                endpoint: '/api/continue',
+                action: 'continue',
                 useRAG: false
             },
             chat: {
@@ -723,7 +727,7 @@
                 avatar: '💬',
                 color: '#2196f3',
                 systemPrompt: '我是通用聊天助手，可以和你讨论任何话题。',
-                endpoint: '/api/chat',
+                action: 'chat',
                 useRAG: false
             },
             default: {
@@ -731,7 +735,7 @@
                 avatar: '⭐',
                 color: '#9c27b0',
                 systemPrompt: '我是默认助手，有什么可以帮你的吗？',
-                endpoint: '/api/chat',
+                action: 'chat',
                 useRAG: false
             }
         };
@@ -802,7 +806,7 @@
             `;
         }
         
-        // 发送消息
+        // 发送消息（SSE 流式）
         async function sendMessage() {
             const message = chatInput.value.trim();
             if (!message || isLoading) return;
@@ -816,57 +820,167 @@
             addMessage('user', message);
             conversationHistory.push({ role: 'user', content: message });
             
-            // 显示加载动画
-            const loadingId = addLoadingMessage();
+            // 重置流式状态
+            currentContent = '';
+            currentSources = null;
             
-            try {
-                const assistant = assistants[currentAssistant];
-                let response;
-                
-                if (assistant.useRAG) {
-                    // RAG 问答
-                    response = await fetch(`${API_BASE}${assistant.endpoint}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ question: message, top_k: 8 })
-                    });
-                } else if (currentAssistant === 'continue') {
-                    // 续写
-                    response = await fetch(`${API_BASE}${assistant.endpoint}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ prompt: message })
-                    });
-                } else {
-                    // 通用聊天
-                    response = await fetch(`${API_BASE}${assistant.endpoint}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ messages: conversationHistory })
-                    });
-                }
-                
-                const data = await response.json();
-                
-                // 移除加载动画
-                removeLoadingMessage(loadingId);
-                
-                if (data.error) {
-                    addMessage('assistant', `❌ 错误: ${data.error}`, null, true);
-                } else {
-                    const answer = data.answer || data.story || '';
-                    const sources = data.sources || null;
-                    
-                    addMessage('assistant', answer, sources);
-                    conversationHistory.push({ role: 'assistant', content: answer });
-                }
-            } catch (error) {
-                removeLoadingMessage(loadingId);
-                addMessage('assistant', `❌ 请求失败: ${error.message}\n\n请确保 Workerman 服务已启动:\n\`php workerman_ai_server.php start\``, null, true);
+            // 创建空的助手消息容器
+            const assistant = assistants[currentAssistant];
+            currentMessageDiv = document.createElement('div');
+            currentMessageDiv.className = 'message message-assistant';
+            currentMessageDiv.innerHTML = `
+                <div class="message-avatar" style="background: ${assistant.color};">${assistant.avatar}</div>
+                <div class="message-content">
+                    <div class="typing-indicator">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                </div>
+            `;
+            chatMessages.appendChild(currentMessageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            // 构建请求
+            let url, body;
+            if (assistant.action === 'ask') {
+                url = `${API_BASE}/api/stream/ask`;
+                body = { question: message, top_k: 8 };
+            } else if (assistant.action === 'continue') {
+                url = `${API_BASE}/api/stream/continue`;
+                body = { prompt: message };
+            } else {
+                url = `${API_BASE}/api/stream/chat`;
+                body = { messages: conversationHistory };
             }
             
-            isLoading = false;
-            sendBtn.disabled = false;
+            // 使用 fetch + SSE
+            try {
+                abortController = new AbortController();
+                
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                    signal: abortController.signal
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    
+                    // 解析 SSE 事件
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+                    
+                    let currentEvent = null;
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            currentEvent = line.slice(7);
+                        } else if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            
+                            if (currentEvent === 'sources') {
+                                try {
+                                    currentSources = JSON.parse(data);
+                                } catch (e) {}
+                            } else if (currentEvent === 'content') {
+                                currentContent += data;
+                                updateStreamingMessage();
+                            } else if (currentEvent === 'done') {
+                                finishStreamingMessage();
+                            }
+                            currentEvent = null;
+                        }
+                    }
+                }
+                
+                // 处理缓冲区剩余内容
+                if (buffer.trim()) {
+                    finishStreamingMessage();
+                }
+                
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    currentContent += '\n\n⏹️ 已停止生成';
+                } else {
+                    currentContent = `❌ 请求失败: ${error.message}\n\n请确保 Workerman 服务已启动:\n\`php workerman_ai_server.php start\``;
+                }
+                finishStreamingMessage(error.name !== 'AbortError');
+            } finally {
+                isLoading = false;
+                sendBtn.disabled = false;
+                abortController = null;
+            }
+        }
+        
+        // 更新流式消息显示
+        function updateStreamingMessage() {
+            if (!currentMessageDiv) return;
+            
+            const assistant = assistants[currentAssistant];
+            const contentDiv = currentMessageDiv.querySelector('.message-content');
+            
+            // 渲染 Markdown（实时）
+            const htmlContent = marked.parse(currentContent);
+            contentDiv.innerHTML = htmlContent;
+            
+            // 滚动到底部
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // 完成流式消息
+        function finishStreamingMessage(isError = false) {
+            if (!currentMessageDiv) return;
+            
+            const assistant = assistants[currentAssistant];
+            const contentDiv = currentMessageDiv.querySelector('.message-content');
+            
+            // 渲染最终内容
+            const htmlContent = isError 
+                ? escapeHtml(currentContent).replace(/\n/g, '<br>') 
+                : marked.parse(currentContent);
+            
+            // 添加检索来源
+            let sourcesHtml = '';
+            if (currentSources && currentSources.length > 0) {
+                sourcesHtml = `
+                    <div class="sources-container">
+                        <div class="sources-title">📚 检索来源 (${currentSources.length})</div>
+                        ${currentSources.slice(0, 3).map(s => `
+                            <div class="source-item">
+                                <span class="source-score">${s.score}%</span>
+                                ${escapeHtml(s.text)}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            contentDiv.innerHTML = htmlContent + sourcesHtml;
+            
+            // 保存到历史
+            if (!isError) {
+                conversationHistory.push({ role: 'assistant', content: currentContent });
+            }
+            
+            // 重置状态
+            currentMessageDiv = null;
+            currentContent = '';
+            currentSources = null;
+            
+            // 滚动到底部
+            chatMessages.scrollTop = chatMessages.scrollHeight;
         }
         
         // 添加消息

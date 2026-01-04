@@ -223,6 +223,9 @@ $httpWorker->onMessage = function (TcpConnection $connection, Request $request) 
             '/api/ask' => handleAsk($request),
             '/api/chat' => handleChat($request),
             '/api/continue' => handleContinue($request),
+            '/api/stream/ask' => handleStreamAsk($connection, $request),
+            '/api/stream/chat' => handleStreamChat($connection, $request),
+            '/api/stream/continue' => handleStreamContinue($connection, $request),
             default => ['error' => 'Not Found', 'path' => $path],
         };
         
@@ -267,6 +270,156 @@ function handleContinue(Request $request): array
     $prompt = $body['prompt'] ?? '';
     
     return AIService::continueStory($prompt);
+}
+
+// ===================================
+// SSE 流式端点
+// ===================================
+
+function handleStreamAsk(TcpConnection $connection, Request $request): ?array
+{
+    $body = json_decode($request->rawBody(), true) ?? [];
+    $question = $body['question'] ?? '';
+    $topK = $body['top_k'] ?? 8;
+    
+    if (empty($question)) {
+        return ['error' => 'Missing question'];
+    }
+    
+    // SSE 头
+    $headers = [
+        'Content-Type' => 'text/event-stream',
+        'Cache-Control' => 'no-cache',
+        'Connection' => 'keep-alive',
+        'Access-Control-Allow-Origin' => '*',
+    ];
+    
+    // 发送 SSE 头
+    $connection->send(new Response(200, $headers, ''));
+    
+    // 检索相关内容
+    $embedder = new EmbeddingClient(GEMINI_API_KEY);
+    $queryEmbedding = $embedder->embedQuery($question);
+    
+    $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
+    $results = $vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
+    
+    // 发送检索来源
+    $sources = array_map(fn($r) => [
+        'text' => mb_substr($r['chunk']['text'], 0, 200) . '...',
+        'score' => round($r['score'] * 100, 1),
+    ], $results);
+    sendSSE($connection, 'sources', json_encode($sources, JSON_UNESCAPED_UNICODE));
+    
+    // 构建上下文
+    $context = "";
+    foreach ($results as $i => $result) {
+        $context .= "【片段 " . ($i + 1) . "】\n" . $result['chunk']['text'] . "\n\n";
+    }
+    
+    // 流式生成回答
+    $gemini = AIService::getGemini();
+    $gemini->chatStream(
+        [
+            ['role' => 'system', 'content' => "你是一个书籍分析助手。根据以下内容回答问题，使用中文：\n\n{$context}"],
+            ['role' => 'user', 'content' => $question],
+        ],
+        function ($text, $chunk, $isThought) use ($connection) {
+            if (!$isThought && $text) {
+                sendSSE($connection, 'content', $text);
+            }
+        },
+        ['enableSearch' => false]
+    );
+    
+    sendSSE($connection, 'done', '');
+    $connection->close();
+    return null;
+}
+
+function handleStreamChat(TcpConnection $connection, Request $request): ?array
+{
+    $body = json_decode($request->rawBody(), true) ?? [];
+    $messages = $body['messages'] ?? [];
+    
+    if (empty($messages)) {
+        return ['error' => 'Missing messages'];
+    }
+    
+    // SSE 头
+    $headers = [
+        'Content-Type' => 'text/event-stream',
+        'Cache-Control' => 'no-cache',
+        'Connection' => 'keep-alive',
+        'Access-Control-Allow-Origin' => '*',
+    ];
+    
+    $connection->send(new Response(200, $headers, ''));
+    
+    $gemini = AIService::getGemini();
+    $gemini->chatStream(
+        $messages,
+        function ($text, $chunk, $isThought) use ($connection) {
+            if (!$isThought && $text) {
+                sendSSE($connection, 'content', $text);
+            }
+        },
+        ['enableSearch' => false]
+    );
+    
+    sendSSE($connection, 'done', '');
+    $connection->close();
+    return null;
+}
+
+function handleStreamContinue(TcpConnection $connection, Request $request): ?array
+{
+    $body = json_decode($request->rawBody(), true) ?? [];
+    $prompt = $body['prompt'] ?? '';
+    
+    // SSE 头
+    $headers = [
+        'Content-Type' => 'text/event-stream',
+        'Cache-Control' => 'no-cache',
+        'Connection' => 'keep-alive',
+        'Access-Control-Allow-Origin' => '*',
+    ];
+    
+    $connection->send(new Response(200, $headers, ''));
+    
+    $systemPrompt = <<<'EOT'
+你是一位精通古典文学的作家，擅长模仿《西游记》的章回体小说风格写作。
+请严格模仿《西游记》的写作风格特点。
+EOT;
+
+    $userPrompt = $prompt ?: '请为《西游记》续写一个新章节。设定：唐僧师徒四人遇到一个新的妖怪。写一个完整的章回，约1000字。';
+    
+    $gemini = AIService::getGemini();
+    $gemini->chatStream(
+        [
+            ['role' => 'system', 'content' => $systemPrompt],
+            ['role' => 'user', 'content' => $userPrompt],
+        ],
+        function ($text, $chunk, $isThought) use ($connection) {
+            if (!$isThought && $text) {
+                sendSSE($connection, 'content', $text);
+            }
+        },
+        ['enableSearch' => false]
+    );
+    
+    sendSSE($connection, 'done', '');
+    $connection->close();
+    return null;
+}
+
+/**
+ * 发送 SSE 事件
+ */
+function sendSSE(TcpConnection $connection, string $event, string $data): void
+{
+    $message = "event: {$event}\ndata: {$data}\n\n";
+    $connection->send($message);
 }
 
 // ===================================
