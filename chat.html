@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 书籍助手</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.8/dist/css/layui.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; }
+        
+        /* 深色主题 */
+        :root {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #242424;
+            --bg-tertiary: #2d2d2d;
+            --bg-hover: #363636;
+            --text-primary: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --accent-green: #4caf50;
+            --accent-blue: #2196f3;
+            --border-color: #333;
+        }
+        
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        /* 左侧边栏 */
+        .sidebar {
+            width: 300px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .sidebar-header {
+            display: flex;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .sidebar-tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            color: var(--text-secondary);
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .sidebar-tab.active {
+            color: var(--text-primary);
+            border-bottom-color: var(--accent-green);
+        }
+        
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        
+        .add-assistant {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+        
+        .add-assistant:hover {
+            background: var(--bg-hover);
+        }
+        
+        .assistant-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-bottom: 4px;
+        }
+        
+        .assistant-item:hover {
+            background: var(--bg-hover);
+        }
+        
+        .assistant-item.active {
+            background: var(--bg-tertiary);
+        }
+        
+        .assistant-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+        
+        .assistant-name {
+            flex: 1;
+            font-size: 14px;
+        }
+        
+        .assistant-menu {
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        
+        .assistant-item:hover .assistant-menu {
+            opacity: 1;
+        }
+        
+        /* 主内容区 */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-primary);
+        }
+        
+        /* 顶部栏 */
+        .chat-header {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 15px;
+        }
+        
+        .chat-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .chat-title-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        
+        .chat-title-text {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .model-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        
+        .model-selector:hover {
+            background: var(--bg-hover);
+        }
+        
+        .header-spacer {
+            flex: 1;
+        }
+        
+        .header-icon {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            cursor: pointer;
+            color: var(--text-secondary);
+        }
+        
+        .header-icon:hover {
+            background: var(--bg-hover);
+        }
+        
+        /* 聊天区域 */
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 60px;
+        }
+        
+        .message {
+            margin-bottom: 24px;
+            max-width: 900px;
+        }
+        
+        .message-system {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 16px 20px;
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .message-user {
+            display: flex;
+            justify-content: flex-end;
+        }
+        
+        .message-user .message-content {
+            background: var(--accent-blue);
+            color: white;
+            border-radius: 16px 16px 4px 16px;
+            padding: 12px 16px;
+            max-width: 70%;
+        }
+        
+        .message-assistant {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .message-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 16px;
+        }
+        
+        .message-assistant .message-content {
+            flex: 1;
+            line-height: 1.7;
+            font-size: 14px;
+        }
+        
+        .message-assistant .message-content p {
+            margin-bottom: 12px;
+        }
+        
+        .message-assistant .message-content pre {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 12px;
+            overflow-x: auto;
+            margin: 12px 0;
+        }
+        
+        .message-assistant .message-content code {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+        }
+        
+        .message-assistant .message-content ul,
+        .message-assistant .message-content ol {
+            padding-left: 24px;
+            margin: 12px 0;
+        }
+        
+        .message-assistant .message-content li {
+            margin-bottom: 8px;
+        }
+        
+        .message-assistant .message-content h1,
+        .message-assistant .message-content h2,
+        .message-assistant .message-content h3 {
+            margin: 16px 0 12px;
+        }
+        
+        .message-assistant .message-content blockquote {
+            border-left: 3px solid var(--accent-green);
+            padding-left: 16px;
+            margin: 12px 0;
+            color: var(--text-secondary);
+        }
+        
+        /* 加载动画 */
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 8px 0;
+        }
+        
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--text-secondary);
+            border-radius: 50%;
+            animation: typing 1.4s infinite ease-in-out;
+        }
+        
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-6px); }
+        }
+        
+        /* 输入区域 */
+        .chat-input-container {
+            padding: 16px 60px 24px;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .chat-input-wrapper {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .chat-input {
+            width: 100%;
+            background: transparent;
+            border: none;
+            padding: 16px;
+            color: var(--text-primary);
+            font-size: 14px;
+            resize: none;
+            outline: none;
+            min-height: 56px;
+            max-height: 200px;
+        }
+        
+        .chat-input::placeholder {
+            color: var(--text-secondary);
+        }
+        
+        .chat-input-toolbar {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            gap: 8px;
+        }
+        
+        .toolbar-icon {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+        }
+        
+        .toolbar-icon:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        .toolbar-icon.active {
+            color: var(--accent-green);
+        }
+        
+        .toolbar-divider {
+            width: 1px;
+            height: 20px;
+            background: var(--border-color);
+            margin: 0 4px;
+        }
+        
+        .toolbar-spacer {
+            flex: 1;
+        }
+        
+        .send-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        
+        .send-btn:hover {
+            background: #43a047;
+            transform: scale(1.05);
+        }
+        
+        .send-btn:disabled {
+            background: var(--bg-tertiary);
+            cursor: not-allowed;
+        }
+        
+        /* 来源卡片 */
+        .sources-container {
+            margin-top: 16px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 16px;
+        }
+        
+        .sources-title {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        
+        .source-item {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        
+        .source-score {
+            color: var(--accent-green);
+            font-weight: 500;
+        }
+        
+        /* 滚动条 */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--bg-tertiary);
+            border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--bg-hover);
+        }
+        
+        /* Layui 覆盖 - 暗黑模式 */
+        .layui-btn {
+            background: var(--accent-green);
+        }
+        
+        /* Layer 弹窗暗黑模式 */
+        .layui-layer {
+            background: var(--bg-secondary) !important;
+            border: 1px solid var(--border-color) !important;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+        }
+        
+        .layui-layer-title {
+            background: var(--bg-tertiary) !important;
+            color: var(--text-primary) !important;
+            border-bottom: 1px solid var(--border-color) !important;
+        }
+        
+        .layui-layer-content {
+            background: var(--bg-secondary) !important;
+            color: var(--text-primary) !important;
+        }
+        
+        .layui-layer-btn {
+            background: var(--bg-tertiary) !important;
+            border-top: 1px solid var(--border-color) !important;
+        }
+        
+        .layui-layer-btn a {
+            background: var(--bg-hover) !important;
+            color: var(--text-primary) !important;
+            border: 1px solid var(--border-color) !important;
+        }
+        
+        .layui-layer-btn a:hover {
+            background: var(--accent-green) !important;
+            color: white !important;
+        }
+        
+        .layui-layer-btn .layui-layer-btn0 {
+            background: var(--accent-green) !important;
+            color: white !important;
+            border-color: var(--accent-green) !important;
+        }
+        
+        .layui-layer-setwin .layui-layer-close1,
+        .layui-layer-setwin .layui-layer-close2 {
+            filter: invert(1);
+        }
+        
+        /* Layer msg 提示暗黑模式 */
+        .layui-layer-msg {
+            background: var(--bg-secondary) !important;
+            color: var(--text-primary) !important;
+            border: 1px solid var(--border-color) !important;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;
+        }
+        
+        .layui-layer-hui {
+            background: var(--bg-secondary) !important;
+        }
+        
+        /* Layer 确认框暗黑模式 */
+        .layui-layer-dialog .layui-layer-content {
+            color: var(--text-primary) !important;
+        }
+        
+        .layui-layer-ico {
+            filter: brightness(1.2);
+        }
+        
+        /* Layer padding 调整 */
+        .layui-layer-padding {
+            padding: 20px !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 左侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-tab active" data-tab="assistants">Assistants</div>
+                <div class="sidebar-tab" data-tab="topics">Topics</div>
+            </div>
+            <div class="sidebar-content">
+                <div class="add-assistant">
+                    <i class="layui-icon layui-icon-add-1"></i>
+                    <span>Add Assistant</span>
+                </div>
+                
+                <div class="assistant-item active" data-assistant="book" data-avatar="📚" data-color="#4caf50">
+                    <div class="assistant-avatar" style="background: #4caf50;">📚</div>
+                    <div class="assistant-name">书籍问答助手</div>
+                    <div class="assistant-menu">
+                        <i class="layui-icon layui-icon-more"></i>
+                    </div>
+                </div>
+                
+                <div class="assistant-item" data-assistant="continue" data-avatar="✍️" data-color="#ff9800">
+                    <div class="assistant-avatar" style="background: #ff9800;">✍️</div>
+                    <div class="assistant-name">续写小说</div>
+                    <div class="assistant-menu">
+                        <i class="layui-icon layui-icon-more"></i>
+                    </div>
+                </div>
+                
+                <div class="assistant-item" data-assistant="chat" data-avatar="💬" data-color="#2196f3">
+                    <div class="assistant-avatar" style="background: #2196f3;">💬</div>
+                    <div class="assistant-name">通用聊天</div>
+                    <div class="assistant-menu">
+                        <i class="layui-icon layui-icon-more"></i>
+                    </div>
+                </div>
+                
+                <div class="assistant-item" data-assistant="default" data-avatar="⭐" data-color="#9c27b0">
+                    <div class="assistant-avatar" style="background: #9c27b0;">⭐</div>
+                    <div class="assistant-name">Default Assistant</div>
+                    <div class="assistant-menu">
+                        <i class="layui-icon layui-icon-more"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 顶部栏 -->
+            <div class="chat-header">
+                <div class="chat-title">
+                    <div class="chat-title-avatar" id="headerAvatar" style="background: #4caf50;">📚</div>
+                    <span class="chat-title-text" id="headerTitle">书籍问答助手</span>
+                </div>
+                <i class="layui-icon layui-icon-right"></i>
+                <div class="model-selector">
+                    <span>🤖</span>
+                    <span>Gemini 2.5 Flash</span>
+                    <i class="layui-icon layui-icon-down"></i>
+                </div>
+                <div class="header-spacer"></div>
+                <div class="header-icon" title="设置">
+                    <i class="layui-icon layui-icon-set"></i>
+                </div>
+            </div>
+            
+            <!-- 聊天消息区 -->
+            <div class="chat-messages" id="chatMessages">
+                <div class="message">
+                    <div class="message-system" id="systemPrompt">
+                        我是书籍问答助手，可以帮你分析《西游记》的内容。你可以问我关于书中人物、情节、主题等问题。
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 输入区域 -->
+            <div class="chat-input-container">
+                <div class="chat-input-wrapper">
+                    <textarea 
+                        class="chat-input" 
+                        id="chatInput" 
+                        placeholder="Type your message here, press Enter to send"
+                        rows="1"
+                    ></textarea>
+                    <div class="chat-input-toolbar">
+                        <div class="toolbar-icon" title="添加引用" onclick="showTip('添加引用')">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                            </svg>
+                        </div>
+                        <div class="toolbar-icon" title="附件" onclick="showTip('附件')">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                            </svg>
+                        </div>
+                        <div class="toolbar-icon" title="网页搜索" onclick="toggleWebSearch()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                            </svg>
+                        </div>
+                        <div class="toolbar-icon" title="AI 工具" onclick="showAITools()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/><path d="M7 11V8a5 5 0 0 1 10 0v3"/>
+                            </svg>
+                        </div>
+                        <div class="toolbar-icon" title="置顶消息" onclick="showTip('置顶')">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2L12 12"/><path d="M18 8L12 2 6 8"/><path d="M5 12H19"/><path d="M5 22H19"/>
+                            </svg>
+                        </div>
+                        <div class="toolbar-icon" title="@ 提及" onclick="showTip('@ 提及')">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/>
+                            </svg>
+                        </div>
+                        <div class="toolbar-divider"></div>
+                        <div class="toolbar-icon" title="快捷指令" onclick="showQuickCommands()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                            </svg>
+                        </div>
+                        <div class="toolbar-icon" title="提示词模板" onclick="showPromptTemplates()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                            </svg>
+                        </div>
+                        <div class="toolbar-icon" title="全屏" onclick="toggleFullscreen()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                            </svg>
+                        </div>
+                        <div class="toolbar-icon" title="清空对话" onclick="clearChat()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                        </div>
+                        <div class="toolbar-icon" title="代码模式" onclick="toggleCodeMode()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+                            </svg>
+                        </div>
+                        <div class="toolbar-spacer"></div>
+                        <div class="toolbar-icon" title="翻译" onclick="showTip('翻译')">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M5 8l6 6"/><path d="M4 14l6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="M22 22l-5-10-5 10"/><path d="M14 18h6"/>
+                            </svg>
+                        </div>
+                        <button class="send-btn" id="sendBtn" title="发送">
+                            <i class="layui-icon layui-icon-top"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/layui@2.9.8/dist/layui.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.0/marked.min.js"></script>
+    <script>
+        // 配置
+        const API_BASE = 'http://localhost:8088';
+        
+        // 当前状态
+        let currentAssistant = 'book';
+        let isLoading = false;
+        let conversationHistory = [];
+        
+        // 助手配置
+        const assistants = {
+            book: {
+                name: '书籍问答助手',
+                avatar: '📚',
+                color: '#4caf50',
+                systemPrompt: '我是书籍问答助手，可以帮你分析《西游记》的内容。你可以问我关于书中人物、情节、主题等问题。',
+                endpoint: '/api/ask',
+                useRAG: true
+            },
+            continue: {
+                name: '续写小说',
+                avatar: '✍️',
+                color: '#ff9800',
+                systemPrompt: '我是小说续写助手，擅长模仿《西游记》的章回体风格续写故事。告诉我你想要的情节设定，我会为你创作新章节。',
+                endpoint: '/api/continue',
+                useRAG: false
+            },
+            chat: {
+                name: '通用聊天',
+                avatar: '💬',
+                color: '#2196f3',
+                systemPrompt: '我是通用聊天助手，可以和你讨论任何话题。',
+                endpoint: '/api/chat',
+                useRAG: false
+            },
+            default: {
+                name: 'Default Assistant',
+                avatar: '⭐',
+                color: '#9c27b0',
+                systemPrompt: '我是默认助手，有什么可以帮你的吗？',
+                endpoint: '/api/chat',
+                useRAG: false
+            }
+        };
+        
+        // DOM 元素
+        const chatMessages = document.getElementById('chatMessages');
+        const chatInput = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const headerAvatar = document.getElementById('headerAvatar');
+        const headerTitle = document.getElementById('headerTitle');
+        const systemPrompt = document.getElementById('systemPrompt');
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            // 切换助手
+            document.querySelectorAll('.assistant-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const assistant = item.dataset.assistant;
+                    switchAssistant(assistant);
+                });
+            });
+            
+            // 发送消息
+            sendBtn.addEventListener('click', sendMessage);
+            chatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+            
+            // 自动调整输入框高度
+            chatInput.addEventListener('input', () => {
+                chatInput.style.height = 'auto';
+                chatInput.style.height = Math.min(chatInput.scrollHeight, 200) + 'px';
+            });
+            
+            // 标签切换
+            document.querySelectorAll('.sidebar-tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                });
+            });
+        });
+        
+        // 切换助手
+        function switchAssistant(assistantId) {
+            currentAssistant = assistantId;
+            const assistant = assistants[assistantId];
+            
+            // 更新 UI
+            document.querySelectorAll('.assistant-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.assistant === assistantId);
+            });
+            
+            headerAvatar.textContent = assistant.avatar;
+            headerAvatar.style.background = assistant.color;
+            headerTitle.textContent = assistant.name;
+            systemPrompt.textContent = assistant.systemPrompt;
+            
+            // 清空对话
+            conversationHistory = [];
+            chatMessages.innerHTML = `
+                <div class="message">
+                    <div class="message-system">${assistant.systemPrompt}</div>
+                </div>
+            `;
+        }
+        
+        // 发送消息
+        async function sendMessage() {
+            const message = chatInput.value.trim();
+            if (!message || isLoading) return;
+            
+            isLoading = true;
+            sendBtn.disabled = true;
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+            
+            // 添加用户消息
+            addMessage('user', message);
+            conversationHistory.push({ role: 'user', content: message });
+            
+            // 显示加载动画
+            const loadingId = addLoadingMessage();
+            
+            try {
+                const assistant = assistants[currentAssistant];
+                let response;
+                
+                if (assistant.useRAG) {
+                    // RAG 问答
+                    response = await fetch(`${API_BASE}${assistant.endpoint}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ question: message, top_k: 8 })
+                    });
+                } else if (currentAssistant === 'continue') {
+                    // 续写
+                    response = await fetch(`${API_BASE}${assistant.endpoint}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt: message })
+                    });
+                } else {
+                    // 通用聊天
+                    response = await fetch(`${API_BASE}${assistant.endpoint}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ messages: conversationHistory })
+                    });
+                }
+                
+                const data = await response.json();
+                
+                // 移除加载动画
+                removeLoadingMessage(loadingId);
+                
+                if (data.error) {
+                    addMessage('assistant', `❌ 错误: ${data.error}`, null, true);
+                } else {
+                    const answer = data.answer || data.story || '';
+                    const sources = data.sources || null;
+                    
+                    addMessage('assistant', answer, sources);
+                    conversationHistory.push({ role: 'assistant', content: answer });
+                }
+            } catch (error) {
+                removeLoadingMessage(loadingId);
+                addMessage('assistant', `❌ 请求失败: ${error.message}\n\n请确保 Workerman 服务已启动:\n\`php workerman_ai_server.php start\``, null, true);
+            }
+            
+            isLoading = false;
+            sendBtn.disabled = false;
+        }
+        
+        // 添加消息
+        function addMessage(role, content, sources = null, isError = false) {
+            const assistant = assistants[currentAssistant];
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message message-${role}`;
+            
+            if (role === 'user') {
+                messageDiv.innerHTML = `
+                    <div class="message-content">${escapeHtml(content)}</div>
+                `;
+            } else {
+                const htmlContent = isError ? escapeHtml(content).replace(/\n/g, '<br>') : marked.parse(content);
+                let sourcesHtml = '';
+                
+                if (sources && sources.length > 0) {
+                    sourcesHtml = `
+                        <div class="sources-container">
+                            <div class="sources-title">📚 检索来源 (${sources.length})</div>
+                            ${sources.slice(0, 3).map(s => `
+                                <div class="source-item">
+                                    <span class="source-score">${s.score}%</span>
+                                    ${escapeHtml(s.text)}
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                
+                messageDiv.innerHTML = `
+                    <div class="message-avatar" style="background: ${assistant.color};">${assistant.avatar}</div>
+                    <div class="message-content">
+                        ${htmlContent}
+                        ${sourcesHtml}
+                    </div>
+                `;
+            }
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // 添加加载消息
+        function addLoadingMessage() {
+            const id = 'loading-' + Date.now();
+            const assistant = assistants[currentAssistant];
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message message-assistant';
+            messageDiv.id = id;
+            messageDiv.innerHTML = `
+                <div class="message-avatar" style="background: ${assistant.color};">${assistant.avatar}</div>
+                <div class="message-content">
+                    <div class="typing-indicator">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                </div>
+            `;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return id;
+        }
+        
+        // 移除加载消息
+        function removeLoadingMessage(id) {
+            const element = document.getElementById(id);
+            if (element) element.remove();
+        }
+        
+        // HTML 转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // ===== 工具栏功能 =====
+        
+        // 显示提示（使用 layui.layer.msg 无图标模式）
+        function showTip(feature) {
+            layer.msg(`🔧 ${feature} 功能开发中...`);
+        }
+        
+        // 切换网页搜索
+        let webSearchEnabled = false;
+        function toggleWebSearch() {
+            webSearchEnabled = !webSearchEnabled;
+            const btn = event.currentTarget;
+            btn.classList.toggle('active', webSearchEnabled);
+            layer.msg(webSearchEnabled ? '🌐 网页搜索已开启' : '网页搜索已关闭');
+        }
+        
+        // 显示 AI 工具菜单
+        function showAITools() {
+            layui.layer.open({
+                type: 1,
+                title: 'AI 工具',
+                area: ['300px', '250px'],
+                shadeClose: true,
+                content: `
+                    <div style="padding: 20px;">
+                        <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请帮我总结这段内容')">📝 内容总结</div>
+                        <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请帮我翻译成英文')">🌍 翻译文本</div>
+                        <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请帮我解释这段代码')">💻 解释代码</div>
+                        <div style="padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请帮我改写这段文字，使其更加正式')">✏️ 改写文本</div>
+                    </div>
+                `
+            });
+        }
+        
+        // 显示快捷指令
+        function showQuickCommands() {
+            layui.layer.open({
+                type: 1,
+                title: '⚡ 快捷指令',
+                area: ['350px', '300px'],
+                shadeClose: true,
+                content: `
+                    <div style="padding: 20px;">
+                        <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('孙悟空大闹天宫的经过')">🐵 大闹天宫</div>
+                        <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('介绍一下唐僧师徒四人')">👨‍👩‍👦‍👦 师徒四人</div>
+                        <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('西游记中有哪些著名的妖怪')">👹 著名妖怪</div>
+                        <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('续写一个唐僧师徒穿越到现代的章节')">✍️ 现代穿越</div>
+                        <div style="padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('以诗词形式总结西游记的主题')">📜 诗词总结</div>
+                    </div>
+                `
+            });
+        }
+        
+        // 显示提示词模板
+        function showPromptTemplates() {
+            layui.layer.open({
+                type: 1,
+                title: '📄 提示词模板',
+                area: ['400px', '350px'],
+                shadeClose: true,
+                content: `
+                    <div style="padding: 20px;">
+                        <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请用简洁的语言解释：')">📖 简洁解释</div>
+                        <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请从以下几个方面分析：1. 背景 2. 人物 3. 主题 4. 影响')">📊 多维分析</div>
+                        <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请模仿原著风格续写以下情节：')">🎭 风格模仿</div>
+                        <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请对比分析以下两个角色的异同：')">⚖️ 对比分析</div>
+                        <div style="padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请以时间线的形式梳理以下事件：')">📅 时间线</div>
+                    </div>
+                `
+            });
+        }
+        
+        // 插入提示词
+        function insertPrompt(text) {
+            chatInput.value = text;
+            chatInput.focus();
+            layui.layer.closeAll();
+        }
+        
+        // 全屏切换
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+                layer.msg('⛶ 已进入全屏模式');
+            } else {
+                document.exitFullscreen();
+                layer.msg('⛶ 已退出全屏模式');
+            }
+        }
+        
+        // 清空对话
+        function clearChat() {
+            layer.confirm('确定要清空当前对话吗？', {
+                btn: ['确定', '取消'],
+                title: '清空对话'
+            }, function(index) {
+                conversationHistory = [];
+                const assistant = assistants[currentAssistant];
+                chatMessages.innerHTML = `
+                    <div class="message">
+                        <div class="message-system">${assistant.systemPrompt}</div>
+                    </div>
+                `;
+                layer.close(index);
+                layer.msg('🗑️ 对话已清空');
+            });
+        }
+        
+        // 代码模式切换
+        let codeMode = false;
+        function toggleCodeMode() {
+            codeMode = !codeMode;
+            const btn = event.currentTarget;
+            btn.classList.toggle('active', codeMode);
+            if (codeMode) {
+                chatInput.placeholder = '输入代码或技术问题...';
+                layer.msg('💻 代码模式已开启');
+            } else {
+                chatInput.placeholder = 'Type your message here, press Enter to send';
+                layer.msg('代码模式已关闭');
+            }
+        }
+    </script>
+</body>
+</html>
