@@ -28,10 +28,17 @@ use Workerman\Worker;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
+use Workerman\Redis\Client as RedisClient;
 
 // ===================================
 // 配置
 // ===================================
+
+// Redis 配置
+define('REDIS_HOST', '127.0.0.1');
+define('REDIS_PORT', 6379);
+define('CACHE_TTL', 3600); // 缓存 1 小时
+define('CACHE_PREFIX', 'smartbook:');
 
 // 从 ~/.zprofile 读取 API Key
 $zprofile = file_get_contents('/Users/kaka/.zprofile');
@@ -45,6 +52,105 @@ if (empty(GEMINI_API_KEY)) {
 // 默认书籍索引缓存
 define('DEFAULT_BOOK_CACHE', '/Users/kaka/Documents/西游记_index.json');
 define('DEFAULT_BOOK_PATH', '/Users/kaka/Documents/西游记.epub');
+
+// ===================================
+// Redis 缓存服务
+// ===================================
+
+class CacheService
+{
+    private static ?RedisClient $redis = null;
+    private static bool $connected = false;
+    
+    /**
+     * 初始化 Redis 连接（异步）
+     */
+    public static function init(): void
+    {
+        if (self::$redis !== null) {
+            return;
+        }
+        
+        self::$redis = new RedisClient('redis://' . REDIS_HOST . ':' . REDIS_PORT);
+        self::$connected = true;
+        echo "✅ Redis 连接成功\n";
+    }
+    
+    /**
+     * 获取 Redis 客户端
+     */
+    public static function getRedis(): ?RedisClient
+    {
+        return self::$redis;
+    }
+    
+    /**
+     * 是否已连接
+     */
+    public static function isConnected(): bool
+    {
+        return self::$connected;
+    }
+    
+    /**
+     * 生成缓存键
+     */
+    public static function makeKey(string $type, string $input): string
+    {
+        return CACHE_PREFIX . $type . ':' . md5($input);
+    }
+    
+    /**
+     * 获取缓存（异步回调）
+     */
+    public static function get(string $key, callable $callback): void
+    {
+        if (!self::$connected || !self::$redis) {
+            $callback(null);
+            return;
+        }
+        
+        self::$redis->get($key, function($result) use ($callback) {
+            if ($result) {
+                $data = json_decode($result, true);
+                $callback($data);
+            } else {
+                $callback(null);
+            }
+        });
+    }
+    
+    /**
+     * 设置缓存（异步）
+     */
+    public static function set(string $key, mixed $value, int $ttl = CACHE_TTL): void
+    {
+        if (!self::$connected || !self::$redis) {
+            return;
+        }
+        
+        $json = json_encode($value, JSON_UNESCAPED_UNICODE);
+        self::$redis->setex($key, $ttl, $json);
+    }
+    
+    /**
+     * 获取缓存统计
+     */
+    public static function getStats(callable $callback): void
+    {
+        if (!self::$connected || !self::$redis) {
+            $callback(['connected' => false]);
+            return;
+        }
+        
+        self::$redis->keys(CACHE_PREFIX . '*', function($keys) use ($callback) {
+            $callback([
+                'connected' => true,
+                'cached_items' => count($keys ?? []),
+            ]);
+        });
+    }
+}
 
 // ===================================
 // AI 服务类
@@ -193,6 +299,16 @@ $httpWorker = new Worker('http://0.0.0.0:8088');
 $httpWorker->count = 4;
 $httpWorker->name = 'AI-HTTP-Server';
 
+// Worker 启动时初始化 Redis
+$httpWorker->onWorkerStart = function ($worker) {
+    try {
+        CacheService::init();
+    } catch (Exception $e) {
+        echo "⚠️  Redis 连接失败: {$e->getMessage()}\n";
+        echo "   服务将在无缓存模式下运行\n";
+    }
+};
+
 $httpWorker->onMessage = function (TcpConnection $connection, Request $request) {
     $path = $request->path();
     $method = $request->method();
@@ -235,8 +351,9 @@ $httpWorker->onMessage = function (TcpConnection $connection, Request $request) 
                 'POST /api/stream/continue' => '续写章节 (流式)',
                 'GET /api/health' => '健康检查',
             ]],
-            '/api/health' => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s')],
-            '/api/ask' => handleAsk($request),
+            '/api/health' => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s'), 'redis' => CacheService::isConnected()],
+            '/api/cache/stats' => handleCacheStats($connection),
+            '/api/ask' => handleAskWithCache($connection, $request),
             '/api/chat' => handleChat($request),
             '/api/continue' => handleContinue($request),
             '/api/stream/ask' => handleStreamAsk($connection, $request),
@@ -291,6 +408,64 @@ function handleContinue(Request $request): array
     $prompt = $body['prompt'] ?? '';
     
     return AIService::continueStory($prompt);
+}
+
+/**
+ * 带缓存的书籍问答（异步）
+ */
+function handleAskWithCache(TcpConnection $connection, Request $request): ?array
+{
+    $body = json_decode($request->rawBody(), true) ?? [];
+    $question = $body['question'] ?? '';
+    $topK = $body['top_k'] ?? 8;
+    
+    if (empty($question)) {
+        return ['error' => 'Missing question parameter'];
+    }
+    
+    $cacheKey = CacheService::makeKey('ask', $question . ':' . $topK);
+    $jsonHeaders = [
+        'Content-Type' => 'application/json; charset=utf-8',
+        'Access-Control-Allow-Origin' => '*',
+    ];
+    
+    // 尝试从缓存获取
+    CacheService::get($cacheKey, function($cached) use ($connection, $question, $topK, $cacheKey, $jsonHeaders) {
+        if ($cached) {
+            // 缓存命中
+            $cached['cached'] = true;
+            $connection->send(new Response(200, $jsonHeaders, json_encode($cached, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)));
+            return;
+        }
+        
+        // 缓存未命中，执行查询
+        $result = AIService::askBook($question, $topK);
+        $result['cached'] = false;
+        
+        // 保存到缓存
+        CacheService::set($cacheKey, $result);
+        
+        $connection->send(new Response(200, $jsonHeaders, json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)));
+    });
+    
+    return null; // 异步处理，返回 null
+}
+
+/**
+ * 缓存统计
+ */
+function handleCacheStats(TcpConnection $connection): ?array
+{
+    $jsonHeaders = [
+        'Content-Type' => 'application/json; charset=utf-8',
+        'Access-Control-Allow-Origin' => '*',
+    ];
+    
+    CacheService::getStats(function($stats) use ($connection, $jsonHeaders) {
+        $connection->send(new Response(200, $jsonHeaders, json_encode($stats, JSON_UNESCAPED_UNICODE)));
+    });
+    
+    return null; // 异步处理
 }
 
 // ===================================
@@ -622,13 +797,17 @@ echo "WebSocket:   ws://localhost:8081\n";
 echo "=========================================\n";
 echo "\n";
 echo "API 端点:\n";
-echo "  GET  /              - 聊天界面\n";
-echo "  GET  /api           - API 列表\n";
-echo "  GET  /api/health    - 健康检查\n";
-echo "  POST /api/ask       - 书籍问答 (RAG)\n";
-echo "  POST /api/chat      - 通用聊天\n";
-echo "  POST /api/continue  - 续写章节\n";
-echo "  POST /api/stream/*  - 流式端点 (SSE)\n";
+echo "  GET  /               - 聊天界面\n";
+echo "  GET  /api            - API 列表\n";
+echo "  GET  /api/health     - 健康检查 (含 Redis 状态)\n";
+echo "  GET  /api/cache/stats- 缓存统计\n";
+echo "  POST /api/ask        - 书籍问答 (带缓存)\n";
+echo "  POST /api/chat       - 通用聊天\n";
+echo "  POST /api/continue   - 续写章节\n";
+echo "  POST /api/stream/*   - 流式端点 (SSE)\n";
+echo "\n";
+echo "📦 Redis 缓存: " . REDIS_HOST . ":" . REDIS_PORT . "\n";
+echo "⏱️  缓存时长: " . CACHE_TTL . " 秒\n";
 echo "\n";
 
 Worker::runAll();

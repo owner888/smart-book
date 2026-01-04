@@ -1,5 +1,6 @@
 {
     "require": {
-        "workerman/workerman": "^5.1"
+        "workerman/workerman": "^5.1",
+        "workerman/redis": "^2.0"
     }
 }

@@ -108,9 +108,27 @@ smart-book/
 # 安装依赖
 composer install
 
-# 或单独安装 Workerman
-composer require workerman/workerman
+# 或单独安装
+composer require workerman/workerman workerman/redis
 ```
+
+## 依赖服务
+
+### Redis（可选，推荐）
+
+Redis 用于缓存 AI 回答，减少重复请求：
+
+```bash
+# macOS
+brew install redis
+brew services start redis
+
+# 验证
+redis-cli ping
+# 应返回 PONG
+```
+
+如果不安装 Redis，服务会自动降级为无缓存模式。
 
 ## 配置
 
@@ -207,6 +225,7 @@ php continue_story.php
 | **流式传输** | SSE | Server-Sent Events |
 | **前端框架** | Layui 2.9 | 暗黑主题 UI 组件 |
 | **Markdown** | Marked.js | 实时渲染 AI 响应 |
+| **缓存** | Redis + workerman/redis | 异步缓存 AI 回答 |
 | **数据格式** | JSON | API 通信 + 索引缓存 |
 
 ## License

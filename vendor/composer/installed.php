@@ -1,9 +1,9 @@
 <?php return array(
     'root' => array(
         'name' => '__root__',
-        'pretty_version' => 'dev-master',
-        'version' => 'dev-master',
-        'reference' => 'a41154d56de427bf6339ef133ad7526ee027fc4d',
+        'pretty_version' => 'dev-main',
+        'version' => 'dev-main',
+        'reference' => 'aa35da7ac1d8676bc287a94423ca3aa92c1aa1b0',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -11,9 +11,9 @@
     ),
     'versions' => array(
         '__root__' => array(
-            'pretty_version' => 'dev-master',
-            'version' => 'dev-master',
-            'reference' => 'a41154d56de427bf6339ef133ad7526ee027fc4d',
+            'pretty_version' => 'dev-main',
+            'version' => 'dev-main',
+            'reference' => 'aa35da7ac1d8676bc287a94423ca3aa92c1aa1b0',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
@@ -25,6 +25,15 @@
             'reference' => 'b0bebfa9d41b992ad0a835ddf2ee8fa5d58eca44',
             'type' => 'library',
             'install_path' => __DIR__ . '/../workerman/coroutine',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'workerman/redis' => array(
+            'pretty_version' => 'v2.0.5',
+            'version' => '2.0.5.0',
+            'reference' => '49627c1809eff1ef7175eb8ee7549234a1d67ec5',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../workerman/redis',
             'aliases' => array(),
             'dev_requirement' => false,
         ),
