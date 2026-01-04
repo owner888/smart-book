@@ -1116,10 +1116,70 @@ function AsyncHandleStreamAsk(TcpConnection $connection, Request $request): ?arr
 }
 
 /**
- * 执行检索和生成回答（内部函数）- 异步版本
+ * 使用 Python calibre 原版提示词，先让 AI 判断是否认识这本书
+ * 如果 AI 说不认识，则使用 RAG 检索
  */
 function handleStreamAskGenerate(TcpConnection $connection, string $question, array $queryEmbedding, int $topK): void
 {
+    // Python 原版提示词格式 (from llm_book.py create_initial_messages)
+    $bookInfo = "I wish to discuss the following book. The book is: 《西游记》 by 吴承恩.";
+    $bookInfo .= "\n---------------\n\n";
+    
+    // 使用 Python 原版的 system prompt
+    $systemPrompt = $bookInfo;
+    $systemPrompt .= " When you answer the questions use markdown formatting for the answers wherever possible.";
+    $systemPrompt .= " If the specified book is unknown to you instead of answering the following questions just say the book is unknown.";
+    $systemPrompt .= " 使用中文回答。";
+    
+    // 第一步：先让 AI 判断是否认识这本书
+    echo "🤔 询问 AI 是否认识这本书...\n";
+    $gemini = AIService::getGemini();
+    $response = $gemini->chat([
+        ['role' => 'system', 'content' => $systemPrompt],
+        ['role' => 'user', 'content' => $question],
+    ], ['enableSearch' => false]);
+    
+    // 提取回答
+    $aiAnswer = '';
+    foreach ($response['candidates'] ?? [] as $candidate) {
+        foreach ($candidate['content']['parts'] ?? [] as $part) {
+            if (!($part['thought'] ?? false)) {
+                $aiAnswer .= $part['text'] ?? '';
+            }
+        }
+    }
+    
+    // 检测 AI 是否说"不认识"这本书
+    $unknownPatterns = [
+        'unknown', 'unfamiliar', 'not familiar', 'don\'t know', 'do not know',
+        '不认识', '不熟悉', '未知', '不了解', '没有了解', '不清楚',
+        'book is unknown', 'books are unknown',
+    ];
+    
+    $isUnknown = false;
+    $lowerAnswer = mb_strtolower($aiAnswer);
+    foreach ($unknownPatterns as $pattern) {
+        if (strpos($lowerAnswer, mb_strtolower($pattern)) !== false) {
+            $isUnknown = true;
+            break;
+        }
+    }
+    
+    if (!$isUnknown) {
+        // AI 认识这本书，直接使用 AI 的回答
+        echo "✅ AI 认识这本书，直接使用 AI 知识回答\n";
+        sendSSE($connection, 'sources', json_encode([
+            ['text' => 'AI 预训练知识', 'score' => 100],
+        ], JSON_UNESCAPED_UNICODE));
+        sendSSE($connection, 'content', $aiAnswer);
+        sendSSE($connection, 'done', '');
+        $connection->close();
+        return;
+    }
+    
+    // AI 不认识这本书，使用 RAG 检索
+    echo "📚 AI 不认识这本书，使用 RAG 检索...\n";
+    
     $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
     $results = $vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
     
@@ -1136,11 +1196,11 @@ function handleStreamAskGenerate(TcpConnection $connection, string $question, ar
         $context .= "【片段 " . ($i + 1) . "】\n" . $result['chunk']['text'] . "\n\n";
     }
     
-    // 异步流式生成回答
+    // 使用 RAG 上下文重新生成回答
     $asyncGemini = AIService::getAsyncGemini();
     $asyncGemini->chatStreamAsync(
         [
-            ['role' => 'system', 'content' => "你是一个书籍分析助手。根据以下内容回答问题，使用中文：\n\n{$context}"],
+            ['role' => 'system', 'content' => "你是一个书籍分析助手。根据以下从书中检索到的内容回答问题，使用中文：\n\n{$context}"],
             ['role' => 'user', 'content' => $question],
         ],
         // onChunk: 每个 token 回调
