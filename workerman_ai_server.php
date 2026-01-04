@@ -256,6 +256,7 @@ class AIService
 {
     private static ?BookRAGAssistant $ragAssistant = null;
     private static ?GeminiClient $gemini = null;
+    private static ?AsyncGeminiClient $asyncGemini = null;
     
     public static function getRAGAssistant(): BookRAGAssistant
     {
@@ -274,6 +275,14 @@ class AIService
             self::$gemini = new GeminiClient(GEMINI_API_KEY, GeminiClient::MODEL_GEMINI_25_FLASH);
         }
         return self::$gemini;
+    }
+    
+    public static function getAsyncGemini(): AsyncGeminiClient
+    {
+        if (self::$asyncGemini === null) {
+            self::$asyncGemini = new AsyncGeminiClient(GEMINI_API_KEY, AsyncGeminiClient::MODEL_GEMINI_25_FLASH);
+        }
+        return self::$asyncGemini;
     }
     
     /**
@@ -395,7 +404,7 @@ $httpWorker = new Worker('http://0.0.0.0:8088');
 $httpWorker->count = 4;
 $httpWorker->name = 'AI-HTTP-Server';
 
-// Worker 启动时初始化 Redis
+// Worker 启动时初始化 Redis 和 AsyncCurlManager
 $httpWorker->onWorkerStart = function ($worker) {
     try {
         CacheService::init();
@@ -403,6 +412,9 @@ $httpWorker->onWorkerStart = function ($worker) {
         echo "⚠️  Redis 连接失败: {$e->getMessage()}\n";
         echo "   服务将在无缓存模式下运行\n";
     }
+    
+    // 初始化异步 curl 管理器
+    AsyncCurlManager::init();
 };
 
 $httpWorker->onMessage = function (TcpConnection $connection, Request $request) {
@@ -627,7 +639,7 @@ function handleStreamAsk(TcpConnection $connection, Request $request): ?array
 }
 
 /**
- * 执行检索和生成回答（内部函数）
+ * 执行检索和生成回答（内部函数）- 异步版本
  */
 function handleStreamAskGenerate(TcpConnection $connection, string $question, array $queryEmbedding, int $topK): void
 {
@@ -647,35 +659,41 @@ function handleStreamAskGenerate(TcpConnection $connection, string $question, ar
         $context .= "【片段 " . ($i + 1) . "】\n" . $result['chunk']['text'] . "\n\n";
     }
     
-    // 流式生成回答，同时收集完整内容用于缓存
-    $fullAnswer = '';
-    $gemini = AIService::getGemini();
-    $gemini->chatStream(
+    // 异步流式生成回答
+    $asyncGemini = AIService::getAsyncGemini();
+    $asyncGemini->chatStreamAsync(
         [
             ['role' => 'system', 'content' => "你是一个书籍分析助手。根据以下内容回答问题，使用中文：\n\n{$context}"],
             ['role' => 'user', 'content' => $question],
         ],
-        function ($text, $chunk, $isThought) use ($connection, &$fullAnswer) {
+        // onChunk: 每个 token 回调
+        function ($text, $isThought) use ($connection) {
             if (!$isThought && $text) {
-                $fullAnswer .= $text;
                 sendSSE($connection, 'content', $text);
             }
         },
+        // onComplete: 完成回调
+        function ($fullAnswer) use ($connection, $question, $queryEmbedding, $topK, $sources) {
+            // 生成缓存键并保存
+            $cacheKey = CacheService::makeKey('stream_ask', $question . ':' . $topK);
+            CacheService::set($cacheKey, [
+                'sources' => $sources,
+                'answer' => $fullAnswer,
+            ]);
+            
+            // 添加到语义索引（用于语义缓存匹配）
+            CacheService::addToSemanticIndex($cacheKey, $queryEmbedding, $question);
+            
+            sendSSE($connection, 'done', '');
+            $connection->close();
+        },
+        // onError: 错误回调
+        function ($error) use ($connection) {
+            sendSSE($connection, 'error', $error);
+            $connection->close();
+        },
         ['enableSearch' => false]
     );
-    
-    // 生成缓存键并保存
-    $cacheKey = CacheService::makeKey('stream_ask', $question . ':' . $topK);
-    CacheService::set($cacheKey, [
-        'sources' => $sources,
-        'answer' => $fullAnswer,
-    ]);
-    
-    // 添加到语义索引（用于语义缓存匹配）
-    CacheService::addToSemanticIndex($cacheKey, $queryEmbedding, $question);
-    
-    sendSSE($connection, 'done', '');
-    $connection->close();
 }
 
 function handleStreamChat(TcpConnection $connection, Request $request): ?array
@@ -697,19 +715,26 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
     
     $connection->send(new Response(200, $headers, ''));
     
-    $gemini = AIService::getGemini();
-    $gemini->chatStream(
+    // 使用异步版本
+    $asyncGemini = AIService::getAsyncGemini();
+    $asyncGemini->chatStreamAsync(
         $messages,
-        function ($text, $chunk, $isThought) use ($connection) {
+        function ($text, $isThought) use ($connection) {
             if (!$isThought && $text) {
                 sendSSE($connection, 'content', $text);
             }
         },
+        function ($fullContent) use ($connection) {
+            sendSSE($connection, 'done', '');
+            $connection->close();
+        },
+        function ($error) use ($connection) {
+            sendSSE($connection, 'error', $error);
+            $connection->close();
+        },
         ['enableSearch' => false]
     );
     
-    sendSSE($connection, 'done', '');
-    $connection->close();
     return null;
 }
 
@@ -735,22 +760,29 @@ EOT;
 
     $userPrompt = $prompt ?: '请为《西游记》续写一个新章节。设定：唐僧师徒四人遇到一个新的妖怪。写一个完整的章回，约1000字。';
     
-    $gemini = AIService::getGemini();
-    $gemini->chatStream(
+    // 使用异步版本
+    $asyncGemini = AIService::getAsyncGemini();
+    $asyncGemini->chatStreamAsync(
         [
             ['role' => 'system', 'content' => $systemPrompt],
             ['role' => 'user', 'content' => $userPrompt],
         ],
-        function ($text, $chunk, $isThought) use ($connection) {
+        function ($text, $isThought) use ($connection) {
             if (!$isThought && $text) {
                 sendSSE($connection, 'content', $text);
             }
         },
+        function ($fullContent) use ($connection) {
+            sendSSE($connection, 'done', '');
+            $connection->close();
+        },
+        function ($error) use ($connection) {
+            sendSSE($connection, 'error', $error);
+            $connection->close();
+        },
         ['enableSearch' => false]
     );
     
-    sendSSE($connection, 'done', '');
-    $connection->close();
     return null;
 }
 

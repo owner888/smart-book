@@ -247,6 +247,7 @@ class GeminiClient
     private string $baseUrl;
     private string $model;
     private int $timeout;
+    private bool $async;
     
     // 支持的模型
     const MODEL_GEMINI_25_PRO = 'gemini-2.5-pro';
@@ -257,12 +258,14 @@ class GeminiClient
         string $apiKey,
         string $model = self::MODEL_GEMINI_25_FLASH,
         string $baseUrl = 'https://generativelanguage.googleapis.com/v1beta',
-        int $timeout = 120
+        int $timeout = 120,
+        bool $async = false
     ) {
         $this->apiKey = $apiKey;
         $this->model = $model;
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->timeout = $timeout;
+        $this->async = $async;
     }
     
     /**
@@ -935,6 +938,329 @@ class CalibreAIPrompts
             return '';
         }
         return "If you can speak in {$language}, then respond in {$language}.";
+    }
+}
+
+// ===================================
+// curl_multi 异步管理器
+// ===================================
+
+class AsyncCurlManager
+{
+    private static $multiHandle = null;
+    private static array $handles = [];
+    private static ?int $timerId = null;
+    
+    /**
+     * 初始化（在 Worker 启动时调用）
+     */
+    public static function init(): void
+    {
+        if (self::$multiHandle !== null) {
+            return;
+        }
+        
+        self::$multiHandle = curl_multi_init();
+        
+        // 使用 Workerman 定时器轮询（每 10ms）
+        self::$timerId = \Workerman\Timer::add(0.01, function() {
+            self::poll();
+        });
+        
+        echo "✅ AsyncCurlManager 已初始化\n";
+    }
+    
+    /**
+     * 发起异步请求
+     * 
+     * @param string $url 请求 URL
+     * @param array $options curl 选项
+     * @param callable $onData 数据回调 function(string $data)
+     * @param callable $onComplete 完成回调 function(bool $success, string $error)
+     * @return string 请求ID
+     */
+    public static function request(
+        string $url,
+        array $options,
+        callable $onData,
+        callable $onComplete
+    ): string {
+        $ch = curl_init();
+        $requestId = uniqid('curl_', true);
+        
+        // 默认选项
+        $defaultOptions = [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => false,
+            CURLOPT_TIMEOUT => 120,
+            CURLOPT_WRITEFUNCTION => function($ch, $data) use ($onData) {
+                $onData($data);
+                return strlen($data);
+            },
+        ];
+        
+        // 合并选项
+        curl_setopt_array($ch, $defaultOptions + $options);
+        
+        // 添加到 multi handle
+        curl_multi_add_handle(self::$multiHandle, $ch);
+        
+        self::$handles[$requestId] = [
+            'ch' => $ch,
+            'onComplete' => $onComplete,
+        ];
+        
+        // 立即触发一次 exec
+        curl_multi_exec(self::$multiHandle, $running);
+        
+        return $requestId;
+    }
+    
+    /**
+     * 轮询检查请求状态
+     */
+    private static function poll(): void
+    {
+        if (self::$multiHandle === null || empty(self::$handles)) {
+            return;
+        }
+        
+        // 非阻塞执行
+        curl_multi_exec(self::$multiHandle, $running);
+        
+        // 使用 select 等待活动（超时 0 表示非阻塞）
+        if ($running > 0) {
+            curl_multi_select(self::$multiHandle, 0);
+        }
+        
+        // 检查已完成的请求
+        while ($info = curl_multi_info_read(self::$multiHandle)) {
+            $ch = $info['handle'];
+            
+            // 查找对应的请求
+            foreach (self::$handles as $requestId => $handle) {
+                if ($handle['ch'] === $ch) {
+                    $success = ($info['result'] === CURLE_OK);
+                    $error = $success ? '' : curl_error($ch);
+                    
+                    // 调用完成回调
+                    $handle['onComplete']($success, $error);
+                    
+                    // 清理
+                    curl_multi_remove_handle(self::$multiHandle, $ch);
+                    curl_close($ch);
+                    unset(self::$handles[$requestId]);
+                    break;
+                }
+            }
+        }
+    }
+    
+    /**
+     * 取消请求
+     */
+    public static function cancel(string $requestId): void
+    {
+        if (isset(self::$handles[$requestId])) {
+            $ch = self::$handles[$requestId]['ch'];
+            curl_multi_remove_handle(self::$multiHandle, $ch);
+            curl_close($ch);
+            unset(self::$handles[$requestId]);
+        }
+    }
+    
+    /**
+     * 获取活跃请求数
+     */
+    public static function getActiveCount(): int
+    {
+        return count(self::$handles);
+    }
+    
+    /**
+     * 关闭管理器
+     */
+    public static function close(): void
+    {
+        if (self::$timerId !== null) {
+            \Workerman\Timer::del(self::$timerId);
+            self::$timerId = null;
+        }
+        
+        foreach (self::$handles as $handle) {
+            curl_multi_remove_handle(self::$multiHandle, $handle['ch']);
+            curl_close($handle['ch']);
+        }
+        self::$handles = [];
+        
+        if (self::$multiHandle !== null) {
+            curl_multi_close(self::$multiHandle);
+            self::$multiHandle = null;
+        }
+    }
+}
+
+// ===================================
+// 异步 Gemini 客户端（使用 curl_multi）
+// ===================================
+
+class AsyncGeminiClient
+{
+    private string $apiKey;
+    private string $baseUrl;
+    private string $model;
+    
+    const MODEL_GEMINI_25_PRO = 'gemini-2.5-pro';
+    const MODEL_GEMINI_25_FLASH = 'gemini-2.5-flash';
+    const MODEL_GEMINI_25_FLASH_LITE = 'gemini-2.5-flash-lite';
+    
+    public function __construct(
+        string $apiKey,
+        string $model = self::MODEL_GEMINI_25_FLASH,
+        string $baseUrl = 'https://generativelanguage.googleapis.com/v1beta'
+    ) {
+        $this->apiKey = $apiKey;
+        $this->model = $model;
+        $this->baseUrl = rtrim($baseUrl, '/');
+    }
+    
+    /**
+     * 异步流式聊天（使用 curl_multi）
+     * 
+     * @param array $messages 消息数组
+     * @param callable $onChunk 每个数据块的回调 function(string $text, bool $isThought)
+     * @param callable $onComplete 完成回调 function(string $fullContent)
+     * @param callable|null $onError 错误回调 function(string $error)
+     * @param array $options 选项
+     * @return string 请求ID（可用于取消）
+     */
+    public function chatStreamAsync(
+        array $messages,
+        callable $onChunk,
+        callable $onComplete,
+        ?callable $onError = null,
+        array $options = []
+    ): string {
+        $model = $options['model'] ?? $this->model;
+        $data = $this->buildRequestData($messages, $options);
+        
+        $url = "{$this->baseUrl}/models/{$model}:streamGenerateContent?alt=sse&key={$this->apiKey}";
+        
+        $fullContent = '';
+        $buffer = '';
+        
+        // 数据回调：处理 SSE 流式数据
+        $onData = function($rawData) use (&$fullContent, &$buffer, $onChunk) {
+            $buffer .= $rawData;
+            
+            // 按行分割处理
+            while (($pos = strpos($buffer, "\n")) !== false) {
+                $line = substr($buffer, 0, $pos);
+                $buffer = substr($buffer, $pos + 1);
+                
+                $line = trim($line);
+                if (empty($line) || !str_starts_with($line, 'data: ')) {
+                    continue;
+                }
+                
+                $jsonStr = substr($line, 6);
+                $chunk = json_decode($jsonStr, true);
+                if (!$chunk || !isset($chunk['candidates'])) {
+                    continue;
+                }
+                
+                foreach ($chunk['candidates'] as $candidate) {
+                    $parts = $candidate['content']['parts'] ?? [];
+                    foreach ($parts as $part) {
+                        $text = $part['text'] ?? '';
+                        $isThought = $part['thought'] ?? false;
+                        
+                        if ($text) {
+                            if (!$isThought) {
+                                $fullContent .= $text;
+                            }
+                            $onChunk($text, $isThought);
+                        }
+                    }
+                }
+            }
+        };
+        
+        // 完成回调
+        $onFinish = function($success, $error) use (&$fullContent, $onComplete, $onError) {
+            if ($success) {
+                $onComplete($fullContent);
+            } else {
+                if ($onError) {
+                    $onError($error);
+                }
+            }
+        };
+        
+        // 使用 AsyncCurlManager 发起请求
+        return AsyncCurlManager::request(
+            $url,
+            [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode($data),
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                ],
+            ],
+            $onData,
+            $onFinish
+        );
+    }
+    
+    /**
+     * 取消请求
+     */
+    public function cancel(string $requestId): void
+    {
+        AsyncCurlManager::cancel($requestId);
+    }
+    
+    /**
+     * 构建请求数据
+     */
+    private function buildRequestData(array $messages, array $options): array
+    {
+        $contents = [];
+        $systemInstruction = null;
+        
+        foreach ($messages as $msg) {
+            $role = $msg['role'] ?? $msg['type'] ?? 'user';
+            $content = $msg['content'] ?? $msg['query'] ?? '';
+            
+            if ($role === 'system') {
+                $systemInstruction = ['parts' => [['text' => $content]]];
+            } else {
+                $geminiRole = $role === 'assistant' ? 'model' : 'user';
+                $contents[] = [
+                    'role' => $geminiRole,
+                    'parts' => [['text' => $content]],
+                ];
+            }
+        }
+        
+        $data = [
+            'contents' => $contents,
+            'generationConfig' => [
+                'thinkingConfig' => [
+                    'includeThoughts' => $options['includeThoughts'] ?? true,
+                ],
+            ],
+        ];
+        
+        if ($systemInstruction) {
+            $data['system_instruction'] = $systemInstruction;
+        }
+        
+        if ($options['enableSearch'] ?? false) {
+            $data['tools'] = [['google_search' => new \stdClass()]];
+        }
+        
+        return $data;
     }
 }
 
