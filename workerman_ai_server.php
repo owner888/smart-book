@@ -35,15 +35,13 @@ use Workerman\Redis\Client as RedisClient;
 // ===================================
 
 /**
- * 从 .env 文件加载配置（不使用系统环境变量）
- * @return array 配置键值对
+ * 从 .env 文件加载配置到系统环境变量
+ * 优先级：系统环境变量 > .env 文件
  */
-function loadEnv(string $path): array
+function loadEnv(string $path): void
 {
-    $config = [];
-    
     if (!file_exists($path)) {
-        return $config;
+        return;
     }
     
     $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -62,23 +60,17 @@ function loadEnv(string $path): array
             // 移除引号
             $value = trim($value, '"\'');
             
-            $config[$key] = $value;
+            // 只在系统环境变量未设置时才从 .env 读取
+            if (!getenv($key)) {
+                putenv("{$key}={$value}");
+                $_ENV[$key] = $value;
+            }
         }
     }
-    
-    return $config;
 }
 
-/**
- * 获取配置值（只从 .env 读取，不使用系统环境变量）
- */
-function env(string $key, mixed $default = ''): mixed
-{
-    return $GLOBALS['_env_config'][$key] ?? $default;
-}
-
-// 加载 .env 文件到全局变量（不污染系统环境变量）
-$GLOBALS['_env_config'] = loadEnv(__DIR__ . '/.env');
+// 加载 .env 文件（补充系统环境变量）
+loadEnv(__DIR__ . '/.env');
 
 // ===================================
 // 加载配置文件
