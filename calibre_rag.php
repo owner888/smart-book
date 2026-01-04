@@ -70,13 +70,15 @@ class EmbeddingClient
         unset($ch);
         
         if ($error) {
-            throw new Exception("Embedding API Error: {$error}");
+            echo "❌ Embedding curl 错误: {$error}\n";
+            return [];
         }
         
         $result = json_decode($response, true);
         
         if (isset($result['error'])) {
-            throw new Exception("Embedding API Error: " . ($result['error']['message'] ?? 'Unknown'));
+            echo "❌ Embedding API 错误: " . ($result['error']['message'] ?? 'Unknown') . "\n";
+            return [];
         }
         
         return $result['embedding']['values'] ?? [];
@@ -110,13 +112,15 @@ class EmbeddingClient
         unset($ch);  // PHP 8.0+ 自动销毁 CurlHandle
         
         if ($error) {
-            throw new Exception("Embedding API Error: {$error}");
+            echo "❌ Embedding batch curl 错误: {$error}\n";
+            return array_fill(0, count($texts), []);
         }
         
         $result = json_decode($response, true);
         
         if (isset($result['error'])) {
-            throw new Exception("Embedding API Error: " . ($result['error']['message'] ?? 'Unknown'));
+            echo "❌ Embedding batch API 错误: " . ($result['error']['message'] ?? 'Unknown') . "\n";
+            return array_fill(0, count($texts), []);
         }
         
         return array_map(
@@ -479,7 +483,8 @@ class EpubParser
     {
         $zip = new ZipArchive();
         if ($zip->open($epubPath) !== true) {
-            throw new Exception("无法打开 EPUB 文件: {$epubPath}");
+            echo "❌ 无法打开 EPUB 文件: {$epubPath}\n";
+            return '';
         }
         
         $text = '';
@@ -653,7 +658,8 @@ class BookRAGAssistant
     public function ask(string $question, int $topK = 5, bool $stream = true): string
     {
         if ($this->vectorStore->isEmpty()) {
-            throw new Exception("请先加载书籍！");
+            echo "❌ 请先加载书籍！\n";
+            return '错误：请先加载书籍';
         }
         
         // 1. 为问题生成嵌入向量

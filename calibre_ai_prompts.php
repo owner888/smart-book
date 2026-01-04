@@ -144,14 +144,14 @@ class OpenAIClient
             $error = curl_error($ch);
             
             if ($error) {
-                throw new Exception("cURL Error: {$error}");
+                return ['error' => "cURL Error: {$error}"];
             }
             
             $result = json_decode($response, true);
             
             if ($httpCode >= 400) {
                 $errorMsg = $result['error']['message'] ?? 'Unknown error';
-                throw new Exception("OpenAI API Error ({$httpCode}): {$errorMsg}");
+                return ['error' => "OpenAI API Error ({$httpCode}): {$errorMsg}"];
             }
             
             return $result;
@@ -224,11 +224,11 @@ class OpenAIClient
             $error = curl_error($ch);
             
             if ($error) {
-                throw new Exception("cURL Error: {$error}");
+                return ['error' => "cURL Error: {$error}", 'content' => $fullContent];
             }
             
             if ($httpCode >= 400) {
-                throw new Exception("OpenAI API Error: HTTP {$httpCode}");
+                return ['error' => "OpenAI API Error: HTTP {$httpCode}", 'content' => $fullContent];
             }
             
             return [
@@ -375,14 +375,14 @@ class GeminiClient
             $error = curl_error($ch);
             
             if ($error) {
-                throw new Exception("cURL Error: {$error}");
+                return ['error' => "cURL Error: {$error}"];
             }
             
             $result = json_decode($response, true);
             
             if ($httpCode >= 400) {
                 $errorMsg = $result['error']['message'] ?? 'Unknown error';
-                throw new Exception("Gemini API Error ({$httpCode}): {$errorMsg}");
+                return ['error' => "Gemini API Error ({$httpCode}): {$errorMsg}"];
             }
             
             return $result;
@@ -462,14 +462,14 @@ class GeminiClient
             $error = curl_error($ch);
             
             if ($error) {
-                throw new Exception("cURL Error: {$error}");
+                return ['error' => "cURL Error: {$error}", 'content' => $fullContent];
             }
             
             if ($httpCode >= 400) {
-                if ($httpCode === 429) {
-                    throw new Exception("Gemini API 限流（HTTP 429），请稍后重试");
-                }
-                throw new Exception("Gemini API Error: HTTP {$httpCode}");
+                $errorMsg = $httpCode === 429 
+                    ? "Gemini API 限流（HTTP 429），请稍后重试" 
+                    : "Gemini API Error: HTTP {$httpCode}";
+                return ['error' => $errorMsg, 'content' => $fullContent];
             }
             
             return [
@@ -504,7 +504,10 @@ class CalibreAIService
                 $this->client = new GeminiClient($apiKey, $model ?: GeminiClient::MODEL_GEMINI_25_FLASH);
                 break;
             default:
-                throw new Exception("Unsupported provider: {$provider}");
+                // 不支持的 provider，使用 Gemini 作为默认
+                echo "⚠️ Unsupported provider: {$provider}, using Gemini\n";
+                $this->client = new GeminiClient($apiKey, GeminiClient::MODEL_GEMINI_25_FLASH);
+                $this->provider = 'gemini';
         }
     }
     
