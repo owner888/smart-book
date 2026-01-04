@@ -1025,11 +1025,22 @@ function handleStreamAsk(TcpConnection $connection, Request $request): ?array
             sendSSE($connection, 'done', '');
         } catch (Exception $e) {
             // 发送错误信息给客户端，而不是让 worker 崩溃
-            echo "⚠️ API 错误: {$e->getMessage()}\n";
-            sendSSE($connection, 'error', $e->getMessage());
+            $errorMsg = $e->getMessage();
+            echo "⚠️ API 错误: {$errorMsg}\n";
+            
+            // 确保连接仍然有效
+            if ($connection->getStatus() === TcpConnection::STATUS_ESTABLISHED) {
+                sendSSE($connection, 'error', $errorMsg);
+                sendSSE($connection, 'done', '');
+            } else {
+                echo "⚠️ 连接已关闭，无法发送错误信息\n";
+            }
         }
         
-        $connection->close();
+        // 确保连接关闭
+        if ($connection->getStatus() === TcpConnection::STATUS_ESTABLISHED) {
+            $connection->close();
+        }
     });
     
     return null;

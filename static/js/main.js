@@ -220,6 +220,10 @@ async function sendMessage() {
                     } else if (currentEvent === 'content') {
                         currentContent += data;
                         updateStreamingMessage();
+                    } else if (currentEvent === 'error') {
+                        // 服务端错误
+                        currentContent = `❌ 服务端错误: ${data}`;
+                        finishStreamingMessage(true);
                     } else if (currentEvent === 'done') {
                         finishStreamingMessage();
                     }
