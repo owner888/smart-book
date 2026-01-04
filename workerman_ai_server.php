@@ -197,8 +197,8 @@ $httpWorker->onMessage = function (TcpConnection $connection, Request $request) 
     $path = $request->path();
     $method = $request->method();
     
-    // CORS 头
-    $headers = [
+    // CORS 头 (JSON)
+    $jsonHeaders = [
         'Content-Type' => 'application/json; charset=utf-8',
         'Access-Control-Allow-Origin' => '*',
         'Access-Control-Allow-Methods' => 'GET, POST, OPTIONS',
@@ -207,16 +207,32 @@ $httpWorker->onMessage = function (TcpConnection $connection, Request $request) 
     
     // 处理 OPTIONS 预检请求
     if ($method === 'OPTIONS') {
-        $connection->send(new Response(200, $headers, ''));
+        $connection->send(new Response(200, $jsonHeaders, ''));
         return;
     }
     
     try {
+        // 首页返回 chat.html
+        if ($path === '/' || $path === '/chat' || $path === '/chat.html') {
+            $chatHtmlPath = __DIR__ . '/chat.html';
+            if (file_exists($chatHtmlPath)) {
+                $html = file_get_contents($chatHtmlPath);
+                $connection->send(new Response(200, [
+                    'Content-Type' => 'text/html; charset=utf-8',
+                ], $html));
+                return;
+            }
+        }
+        
+        // API 路由
         $result = match ($path) {
-            '/' => ['status' => 'ok', 'message' => 'AI Book Assistant API', 'endpoints' => [
+            '/api' => ['status' => 'ok', 'message' => 'AI Book Assistant API', 'endpoints' => [
                 'POST /api/ask' => '书籍问答 (RAG)',
                 'POST /api/chat' => '通用聊天',
                 'POST /api/continue' => '续写章节',
+                'POST /api/stream/ask' => '书籍问答 (流式)',
+                'POST /api/stream/chat' => '通用聊天 (流式)',
+                'POST /api/stream/continue' => '续写章节 (流式)',
                 'GET /api/health' => '健康检查',
             ]],
             '/api/health' => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s')],
@@ -229,11 +245,16 @@ $httpWorker->onMessage = function (TcpConnection $connection, Request $request) 
             default => ['error' => 'Not Found', 'path' => $path],
         };
         
+        // 如果 SSE 端点返回 null，说明已经处理完毕
+        if ($result === null) {
+            return;
+        }
+        
         $statusCode = isset($result['error']) ? 404 : 200;
-        $connection->send(new Response($statusCode, $headers, json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)));
+        $connection->send(new Response($statusCode, $jsonHeaders, json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)));
         
     } catch (Exception $e) {
-        $connection->send(new Response(500, $headers, json_encode([
+        $connection->send(new Response(500, $jsonHeaders, json_encode([
             'error' => $e->getMessage(),
         ], JSON_UNESCAPED_UNICODE)));
     }
@@ -592,20 +613,22 @@ EOT;
 echo "=========================================\n";
 echo "   AI 书籍助手 Workerman 服务\n";
 echo "=========================================\n";
-echo "HTTP API:    http://localhost:8088\n";
+echo "\n";
+echo "🌐 打开浏览器访问: http://localhost:8088\n";
+echo "\n";
+echo "=========================================\n";
+echo "HTTP API:    http://localhost:8088/api\n";
 echo "WebSocket:   ws://localhost:8081\n";
 echo "=========================================\n";
 echo "\n";
 echo "API 端点:\n";
-echo "  POST /api/ask      - 书籍问答 (RAG)\n";
-echo "  POST /api/chat     - 通用聊天\n";
-echo "  POST /api/continue - 续写章节\n";
-echo "  GET  /api/health   - 健康检查\n";
-echo "\n";
-echo "WebSocket 操作:\n";
-echo "  {\"action\": \"ask\", \"question\": \"问题\"}\n";
-echo "  {\"action\": \"chat\", \"messages\": [...]}\n";
-echo "  {\"action\": \"continue\", \"prompt\": \"提示\"}\n";
+echo "  GET  /              - 聊天界面\n";
+echo "  GET  /api           - API 列表\n";
+echo "  GET  /api/health    - 健康检查\n";
+echo "  POST /api/ask       - 书籍问答 (RAG)\n";
+echo "  POST /api/chat      - 通用聊天\n";
+echo "  POST /api/continue  - 续写章节\n";
+echo "  POST /api/stream/*  - 流式端点 (SSE)\n";
 echo "\n";
 
 Worker::runAll();

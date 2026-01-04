@@ -140,8 +140,11 @@ php workerman_ai_server.php restart
 
 ### 2. 打开 Web 界面
 
+直接在浏览器访问：**http://localhost:8088**
+
+或使用命令：
 ```bash
-open chat.html
+open http://localhost:8088
 ```
 
 ### 3. API 接口
