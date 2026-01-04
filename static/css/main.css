@@ -523,3 +523,279 @@ body {
 .layui-layer-padding {
     padding: 20px !important;
 }
+
+/* ===================================
+   移动端响应式设计
+   =================================== */
+
+/* 侧边栏切换按钮（仅移动端显示） */
+.sidebar-toggle {
+    display: none;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 1000;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 侧边栏遮罩层 */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 998;
+}
+
+/* 平板 (768px - 1024px) */
+@media screen and (max-width: 1024px) {
+    .sidebar {
+        width: 260px;
+    }
+    
+    .chat-messages {
+        padding: 20px 40px;
+    }
+    
+    .chat-input-container {
+        padding: 16px 40px 20px;
+    }
+    
+    .toolbar-icon:nth-child(n+6):not(.send-btn):not(:last-child) {
+        display: none;
+    }
+}
+
+/* 手机 (小于 768px) */
+@media screen and (max-width: 768px) {
+    /* 显示汉堡菜单按钮 */
+    .sidebar-toggle {
+        display: flex;
+    }
+    
+    /* 侧边栏变为滑出式 */
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: -300px;
+        width: 280px;
+        height: 100vh;
+        z-index: 999;
+        transition: transform 0.3s ease;
+    }
+    
+    .sidebar.open {
+        transform: translateX(300px);
+    }
+    
+    .sidebar-overlay.show {
+        display: block;
+    }
+    
+    /* 主内容区占满屏幕 */
+    .main-content {
+        width: 100%;
+    }
+    
+    /* 顶部栏调整 */
+    .chat-header {
+        padding: 12px 16px 12px 60px;
+        gap: 10px;
+    }
+    
+    .chat-title-text {
+        display: none;
+    }
+    
+    .model-selector span:nth-child(2) {
+        display: none;
+    }
+    
+    .model-selector {
+        padding: 6px 10px;
+    }
+    
+    /* 聊天区域 */
+    .chat-messages {
+        padding: 16px;
+    }
+    
+    .message {
+        max-width: 100%;
+    }
+    
+    .message-user .message-content {
+        max-width: 85%;
+    }
+    
+    .message-system {
+        padding: 12px 16px;
+        font-size: 13px;
+    }
+    
+    .message-assistant .message-content {
+        font-size: 14px;
+    }
+    
+    /* 输入区域 */
+    .chat-input-container {
+        padding: 12px 16px 16px;
+    }
+    
+    .chat-input {
+        padding: 12px;
+        font-size: 16px; /* 防止 iOS 缩放 */
+        min-height: 48px;
+    }
+    
+    .chat-input-toolbar {
+        padding: 6px 8px;
+        gap: 4px;
+        flex-wrap: wrap;
+    }
+    
+    /* 隐藏部分工具栏图标 */
+    .toolbar-icon:not(:nth-child(-n+4)):not(.send-btn):not(:last-child):not(.toolbar-spacer) {
+        display: none;
+    }
+    
+    .toolbar-divider {
+        display: none;
+    }
+    
+    .toolbar-icon {
+        width: 36px;
+        height: 36px;
+    }
+    
+    .send-btn {
+        width: 40px;
+        height: 40px;
+    }
+    
+    /* Layer 弹窗移动端适配 */
+    .layui-layer {
+        width: 90% !important;
+        left: 5% !important;
+        margin-left: 0 !important;
+    }
+}
+
+/* 超小屏手机 (小于 480px) */
+@media screen and (max-width: 480px) {
+    .sidebar {
+        width: 100%;
+        left: -100%;
+    }
+    
+    .sidebar.open {
+        transform: translateX(100%);
+    }
+    
+    .chat-header {
+        padding: 10px 12px 10px 52px;
+    }
+    
+    .chat-title-avatar {
+        width: 24px;
+        height: 24px;
+        font-size: 12px;
+    }
+    
+    .header-icon {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .chat-messages {
+        padding: 12px;
+    }
+    
+    .message-avatar {
+        width: 28px;
+        height: 28px;
+        font-size: 14px;
+    }
+    
+    .chat-input-container {
+        padding: 10px 12px 12px;
+    }
+    
+    .chat-input {
+        padding: 10px;
+    }
+    
+    .chat-input-toolbar {
+        padding: 4px 6px;
+    }
+    
+    /* 只显示最基本的工具 */
+    .toolbar-icon:not(:nth-child(-n+3)):not(.send-btn):not(:last-child):not(.toolbar-spacer) {
+        display: none;
+    }
+}
+
+/* 横屏模式优化 */
+@media screen and (max-height: 500px) and (orientation: landscape) {
+    .chat-messages {
+        padding: 10px 20px;
+    }
+    
+    .chat-input-container {
+        padding: 8px 20px 10px;
+    }
+    
+    .chat-input {
+        min-height: 40px;
+        max-height: 100px;
+    }
+    
+    .message-system {
+        padding: 10px 14px;
+    }
+}
+
+/* 触摸设备优化 */
+@media (hover: none) and (pointer: coarse) {
+    .toolbar-icon {
+        min-width: 44px;
+        min-height: 44px;
+    }
+    
+    .send-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+    
+    .assistant-item {
+        padding: 14px 12px;
+    }
+    
+    .sidebar-tab {
+        padding: 18px 15px;
+    }
+}
+
+/* 安全区域适配 (iPhone X 等) */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .chat-input-container {
+        padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    }
+    
+    @media screen and (max-width: 768px) {
+        .chat-input-container {
+            padding-bottom: calc(12px + env(safe-area-inset-bottom));
+        }
+    }
+}
