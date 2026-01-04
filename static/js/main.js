@@ -1,0 +1,504 @@
+/**
+ * AI 书籍助手 - 主脚本
+ */
+
+// 配置
+const API_BASE = 'http://localhost:8088';
+
+// 当前状态
+let currentAssistant = 'book';
+let isLoading = false;
+let conversationHistory = [];
+let currentMessageDiv = null;
+let currentContent = '';
+let currentSources = null;
+let abortController = null;
+
+// 助手配置
+const assistants = {
+    book: {
+        name: '书籍问答助手',
+        avatar: '📚',
+        color: '#4caf50',
+        systemPrompt: '我是书籍问答助手，可以帮你分析《西游记》的内容。你可以问我关于书中人物、情节、主题等问题。',
+        action: 'ask',
+        useRAG: true
+    },
+    continue: {
+        name: '续写小说',
+        avatar: '✍️',
+        color: '#ff9800',
+        systemPrompt: '我是小说续写助手，擅长模仿《西游记》的章回体风格续写故事。告诉我你想要的情节设定，我会为你创作新章节。',
+        action: 'continue',
+        useRAG: false
+    },
+    chat: {
+        name: '通用聊天',
+        avatar: '💬',
+        color: '#2196f3',
+        systemPrompt: '我是通用聊天助手，可以和你讨论任何话题。',
+        action: 'chat',
+        useRAG: false
+    },
+    default: {
+        name: 'Default Assistant',
+        avatar: '⭐',
+        color: '#9c27b0',
+        systemPrompt: '我是默认助手，有什么可以帮你的吗？',
+        action: 'chat',
+        useRAG: false
+    }
+};
+
+// DOM 元素
+let chatMessages, chatInput, sendBtn, headerAvatar, headerTitle, systemPrompt;
+
+// 初始化
+document.addEventListener('DOMContentLoaded', () => {
+    // 获取 DOM 元素
+    chatMessages = document.getElementById('chatMessages');
+    chatInput = document.getElementById('chatInput');
+    sendBtn = document.getElementById('sendBtn');
+    headerAvatar = document.getElementById('headerAvatar');
+    headerTitle = document.getElementById('headerTitle');
+    systemPrompt = document.getElementById('systemPrompt');
+    
+    // 切换助手
+    document.querySelectorAll('.assistant-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const assistant = item.dataset.assistant;
+            switchAssistant(assistant);
+        });
+    });
+    
+    // 发送消息
+    sendBtn.addEventListener('click', sendMessage);
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+    
+    // 自动调整输入框高度
+    chatInput.addEventListener('input', () => {
+        chatInput.style.height = 'auto';
+        chatInput.style.height = Math.min(chatInput.scrollHeight, 200) + 'px';
+    });
+    
+    // 标签切换
+    document.querySelectorAll('.sidebar-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+        });
+    });
+});
+
+// 切换助手
+function switchAssistant(assistantId) {
+    currentAssistant = assistantId;
+    const assistant = assistants[assistantId];
+    
+    // 更新 UI
+    document.querySelectorAll('.assistant-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.assistant === assistantId);
+    });
+    
+    headerAvatar.textContent = assistant.avatar;
+    headerAvatar.style.background = assistant.color;
+    headerTitle.textContent = assistant.name;
+    systemPrompt.textContent = assistant.systemPrompt;
+    
+    // 清空对话
+    conversationHistory = [];
+    chatMessages.innerHTML = `
+        <div class="message">
+            <div class="message-system">${assistant.systemPrompt}</div>
+        </div>
+    `;
+}
+
+// 发送消息（SSE 流式）
+async function sendMessage() {
+    const message = chatInput.value.trim();
+    if (!message || isLoading) return;
+    
+    isLoading = true;
+    sendBtn.disabled = true;
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+    
+    // 添加用户消息
+    addMessage('user', message);
+    conversationHistory.push({ role: 'user', content: message });
+    
+    // 重置流式状态
+    currentContent = '';
+    currentSources = null;
+    
+    // 创建空的助手消息容器
+    const assistant = assistants[currentAssistant];
+    currentMessageDiv = document.createElement('div');
+    currentMessageDiv.className = 'message message-assistant';
+    currentMessageDiv.innerHTML = `
+        <div class="message-avatar" style="background: ${assistant.color};">${assistant.avatar}</div>
+        <div class="message-content">
+            <div class="typing-indicator">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>
+        </div>
+    `;
+    chatMessages.appendChild(currentMessageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // 构建请求
+    let url, body;
+    if (assistant.action === 'ask') {
+        url = `${API_BASE}/api/stream/ask`;
+        body = { question: message, top_k: 8 };
+    } else if (assistant.action === 'continue') {
+        url = `${API_BASE}/api/stream/continue`;
+        body = { prompt: message };
+    } else {
+        url = `${API_BASE}/api/stream/chat`;
+        body = { messages: conversationHistory };
+    }
+    
+    // 使用 fetch + SSE
+    try {
+        abortController = new AbortController();
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: abortController.signal
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            
+            // 解析 SSE 事件
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            
+            let currentEvent = null;
+            for (const line of lines) {
+                if (line.startsWith('event: ')) {
+                    currentEvent = line.slice(7);
+                } else if (line.startsWith('data: ')) {
+                    const data = line.slice(6);
+                    
+                    if (currentEvent === 'sources') {
+                        try {
+                            currentSources = JSON.parse(data);
+                        } catch (e) {}
+                    } else if (currentEvent === 'cached') {
+                        // 语义缓存命中提示
+                        try {
+                            const cacheInfo = JSON.parse(data);
+                            if (cacheInfo.hit) {
+                                layer.msg(`📦 语义缓存命中！\n原问题: "${cacheInfo.original_question}"`, { time: 2500 });
+                            }
+                        } catch (e) {
+                            layer.msg('📦 来自缓存，秒回！', { time: 1500 });
+                        }
+                    } else if (currentEvent === 'content') {
+                        currentContent += data;
+                        updateStreamingMessage();
+                    } else if (currentEvent === 'done') {
+                        finishStreamingMessage();
+                    }
+                    currentEvent = null;
+                }
+            }
+        }
+        
+        // 处理缓冲区剩余内容
+        if (buffer.trim()) {
+            finishStreamingMessage();
+        }
+        
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            currentContent += '\n\n⏹️ 已停止生成';
+        } else {
+            currentContent = `❌ 请求失败: ${error.message}\n\n请确保 Workerman 服务已启动:\n\`php workerman_ai_server.php start\``;
+        }
+        finishStreamingMessage(error.name !== 'AbortError');
+    } finally {
+        isLoading = false;
+        sendBtn.disabled = false;
+        abortController = null;
+    }
+}
+
+// 更新流式消息显示
+function updateStreamingMessage() {
+    if (!currentMessageDiv) return;
+    
+    const contentDiv = currentMessageDiv.querySelector('.message-content');
+    
+    // 渲染 Markdown（实时）
+    const htmlContent = marked.parse(currentContent);
+    contentDiv.innerHTML = htmlContent;
+    
+    // 滚动到底部
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// 完成流式消息
+function finishStreamingMessage(isError = false) {
+    if (!currentMessageDiv) return;
+    
+    const contentDiv = currentMessageDiv.querySelector('.message-content');
+    
+    // 渲染最终内容
+    const htmlContent = isError 
+        ? escapeHtml(currentContent).replace(/\n/g, '<br>') 
+        : marked.parse(currentContent);
+    
+    // 添加检索来源
+    let sourcesHtml = '';
+    if (currentSources && currentSources.length > 0) {
+        sourcesHtml = `
+            <div class="sources-container">
+                <div class="sources-title">📚 检索来源 (${currentSources.length})</div>
+                ${currentSources.slice(0, 3).map(s => `
+                    <div class="source-item">
+                        <span class="source-score">${s.score}%</span>
+                        ${escapeHtml(s.text)}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+    
+    contentDiv.innerHTML = htmlContent + sourcesHtml;
+    
+    // 保存到历史
+    if (!isError) {
+        conversationHistory.push({ role: 'assistant', content: currentContent });
+    }
+    
+    // 重置状态
+    currentMessageDiv = null;
+    currentContent = '';
+    currentSources = null;
+    
+    // 滚动到底部
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// 添加消息
+function addMessage(role, content, sources = null, isError = false) {
+    const assistant = assistants[currentAssistant];
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message message-${role}`;
+    
+    if (role === 'user') {
+        messageDiv.innerHTML = `
+            <div class="message-content">${escapeHtml(content)}</div>
+        `;
+    } else {
+        const htmlContent = isError ? escapeHtml(content).replace(/\n/g, '<br>') : marked.parse(content);
+        let sourcesHtml = '';
+        
+        if (sources && sources.length > 0) {
+            sourcesHtml = `
+                <div class="sources-container">
+                    <div class="sources-title">📚 检索来源 (${sources.length})</div>
+                    ${sources.slice(0, 3).map(s => `
+                        <div class="source-item">
+                            <span class="source-score">${s.score}%</span>
+                            ${escapeHtml(s.text)}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        messageDiv.innerHTML = `
+            <div class="message-avatar" style="background: ${assistant.color};">${assistant.avatar}</div>
+            <div class="message-content">
+                ${htmlContent}
+                ${sourcesHtml}
+            </div>
+        `;
+    }
+    
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// 添加加载消息
+function addLoadingMessage() {
+    const id = 'loading-' + Date.now();
+    const assistant = assistants[currentAssistant];
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message message-assistant';
+    messageDiv.id = id;
+    messageDiv.innerHTML = `
+        <div class="message-avatar" style="background: ${assistant.color};">${assistant.avatar}</div>
+        <div class="message-content">
+            <div class="typing-indicator">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>
+        </div>
+    `;
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return id;
+}
+
+// 移除加载消息
+function removeLoadingMessage(id) {
+    const element = document.getElementById(id);
+    if (element) element.remove();
+}
+
+// HTML 转义
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ===== 工具栏功能 =====
+
+// 显示提示（使用 layui.layer.msg 无图标模式）
+function showTip(feature) {
+    layer.msg(`🔧 ${feature} 功能开发中...`);
+}
+
+// 切换网页搜索
+let webSearchEnabled = false;
+function toggleWebSearch() {
+    webSearchEnabled = !webSearchEnabled;
+    const btn = event.currentTarget;
+    btn.classList.toggle('active', webSearchEnabled);
+    layer.msg(webSearchEnabled ? '🌐 网页搜索已开启' : '网页搜索已关闭');
+}
+
+// 显示 AI 工具菜单
+function showAITools() {
+    layui.layer.open({
+        type: 1,
+        title: 'AI 工具',
+        area: ['300px', '250px'],
+        shadeClose: true,
+        content: `
+            <div style="padding: 20px;">
+                <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请帮我总结这段内容')">📝 内容总结</div>
+                <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请帮我翻译成英文')">🌍 翻译文本</div>
+                <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请帮我解释这段代码')">💻 解释代码</div>
+                <div style="padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请帮我改写这段文字，使其更加正式')">✏️ 改写文本</div>
+            </div>
+        `
+    });
+}
+
+// 显示快捷指令
+function showQuickCommands() {
+    layui.layer.open({
+        type: 1,
+        title: '⚡ 快捷指令',
+        area: ['350px', '300px'],
+        shadeClose: true,
+        content: `
+            <div style="padding: 20px;">
+                <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('孙悟空大闹天宫的经过')">🐵 大闹天宫</div>
+                <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('介绍一下唐僧师徒四人')">👨‍👩‍👦‍👦 师徒四人</div>
+                <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('西游记中有哪些著名的妖怪')">👹 著名妖怪</div>
+                <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('续写一个唐僧师徒穿越到现代的章节')">✍️ 现代穿越</div>
+                <div style="padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('以诗词形式总结西游记的主题')">📜 诗词总结</div>
+            </div>
+        `
+    });
+}
+
+// 显示提示词模板
+function showPromptTemplates() {
+    layui.layer.open({
+        type: 1,
+        title: '📄 提示词模板',
+        area: ['400px', '350px'],
+        shadeClose: true,
+        content: `
+            <div style="padding: 20px;">
+                <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请用简洁的语言解释：')">📖 简洁解释</div>
+                <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请从以下几个方面分析：1. 背景 2. 人物 3. 主题 4. 影响')">📊 多维分析</div>
+                <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请模仿原著风格续写以下情节：')">🎭 风格模仿</div>
+                <div style="margin-bottom: 12px; padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请对比分析以下两个角色的异同：')">⚖️ 对比分析</div>
+                <div style="padding: 12px; background: #2d2d2d; border-radius: 8px; cursor: pointer;" onclick="insertPrompt('请以时间线的形式梳理以下事件：')">📅 时间线</div>
+            </div>
+        `
+    });
+}
+
+// 插入提示词
+function insertPrompt(text) {
+    chatInput.value = text;
+    chatInput.focus();
+    layui.layer.closeAll();
+}
+
+// 全屏切换
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+        layer.msg('⛶ 已进入全屏模式');
+    } else {
+        document.exitFullscreen();
+        layer.msg('⛶ 已退出全屏模式');
+    }
+}
+
+// 清空对话
+function clearChat() {
+    layer.confirm('确定要清空当前对话吗？', {
+        btn: ['确定', '取消'],
+        title: '清空对话'
+    }, function(index) {
+        conversationHistory = [];
+        const assistant = assistants[currentAssistant];
+        chatMessages.innerHTML = `
+            <div class="message">
+                <div class="message-system">${assistant.systemPrompt}</div>
+            </div>
+        `;
+        layer.close(index);
+        layer.msg('🗑️ 对话已清空');
+    });
+}
+
+// 代码模式切换
+let codeMode = false;
+function toggleCodeMode() {
+    codeMode = !codeMode;
+    const btn = event.currentTarget;
+    btn.classList.toggle('active', codeMode);
+    if (codeMode) {
+        chatInput.placeholder = '输入代码或技术问题...';
+        layer.msg('💻 代码模式已开启');
+    } else {
+        chatInput.placeholder = 'Type your message here, press Enter to send';
+        layer.msg('代码模式已关闭');
+    }
+}

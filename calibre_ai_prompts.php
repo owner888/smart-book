@@ -10,6 +10,21 @@
 // OpenAI API 客户端
 // ===================================
 
+/**
+ * 安全关闭 curl handle（兼容 PHP 7.x 和 8.0+）
+ * @param resource|\CurlHandle $ch curl handle
+ */
+function safe_curl_close(mixed $ch): void
+{
+    if (PHP_VERSION_ID < 80000) {
+        // PHP 7.x: curl_init 返回 resource
+        if (is_resource($ch)) {
+            curl_close($ch);
+        }
+    }
+    // PHP 8.0+: curl_init 返回 CurlHandle 对象，会自动销毁
+}
+
 class OpenAIClient
 {
     private string $apiKey;
@@ -141,10 +156,7 @@ class OpenAIClient
             
             return $result;
         } finally {
-            // PHP 8.0+ CurlHandle 会自动销毁，但显式关闭以兼容旧版本
-            if (is_resource($ch)) {
-                curl_close($ch);
-            }
+            safe_curl_close($ch);
         }
     }
     
@@ -224,7 +236,7 @@ class OpenAIClient
                 'metadata' => $metadata,
             ];
         } finally {
-            unset($ch); // PHP 8.0+ 自动销毁 CurlHandle
+            safe_curl_close($ch);
         }
     }
     
@@ -375,7 +387,7 @@ class GeminiClient
             
             return $result;
         } finally {
-            unset($ch); // PHP 8.0+ 自动销毁 CurlHandle
+            safe_curl_close($ch);
         }
     }
     
@@ -463,7 +475,7 @@ class GeminiClient
                 'metadata' => $metadata,
             ];
         } finally {
-            unset($ch); // PHP 8.0+ 自动销毁 CurlHandle
+            safe_curl_close($ch);
         }
     }
 }
@@ -1048,7 +1060,7 @@ class AsyncCurlManager
                     
                     // 清理
                     curl_multi_remove_handle(self::$multiHandle, $ch);
-                    curl_close($ch);
+                    safe_curl_close($ch);
                     unset(self::$handles[$requestId]);
                     break;
                 }
@@ -1064,7 +1076,7 @@ class AsyncCurlManager
         if (isset(self::$handles[$requestId])) {
             $ch = self::$handles[$requestId]['ch'];
             curl_multi_remove_handle(self::$multiHandle, $ch);
-            curl_close($ch);
+            safe_curl_close($ch);
             unset(self::$handles[$requestId]);
         }
     }
@@ -1089,7 +1101,7 @@ class AsyncCurlManager
         
         foreach (self::$handles as $handle) {
             curl_multi_remove_handle(self::$multiHandle, $handle['ch']);
-            curl_close($handle['ch']);
+            safe_curl_close($handle['ch']);
         }
         self::$handles = [];
         

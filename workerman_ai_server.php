@@ -54,6 +54,199 @@ define('DEFAULT_BOOK_CACHE', '/Users/kaka/Documents/西游记_index.json');
 define('DEFAULT_BOOK_PATH', '/Users/kaka/Documents/西游记.epub');
 
 // ===================================
+// Redis 向量存储 (基于 Redis 8.0 vectorset)
+// ===================================
+
+class RedisVectorStore
+{
+    private static ?RedisClient $redis = null;
+    private static string $vectorKey = 'smartbook:vectors';
+    private static string $chunksKey = 'smartbook:chunks';
+    private static int $dimension = 768;
+    private static bool $initialized = false;
+    
+    /**
+     * 初始化（在 Worker 启动时调用）
+     */
+    public static function init(RedisClient $redis): void
+    {
+        self::$redis = $redis;
+        self::$initialized = true;
+    }
+    
+    /**
+     * 从 JSON 索引导入向量到 Redis
+     */
+    public static function importFromJson(string $jsonPath, ?callable $onProgress = null): void
+    {
+        if (!self::$redis || !file_exists($jsonPath)) {
+            return;
+        }
+        
+        $data = json_decode(file_get_contents($jsonPath), true);
+        if (!$data || empty($data['chunks'])) {
+            return;
+        }
+        
+        $total = count($data['chunks']);
+        $imported = 0;
+        
+        foreach ($data['chunks'] as $i => $chunk) {
+            $chunkId = "chunk:{$i}";
+            
+            // 存储文本内容（Hash）
+            self::$redis->hSet(self::$chunksKey, $chunkId, json_encode([
+                'text' => $chunk['text'],
+                'index' => $i,
+            ], JSON_UNESCAPED_UNICODE));
+            
+            // 存储向量（使用 VADD）
+            if (!empty($chunk['embedding'])) {
+                $embedding = $chunk['embedding'];
+                // 构建 VADD 命令参数
+                $args = [self::$vectorKey, $chunkId, 'VALUES'];
+                foreach ($embedding as $val) {
+                    $args[] = (string)$val;
+                }
+                
+                // 使用 rawCommand 执行 VADD
+                call_user_func_array([$_SERVER['REDIS_RAW'] ?? self::$redis, 'rawCommand'], 
+                    array_merge(['VADD'], $args));
+            }
+            
+            $imported++;
+            if ($onProgress && $imported % 100 === 0) {
+                $onProgress($imported, $total);
+            }
+        }
+        
+        echo "✅ 向量导入完成: {$imported}/{$total}\n";
+    }
+    
+    /**
+     * 检查是否已导入
+     */
+    public static function isImported(callable $callback): void
+    {
+        if (!self::$redis) {
+            $callback(false, 0);
+            return;
+        }
+        
+        self::$redis->rawCommand('VCARD', self::$vectorKey, function($count) use ($callback) {
+            $callback($count > 0, $count ?? 0);
+        });
+    }
+    
+    /**
+     * 异步向量搜索
+     */
+    public static function search(array $queryVector, int $topK, callable $callback): void
+    {
+        if (!self::$redis) {
+            $callback([]);
+            return;
+        }
+        
+        // 构建 VSIM 命令
+        $args = ['VSIM', self::$vectorKey];
+        foreach ($queryVector as $val) {
+            $args[] = (string)$val;
+        }
+        $args[] = 'COUNT';
+        $args[] = (string)$topK;
+        
+        // 执行向量搜索
+        $cb = function($results) use ($callback) {
+            if (!$results || !is_array($results)) {
+                $callback([]);
+                return;
+            }
+            
+            // 解析结果并获取文本
+            $chunkIds = [];
+            for ($i = 0; $i < count($results); $i += 2) {
+                $chunkIds[] = [
+                    'id' => $results[$i],
+                    'score' => $results[$i + 1] ?? 1.0,
+                ];
+            }
+            
+            // 获取文本内容
+            self::getChunksText($chunkIds, $callback);
+        };
+        
+        // 使用 call_user_func_array 调用 rawCommand
+        $args[] = $cb;
+        call_user_func_array([self::$redis, 'rawCommand'], $args);
+    }
+    
+    /**
+     * 获取 chunk 文本内容
+     */
+    private static function getChunksText(array $chunkIds, callable $callback): void
+    {
+        if (empty($chunkIds)) {
+            $callback([]);
+            return;
+        }
+        
+        $results = [];
+        $pending = count($chunkIds);
+        
+        foreach ($chunkIds as $item) {
+            self::$redis->hGet(self::$chunksKey, $item['id'], function($data) use ($item, &$results, &$pending, $callback) {
+                if ($data) {
+                    $chunk = json_decode($data, true);
+                    $results[] = [
+                        'chunk' => $chunk,
+                        'score' => floatval($item['score']),
+                    ];
+                }
+                
+                $pending--;
+                if ($pending === 0) {
+                    // 按相似度排序
+                    usort($results, fn($a, $b) => $b['score'] <=> $a['score']);
+                    $callback($results);
+                }
+            });
+        }
+    }
+    
+    /**
+     * 清除所有向量数据
+     */
+    public static function clear(): void
+    {
+        if (!self::$redis) {
+            return;
+        }
+        
+        self::$redis->del(self::$vectorKey);
+        self::$redis->del(self::$chunksKey);
+    }
+    
+    /**
+     * 获取统计信息
+     */
+    public static function getStats(callable $callback): void
+    {
+        if (!self::$redis) {
+            $callback(['initialized' => false]);
+            return;
+        }
+        
+        self::$redis->rawCommand('VCARD', self::$vectorKey, function($count) use ($callback) {
+            $callback([
+                'initialized' => true,
+                'vector_count' => $count ?? 0,
+            ]);
+        });
+    }
+}
+
+// ===================================
 // Redis 缓存服务
 // ===================================
 
@@ -180,13 +373,24 @@ class CacheService
             return;
         }
         
+        // 验证 embedding
+        if (empty($embedding) || !is_array($embedding)) {
+            echo "⚠️ 无效的 embedding，跳过添加到语义索引\n";
+            return;
+        }
+        
+        // 打印前3个维度用于验证
+        $sample = array_slice($embedding, 0, 3);
+        echo "📝 添加到语义索引: \"{$question}\" (dim: " . count($embedding) . ", sample: [" . implode(', ', array_map(fn($v) => round($v, 4), $sample)) . "...])\n";
+        
         $indexKey = CACHE_PREFIX . 'semantic_index';
         self::$redis->get($indexKey, function($result) use ($indexKey, $cacheKey, $embedding, $question) {
             $index = $result ? (json_decode($result, true) ?? []) : [];
             
             // 添加新项（限制最多100个）
+            // 注意：不要只存前几个维度，要存完整的 embedding
             $index[$cacheKey] = [
-                'embedding' => $embedding,
+                'embedding' => $embedding,  // 完整的 embedding 数组
                 'question' => $question,
             ];
             
@@ -195,27 +399,74 @@ class CacheService
                 $index = array_slice($index, -100, 100, true);
             }
             
-            self::$redis->setex($indexKey, CACHE_TTL * 2, json_encode($index, JSON_UNESCAPED_UNICODE));
+            $json = json_encode($index);
+            if ($json === false) {
+                echo "⚠️ JSON 编码失败: " . json_last_error_msg() . "\n";
+                return;
+            }
+            
+            echo "📦 语义索引大小: " . strlen($json) . " bytes, 条目数: " . count($index) . "\n";
+            self::$redis->setex($indexKey, CACHE_TTL * 2, $json);
         });
     }
     
     /**
      * 查找语义相似的缓存
+     * @param float $threshold 相似度阈值，默认 0.96（96%），要求非常高的相似度才命中
      */
-    public static function findSimilarCache(array $queryEmbedding, array $index, float $threshold = 0.92): ?string
+    public static function findSimilarCache(array $queryEmbedding, array $index, float $threshold = 0.96): ?array
     {
+        // 检查 queryEmbedding 是否有效
+        if (empty($queryEmbedding) || !is_array($queryEmbedding)) {
+            echo "⚠️ 查询向量无效\n";
+            return null;
+        }
+        
+        $queryDim = count($queryEmbedding);
+        $querySample = array_slice($queryEmbedding, 0, 3);
+        echo "🔎 开始语义搜索，查询向量维度: {$queryDim}，sample: [" . implode(', ', array_map(fn($v) => round($v, 4), $querySample)) . "...]，索引数量: " . count($index) . "\n";
+        
         $bestMatch = null;
-        $bestScore = 0;
+        $bestScore = -1;
+        $bestQuestion = '';
         
         foreach ($index as $cacheKey => $item) {
+            // 确保 embedding 存在且为数组
+            if (!isset($item['embedding']) || !is_array($item['embedding'])) {
+                echo "⚠️ 跳过无效缓存项: {$cacheKey}\n";
+                continue;
+            }
+            
+            $itemDim = count($item['embedding']);
+            
+            // 确保嵌入向量维度匹配
+            if ($queryDim !== $itemDim) {
+                echo "⚠️ 维度不匹配: {$queryDim} vs {$itemDim} ({$item['question']})\n";
+                continue;
+            }
+            
             $similarity = self::cosineSimilarity($queryEmbedding, $item['embedding']);
+            
+            // 调试日志
+            echo "   📊 相似度: " . round($similarity * 100, 2) . "% - \"{$item['question']}\"\n";
+            
             if ($similarity > $threshold && $similarity > $bestScore) {
                 $bestScore = $similarity;
                 $bestMatch = $cacheKey;
+                $bestQuestion = $item['question'] ?? '';
             }
         }
         
-        return $bestMatch;
+        if ($bestMatch) {
+            return [
+                'key' => $bestMatch,
+                'score' => $bestScore,
+                'question' => $bestQuestion,
+            ];
+        }
+        
+        echo "   ❌ 没有找到相似度 > {$threshold} 的缓存\n";
+        return null;
     }
     
     /**
@@ -223,7 +474,8 @@ class CacheService
      */
     private static function cosineSimilarity(array $a, array $b): float
     {
-        if (count($a) !== count($b) || empty($a)) {
+        $len = count($a);
+        if ($len !== count($b) || $len === 0) {
             return 0.0;
         }
         
@@ -231,16 +483,21 @@ class CacheService
         $normA = 0.0;
         $normB = 0.0;
         
-        for ($i = 0; $i < count($a); $i++) {
-            $dotProduct += $a[$i] * $b[$i];
-            $normA += $a[$i] * $a[$i];
-            $normB += $b[$i] * $b[$i];
+        // 使用固定循环避免每次计算 count
+        for ($i = 0; $i < $len; $i++) {
+            $valA = (float)($a[$i] ?? 0);
+            $valB = (float)($b[$i] ?? 0);
+            
+            $dotProduct += $valA * $valB;
+            $normA += $valA * $valA;
+            $normB += $valB * $valB;
         }
         
         $normA = sqrt($normA);
         $normB = sqrt($normB);
         
-        if ($normA == 0 || $normB == 0) {
+        // 避免除以零
+        if ($normA < 1e-10 || $normB < 1e-10) {
             return 0.0;
         }
         
@@ -408,6 +665,26 @@ $httpWorker->name = 'AI-HTTP-Server';
 $httpWorker->onWorkerStart = function ($worker) {
     try {
         CacheService::init();
+        
+        // 初始化 Redis 向量存储
+        $redis = CacheService::getRedis();
+        if ($redis) {
+            RedisVectorStore::init($redis);
+            
+            // 只在 Worker 0 中检查是否需要导入向量
+            if ($worker->id === 0) {
+                RedisVectorStore::isImported(function($imported, $count) {
+                    if (!$imported && file_exists(DEFAULT_BOOK_CACHE)) {
+                        echo "📥 正在导入向量到 Redis...\n";
+                        // 注意：导入是同步的，会阻塞启动
+                        // RedisVectorStore::importFromJson(DEFAULT_BOOK_CACHE);
+                        echo "💡 提示: 访问 /api/vectors/import 来导入向量\n";
+                    } else {
+                        echo "📊 Redis 向量数量: {$count}\n";
+                    }
+                });
+            }
+        }
     } catch (Exception $e) {
         echo "⚠️  Redis 连接失败: {$e->getMessage()}\n";
         echo "   服务将在无缓存模式下运行\n";
@@ -448,6 +725,31 @@ $httpWorker->onMessage = function (TcpConnection $connection, Request $request) 
             }
         }
         
+        // 静态文件处理
+        if (str_starts_with($path, '/static/')) {
+            $filePath = __DIR__ . $path;
+            if (file_exists($filePath)) {
+                $ext = pathinfo($filePath, PATHINFO_EXTENSION);
+                $mimeTypes = [
+                    'css' => 'text/css',
+                    'js' => 'application/javascript',
+                    'png' => 'image/png',
+                    'jpg' => 'image/jpeg',
+                    'gif' => 'image/gif',
+                    'svg' => 'image/svg+xml',
+                    'ico' => 'image/x-icon',
+                    'woff' => 'font/woff',
+                    'woff2' => 'font/woff2',
+                ];
+                $contentType = $mimeTypes[$ext] ?? 'application/octet-stream';
+                $connection->send(new Response(200, [
+                    'Content-Type' => $contentType,
+                    'Cache-Control' => 'max-age=86400',
+                ], file_get_contents($filePath)));
+                return;
+            }
+        }
+        
         // API 路由
         $result = match ($path) {
             '/api' => ['status' => 'ok', 'message' => 'AI Book Assistant API', 'endpoints' => [
@@ -461,6 +763,8 @@ $httpWorker->onMessage = function (TcpConnection $connection, Request $request) 
             ]],
             '/api/health' => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s'), 'redis' => CacheService::isConnected()],
             '/api/cache/stats' => handleCacheStats($connection),
+            '/api/vectors/stats' => handleVectorStats($connection),
+            '/api/vectors/import' => handleVectorImport($connection),
             '/api/ask' => handleAskWithCache($connection, $request),
             '/api/chat' => handleChat($request),
             '/api/continue' => handleContinue($request),
@@ -576,6 +880,64 @@ function handleCacheStats(TcpConnection $connection): ?array
     return null; // 异步处理
 }
 
+/**
+ * 向量统计
+ */
+function handleVectorStats(TcpConnection $connection): ?array
+{
+    $jsonHeaders = [
+        'Content-Type' => 'application/json; charset=utf-8',
+        'Access-Control-Allow-Origin' => '*',
+    ];
+    
+    RedisVectorStore::getStats(function($stats) use ($connection, $jsonHeaders) {
+        $connection->send(new Response(200, $jsonHeaders, json_encode($stats, JSON_UNESCAPED_UNICODE)));
+    });
+    
+    return null;
+}
+
+/**
+ * 导入向量到 Redis
+ */
+function handleVectorImport(TcpConnection $connection): ?array
+{
+    $jsonHeaders = [
+        'Content-Type' => 'application/json; charset=utf-8',
+        'Access-Control-Allow-Origin' => '*',
+    ];
+    
+    if (!file_exists(DEFAULT_BOOK_CACHE)) {
+        $connection->send(new Response(404, $jsonHeaders, json_encode([
+            'error' => 'Index file not found',
+            'path' => DEFAULT_BOOK_CACHE,
+        ], JSON_UNESCAPED_UNICODE)));
+        return null;
+    }
+    
+    // 同步导入（会阻塞）
+    try {
+        $data = json_decode(file_get_contents(DEFAULT_BOOK_CACHE), true);
+        $total = count($data['chunks'] ?? []);
+        
+        RedisVectorStore::importFromJson(DEFAULT_BOOK_CACHE, function($imported, $total) {
+            echo "📥 导入进度: {$imported}/{$total}\n";
+        });
+        
+        $connection->send(new Response(200, $jsonHeaders, json_encode([
+            'success' => true,
+            'message' => '向量导入完成',
+            'total' => $total,
+        ], JSON_UNESCAPED_UNICODE)));
+    } catch (Exception $e) {
+        $connection->send(new Response(500, $jsonHeaders, json_encode([
+            'error' => $e->getMessage(),
+        ], JSON_UNESCAPED_UNICODE)));
+    }
+    
+    return null;
+}
+
 // ===================================
 // SSE 流式端点
 // ===================================
@@ -607,18 +969,24 @@ function handleStreamAsk(TcpConnection $connection, Request $request): ?array
         $embedder = new EmbeddingClient(GEMINI_API_KEY);
         $queryEmbedding = $embedder->embedQuery($question);
         
-        // 查找语义相似的缓存（相似度 > 92%）
-        $similarCacheKey = CacheService::findSimilarCache($queryEmbedding, $semanticIndex, 0.92);
+        // 查找语义相似的缓存（相似度 > 96%）
+        $similar = CacheService::findSimilarCache($queryEmbedding, $semanticIndex, 0.96);
         
-        if ($similarCacheKey) {
+        if ($similar) {
             // 找到语义相似的缓存，获取缓存内容
-            CacheService::get($similarCacheKey, function($cached) use ($connection, $semanticIndex, $similarCacheKey, $question, $queryEmbedding, $topK) {
+            $cacheKey = $similar['key'];
+            $originalQuestion = $similar['question'];
+            $matchScore = round($similar['score'] * 100, 1);
+            
+            echo "🎯 语义缓存命中 ({$matchScore}%): \"{$question}\" ≈ \"{$originalQuestion}\"\n";
+            
+            CacheService::get($cacheKey, function($cached) use ($connection, $originalQuestion, $matchScore, $question, $queryEmbedding, $topK) {
                 if ($cached) {
-                    $originalQuestion = $semanticIndex[$similarCacheKey]['question'] ?? '相似问题';
                     sendSSE($connection, 'sources', json_encode($cached['sources'], JSON_UNESCAPED_UNICODE));
                     sendSSE($connection, 'cached', json_encode([
                         'hit' => true,
                         'original_question' => $originalQuestion,
+                        'similarity' => $matchScore,
                     ], JSON_UNESCAPED_UNICODE));
                     sendSSE($connection, 'content', $cached['answer']);
                     sendSSE($connection, 'done', '');
