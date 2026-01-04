@@ -466,6 +466,9 @@ class GeminiClient
             }
             
             if ($httpCode >= 400) {
+                if ($httpCode === 429) {
+                    throw new Exception("Gemini API 限流（HTTP 429），请稍后重试");
+                }
                 throw new Exception("Gemini API Error: HTTP {$httpCode}");
             }
             
