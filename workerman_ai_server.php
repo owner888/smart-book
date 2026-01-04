@@ -22,7 +22,7 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
     exit(1);
 }
 
-require_once __DIR__ . '/calibre_rag.php';
+require_once __DIR__ . '/rag.php';
 
 use Workerman\Worker;
 use Workerman\Connection\TcpConnection;
@@ -40,18 +40,25 @@ define('REDIS_PORT', 6379);
 define('CACHE_TTL', 3600); // 缓存 1 小时
 define('CACHE_PREFIX', 'smartbook:');
 
-// 从 ~/.zprofile 读取 API Key
-$zprofile = file_get_contents('/Users/kaka/.zprofile');
-preg_match('/GEMINI_API_KEY="([^"]+)"/', $zprofile, $matches);
-define('GEMINI_API_KEY', $matches[1] ?? '');
+// 配置：从环境变量或配置文件读取
+$home = getenv('HOME') ?: $_SERVER['HOME'] ?? '';
+
+// API Key：优先从环境变量读取，否则从 ~/.zprofile 读取
+$apiKey = getenv('GEMINI_API_KEY');
+if (!$apiKey && $home && file_exists("{$home}/.zprofile")) {
+    $zprofile = file_get_contents("{$home}/.zprofile");
+    preg_match('/GEMINI_API_KEY="([^"]+)"/', $zprofile, $matches);
+    $apiKey = $matches[1] ?? '';
+}
+define('GEMINI_API_KEY', $apiKey);
 
 if (empty(GEMINI_API_KEY)) {
-    die("错误: 无法获取 GEMINI_API_KEY\n");
+    die("错误: 无法获取 GEMINI_API_KEY，请设置环境变量或在 ~/.zprofile 中配置\n");
 }
 
-// 默认书籍索引缓存
-define('DEFAULT_BOOK_CACHE', '/Users/kaka/Documents/西游记_index.json');
-define('DEFAULT_BOOK_PATH', '/Users/kaka/Documents/西游记.epub');
+// 默认书籍配置（使用项目内 books 目录，可通过环境变量覆盖）
+define('DEFAULT_BOOK_CACHE', getenv('BOOK_CACHE') ?: __DIR__ . '/books/西游记_index.json');
+define('DEFAULT_BOOK_PATH', getenv('BOOK_PATH') ?: __DIR__ . '/books/西游记.epub');
 
 // ===================================
 // Redis 向量存储 (基于 Redis 8.0 vectorset)
@@ -62,8 +69,6 @@ class RedisVectorStore
     private static ?RedisClient $redis = null;
     private static string $vectorKey = 'smartbook:vectors';
     private static string $chunksKey = 'smartbook:chunks';
-    private static int $dimension = 768;
-    private static bool $initialized = false;
     
     /**
      * 初始化（在 Worker 启动时调用）
@@ -71,7 +76,6 @@ class RedisVectorStore
     public static function init(RedisClient $redis): void
     {
         self::$redis = $redis;
-        self::$initialized = true;
     }
     
     /**

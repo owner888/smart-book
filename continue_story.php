@@ -6,7 +6,7 @@
 require_once __DIR__ . '/calibre_rag.php';
 
 // 从 ~/.zprofile 读取 API Key
-$zprofile = file_get_contents('/Users/kaka/.zprofile');
+$zprofile = file_get_contents(getenv('HOME') . '/.zprofile');
 preg_match('/GEMINI_API_KEY="([^"]+)"/', $zprofile, $matches);
 $apiKey = $matches[1] ?? '';
 

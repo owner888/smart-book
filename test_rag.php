@@ -6,7 +6,7 @@
 require_once __DIR__ . '/calibre_rag.php';
 
 // 从 ~/.zprofile 读取 API Key
-$zprofile = file_get_contents('/Users/kaka/.zprofile');
+$zprofile = file_get_contents(getenv('HOME') . '/.zprofile');
 preg_match('/GEMINI_API_KEY="([^"]+)"/', $zprofile, $matches);
 $apiKey = $matches[1] ?? '';
 
@@ -20,8 +20,8 @@ echo "=== RAG 书籍助手测试 ===\n\n";
 $assistant = new BookRAGAssistant($apiKey);
 
 // 加载书籍（使用缓存加速后续加载）
-$epubPath = '/Users/kaka/Documents/西游记.epub';
-$cacheFile = '/Users/kaka/Documents/西游记_index.json';
+$epubPath = __DIR__ . '/books/西游记.epub';
+$cacheFile = __DIR__ . '/books/西游记_index.json';
 
 $assistant->loadBook($epubPath, $cacheFile);
 

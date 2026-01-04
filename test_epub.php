@@ -6,7 +6,7 @@
 require_once __DIR__ . '/calibre_ai_prompts.php';
 
 // 从 ~/.zprofile 读取 API Key
-$zprofile = file_get_contents('/Users/kaka/.zprofile');
+$zprofile = file_get_contents(getenv('HOME') . '/.zprofile');
 preg_match('/GEMINI_API_KEY="([^"]+)"/', $zprofile, $matches);
 $apiKey = $matches[1] ?? '';
 
@@ -58,7 +58,7 @@ function extractEpubText(string $epubPath, int $maxLength = 50000): string
 }
 
 // EPUB 文件路径
-$epubPath = '/Users/kaka/Documents/西游记.epub';
+$epubPath = __DIR__ . '/books/西游记.epub';
 
 echo "=== EPUB 阅读器 AI 测试 ===\n\n";
 echo "📖 正在读取: {$epubPath}\n\n";
