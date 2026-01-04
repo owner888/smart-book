@@ -197,11 +197,17 @@ php continue_story.php
 
 ## 技术栈
 
-- **后端**: PHP 8.0+, Workerman
-- **AI**: Google Gemini 2.5 Flash
-- **检索**: RAG (关键词 + 向量混合检索)
-- **前端**: Layui, Marked.js
-- **向量**: Gemini text-embedding-004
+| 类别 | 技术 | 说明 |
+|------|------|------|
+| **后端框架** | PHP 8.0+ | 高性能 PHP |
+| **HTTP 服务** | Workerman | 异步事件驱动服务器 |
+| **AI 模型** | Gemini 2.5 Flash | Google 最新大语言模型 |
+| **向量嵌入** | text-embedding-004 | Gemini 文本向量化 |
+| **检索策略** | RAG 混合检索 | 关键词 (60%) + 向量 (40%) |
+| **流式传输** | SSE | Server-Sent Events |
+| **前端框架** | Layui 2.9 | 暗黑主题 UI 组件 |
+| **Markdown** | Marked.js | 实时渲染 AI 响应 |
+| **数据格式** | JSON | API 通信 + 索引缓存 |
 
 ## License
 
