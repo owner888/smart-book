@@ -490,46 +490,70 @@ function handleStreamAsk(TcpConnection $connection, Request $request): ?array
         'Access-Control-Allow-Origin' => '*',
     ];
     
-    // 发送 SSE 头
-    $connection->send(new Response(200, $headers, ''));
+    $cacheKey = CacheService::makeKey('stream_ask', $question . ':' . $topK);
     
-    // 检索相关内容
-    $embedder = new EmbeddingClient(GEMINI_API_KEY);
-    $queryEmbedding = $embedder->embedQuery($question);
+    // 尝试从缓存获取
+    CacheService::get($cacheKey, function($cached) use ($connection, $question, $topK, $cacheKey, $headers) {
+        // 发送 SSE 头
+        $connection->send(new Response(200, $headers, ''));
+        
+        if ($cached) {
+            // 缓存命中：发送缓存的来源和回答
+            sendSSE($connection, 'sources', json_encode($cached['sources'], JSON_UNESCAPED_UNICODE));
+            sendSSE($connection, 'cached', 'true');
+            sendSSE($connection, 'content', $cached['answer']);
+            sendSSE($connection, 'done', '');
+            $connection->close();
+            return;
+        }
+        
+        // 缓存未命中：执行检索和生成
+        $embedder = new EmbeddingClient(GEMINI_API_KEY);
+        $queryEmbedding = $embedder->embedQuery($question);
+        
+        $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
+        $results = $vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
+        
+        // 发送检索来源
+        $sources = array_map(fn($r) => [
+            'text' => mb_substr($r['chunk']['text'], 0, 200) . '...',
+            'score' => round($r['score'] * 100, 1),
+        ], $results);
+        sendSSE($connection, 'sources', json_encode($sources, JSON_UNESCAPED_UNICODE));
+        
+        // 构建上下文
+        $context = "";
+        foreach ($results as $i => $result) {
+            $context .= "【片段 " . ($i + 1) . "】\n" . $result['chunk']['text'] . "\n\n";
+        }
+        
+        // 流式生成回答，同时收集完整内容用于缓存
+        $fullAnswer = '';
+        $gemini = AIService::getGemini();
+        $gemini->chatStream(
+            [
+                ['role' => 'system', 'content' => "你是一个书籍分析助手。根据以下内容回答问题，使用中文：\n\n{$context}"],
+                ['role' => 'user', 'content' => $question],
+            ],
+            function ($text, $chunk, $isThought) use ($connection, &$fullAnswer) {
+                if (!$isThought && $text) {
+                    $fullAnswer .= $text;
+                    sendSSE($connection, 'content', $text);
+                }
+            },
+            ['enableSearch' => false]
+        );
+        
+        // 保存到缓存
+        CacheService::set($cacheKey, [
+            'sources' => $sources,
+            'answer' => $fullAnswer,
+        ]);
+        
+        sendSSE($connection, 'done', '');
+        $connection->close();
+    });
     
-    $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
-    $results = $vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
-    
-    // 发送检索来源
-    $sources = array_map(fn($r) => [
-        'text' => mb_substr($r['chunk']['text'], 0, 200) . '...',
-        'score' => round($r['score'] * 100, 1),
-    ], $results);
-    sendSSE($connection, 'sources', json_encode($sources, JSON_UNESCAPED_UNICODE));
-    
-    // 构建上下文
-    $context = "";
-    foreach ($results as $i => $result) {
-        $context .= "【片段 " . ($i + 1) . "】\n" . $result['chunk']['text'] . "\n\n";
-    }
-    
-    // 流式生成回答
-    $gemini = AIService::getGemini();
-    $gemini->chatStream(
-        [
-            ['role' => 'system', 'content' => "你是一个书籍分析助手。根据以下内容回答问题，使用中文：\n\n{$context}"],
-            ['role' => 'user', 'content' => $question],
-        ],
-        function ($text, $chunk, $isThought) use ($connection) {
-            if (!$isThought && $text) {
-                sendSSE($connection, 'content', $text);
-            }
-        },
-        ['enableSearch' => false]
-    );
-    
-    sendSSE($connection, 'done', '');
-    $connection->close();
     return null;
 }
 
