@@ -894,6 +894,16 @@
                                 try {
                                     currentSources = JSON.parse(data);
                                 } catch (e) {}
+                            } else if (currentEvent === 'cached') {
+                                // 语义缓存命中提示
+                                try {
+                                    const cacheInfo = JSON.parse(data);
+                                    if (cacheInfo.hit) {
+                                        layer.msg(`📦 语义缓存命中！\n原问题: "${cacheInfo.original_question}"`, { time: 2500 });
+                                    }
+                                } catch (e) {
+                                    layer.msg('📦 来自缓存，秒回！', { time: 1500 });
+                                }
                             } else if (currentEvent === 'content') {
                                 currentContent += data;
                                 updateStreamingMessage();

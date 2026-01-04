@@ -150,6 +150,102 @@ class CacheService
             ]);
         });
     }
+    
+    /**
+     * 获取所有语义缓存的向量
+     */
+    public static function getSemanticIndex(callable $callback): void
+    {
+        if (!self::$connected || !self::$redis) {
+            $callback([]);
+            return;
+        }
+        
+        $indexKey = CACHE_PREFIX . 'semantic_index';
+        self::$redis->get($indexKey, function($result) use ($callback) {
+            if ($result) {
+                $callback(json_decode($result, true) ?? []);
+            } else {
+                $callback([]);
+            }
+        });
+    }
+    
+    /**
+     * 添加到语义索引
+     */
+    public static function addToSemanticIndex(string $cacheKey, array $embedding, string $question): void
+    {
+        if (!self::$connected || !self::$redis) {
+            return;
+        }
+        
+        $indexKey = CACHE_PREFIX . 'semantic_index';
+        self::$redis->get($indexKey, function($result) use ($indexKey, $cacheKey, $embedding, $question) {
+            $index = $result ? (json_decode($result, true) ?? []) : [];
+            
+            // 添加新项（限制最多100个）
+            $index[$cacheKey] = [
+                'embedding' => $embedding,
+                'question' => $question,
+            ];
+            
+            // 保持最多100个缓存项
+            if (count($index) > 100) {
+                $index = array_slice($index, -100, 100, true);
+            }
+            
+            self::$redis->setex($indexKey, CACHE_TTL * 2, json_encode($index, JSON_UNESCAPED_UNICODE));
+        });
+    }
+    
+    /**
+     * 查找语义相似的缓存
+     */
+    public static function findSimilarCache(array $queryEmbedding, array $index, float $threshold = 0.92): ?string
+    {
+        $bestMatch = null;
+        $bestScore = 0;
+        
+        foreach ($index as $cacheKey => $item) {
+            $similarity = self::cosineSimilarity($queryEmbedding, $item['embedding']);
+            if ($similarity > $threshold && $similarity > $bestScore) {
+                $bestScore = $similarity;
+                $bestMatch = $cacheKey;
+            }
+        }
+        
+        return $bestMatch;
+    }
+    
+    /**
+     * 计算余弦相似度
+     */
+    private static function cosineSimilarity(array $a, array $b): float
+    {
+        if (count($a) !== count($b) || empty($a)) {
+            return 0.0;
+        }
+        
+        $dotProduct = 0.0;
+        $normA = 0.0;
+        $normB = 0.0;
+        
+        for ($i = 0; $i < count($a); $i++) {
+            $dotProduct += $a[$i] * $b[$i];
+            $normA += $a[$i] * $a[$i];
+            $normB += $b[$i] * $b[$i];
+        }
+        
+        $normA = sqrt($normA);
+        $normB = sqrt($normB);
+        
+        if ($normA == 0 || $normB == 0) {
+            return 0.0;
+        }
+        
+        return $dotProduct / ($normA * $normB);
+    }
 }
 
 // ===================================
@@ -490,71 +586,96 @@ function handleStreamAsk(TcpConnection $connection, Request $request): ?array
         'Access-Control-Allow-Origin' => '*',
     ];
     
-    $cacheKey = CacheService::makeKey('stream_ask', $question . ':' . $topK);
-    
-    // 尝试从缓存获取
-    CacheService::get($cacheKey, function($cached) use ($connection, $question, $topK, $cacheKey, $headers) {
+    // 获取语义索引，实现语义缓存
+    CacheService::getSemanticIndex(function($semanticIndex) use ($connection, $question, $topK, $headers) {
         // 发送 SSE 头
         $connection->send(new Response(200, $headers, ''));
         
-        if ($cached) {
-            // 缓存命中：发送缓存的来源和回答
-            sendSSE($connection, 'sources', json_encode($cached['sources'], JSON_UNESCAPED_UNICODE));
-            sendSSE($connection, 'cached', 'true');
-            sendSSE($connection, 'content', $cached['answer']);
-            sendSSE($connection, 'done', '');
-            $connection->close();
-            return;
-        }
-        
-        // 缓存未命中：执行检索和生成
+        // 生成问题的嵌入向量
         $embedder = new EmbeddingClient(GEMINI_API_KEY);
         $queryEmbedding = $embedder->embedQuery($question);
         
-        $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
-        $results = $vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
+        // 查找语义相似的缓存（相似度 > 92%）
+        $similarCacheKey = CacheService::findSimilarCache($queryEmbedding, $semanticIndex, 0.92);
         
-        // 发送检索来源
-        $sources = array_map(fn($r) => [
-            'text' => mb_substr($r['chunk']['text'], 0, 200) . '...',
-            'score' => round($r['score'] * 100, 1),
-        ], $results);
-        sendSSE($connection, 'sources', json_encode($sources, JSON_UNESCAPED_UNICODE));
-        
-        // 构建上下文
-        $context = "";
-        foreach ($results as $i => $result) {
-            $context .= "【片段 " . ($i + 1) . "】\n" . $result['chunk']['text'] . "\n\n";
+        if ($similarCacheKey) {
+            // 找到语义相似的缓存，获取缓存内容
+            CacheService::get($similarCacheKey, function($cached) use ($connection, $semanticIndex, $similarCacheKey, $question, $queryEmbedding, $topK) {
+                if ($cached) {
+                    $originalQuestion = $semanticIndex[$similarCacheKey]['question'] ?? '相似问题';
+                    sendSSE($connection, 'sources', json_encode($cached['sources'], JSON_UNESCAPED_UNICODE));
+                    sendSSE($connection, 'cached', json_encode([
+                        'hit' => true,
+                        'original_question' => $originalQuestion,
+                    ], JSON_UNESCAPED_UNICODE));
+                    sendSSE($connection, 'content', $cached['answer']);
+                    sendSSE($connection, 'done', '');
+                    $connection->close();
+                    return;
+                }
+                // 缓存不存在（已过期），继续正常处理
+                handleStreamAskGenerate($connection, $question, $queryEmbedding, $topK);
+            });
+            return;
         }
         
-        // 流式生成回答，同时收集完整内容用于缓存
-        $fullAnswer = '';
-        $gemini = AIService::getGemini();
-        $gemini->chatStream(
-            [
-                ['role' => 'system', 'content' => "你是一个书籍分析助手。根据以下内容回答问题，使用中文：\n\n{$context}"],
-                ['role' => 'user', 'content' => $question],
-            ],
-            function ($text, $chunk, $isThought) use ($connection, &$fullAnswer) {
-                if (!$isThought && $text) {
-                    $fullAnswer .= $text;
-                    sendSSE($connection, 'content', $text);
-                }
-            },
-            ['enableSearch' => false]
-        );
-        
-        // 保存到缓存
-        CacheService::set($cacheKey, [
-            'sources' => $sources,
-            'answer' => $fullAnswer,
-        ]);
-        
-        sendSSE($connection, 'done', '');
-        $connection->close();
+        // 没有相似缓存，执行正常处理
+        handleStreamAskGenerate($connection, $question, $queryEmbedding, $topK);
     });
     
     return null;
+}
+
+/**
+ * 执行检索和生成回答（内部函数）
+ */
+function handleStreamAskGenerate(TcpConnection $connection, string $question, array $queryEmbedding, int $topK): void
+{
+    $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
+    $results = $vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
+    
+    // 发送检索来源
+    $sources = array_map(fn($r) => [
+        'text' => mb_substr($r['chunk']['text'], 0, 200) . '...',
+        'score' => round($r['score'] * 100, 1),
+    ], $results);
+    sendSSE($connection, 'sources', json_encode($sources, JSON_UNESCAPED_UNICODE));
+    
+    // 构建上下文
+    $context = "";
+    foreach ($results as $i => $result) {
+        $context .= "【片段 " . ($i + 1) . "】\n" . $result['chunk']['text'] . "\n\n";
+    }
+    
+    // 流式生成回答，同时收集完整内容用于缓存
+    $fullAnswer = '';
+    $gemini = AIService::getGemini();
+    $gemini->chatStream(
+        [
+            ['role' => 'system', 'content' => "你是一个书籍分析助手。根据以下内容回答问题，使用中文：\n\n{$context}"],
+            ['role' => 'user', 'content' => $question],
+        ],
+        function ($text, $chunk, $isThought) use ($connection, &$fullAnswer) {
+            if (!$isThought && $text) {
+                $fullAnswer .= $text;
+                sendSSE($connection, 'content', $text);
+            }
+        },
+        ['enableSearch' => false]
+    );
+    
+    // 生成缓存键并保存
+    $cacheKey = CacheService::makeKey('stream_ask', $question . ':' . $topK);
+    CacheService::set($cacheKey, [
+        'sources' => $sources,
+        'answer' => $fullAnswer,
+    ]);
+    
+    // 添加到语义索引（用于语义缓存匹配）
+    CacheService::addToSemanticIndex($cacheKey, $queryEmbedding, $question);
+    
+    sendSSE($connection, 'done', '');
+    $connection->close();
 }
 
 function handleStreamChat(TcpConnection $connection, Request $request): ?array
