@@ -77,23 +77,25 @@ spl_autoload_register(function ($class) {
         'GeminiClient' => __DIR__ . '/src/AI/GeminiClient.php',
         'AsyncGeminiClient' => __DIR__ . '/src/AI/AsyncGeminiClient.php',
         'AsyncCurlManager' => __DIR__ . '/src/AI/AsyncCurlManager.php',
-        'OpenAIClient' => __DIR__ . '/src/AI/OpenAIClient.php',
+        'OpenAIClient' => __DIR__ . '/ai_prompts.php',  // 临时保留
         'AIService' => __DIR__ . '/src/AI/AIService.php',
         
         // 缓存
         'CacheService' => __DIR__ . '/src/Cache/CacheService.php',
         'RedisVectorStore' => __DIR__ . '/src/Cache/RedisVectorStore.php',
         
-        // RAG (临时：仍从旧文件加载)
-        'EmbeddingClient' => __DIR__ . '/rag.php',
-        'DocumentChunker' => __DIR__ . '/rag.php',
-        'VectorStore' => __DIR__ . '/rag.php',
-        'BookRAGAssistant' => __DIR__ . '/rag.php',
-        'EpubParser' => __DIR__ . '/rag.php',
+        // RAG
+        'EmbeddingClient' => __DIR__ . '/src/RAG/EmbeddingClient.php',
+        'DocumentChunker' => __DIR__ . '/src/RAG/DocumentChunker.php',
+        'VectorStore' => __DIR__ . '/src/RAG/VectorStore.php',
+        'BookRAGAssistant' => __DIR__ . '/src/RAG/BookRAGAssistant.php',
+        
+        // 解析器
+        'EpubParser' => __DIR__ . '/src/Parser/EpubParser.php',
         
         // 提示词
         'CalibreAIPrompts' => __DIR__ . '/src/Prompts/CalibreAIPrompts.php',
-        'CalibreAIService' => __DIR__ . '/ai_prompts.php',
+        'CalibreAIService' => __DIR__ . '/ai_prompts.php',  // 临时保留
     ];
     
     static $loaded = [];
