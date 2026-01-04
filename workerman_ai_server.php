@@ -31,34 +31,87 @@ use Workerman\Protocols\Http\Response;
 use Workerman\Redis\Client as RedisClient;
 
 // ===================================
-// 配置
+// 加载 .env 文件
 // ===================================
 
-// Redis 配置
-define('REDIS_HOST', '127.0.0.1');
-define('REDIS_PORT', 6379);
-define('CACHE_TTL', 3600); // 缓存 1 小时
-define('CACHE_PREFIX', 'smartbook:');
-
-// 配置：从环境变量或配置文件读取
-$home = getenv('HOME') ?: $_SERVER['HOME'] ?? '';
-
-// API Key：优先从环境变量读取，否则从 ~/.zprofile 读取
-$apiKey = getenv('GEMINI_API_KEY');
-if (!$apiKey && $home && file_exists("{$home}/.zprofile")) {
-    $zprofile = file_get_contents("{$home}/.zprofile");
-    preg_match('/GEMINI_API_KEY="([^"]+)"/', $zprofile, $matches);
-    $apiKey = $matches[1] ?? '';
+/**
+ * 从 .env 文件加载配置（不使用系统环境变量）
+ * @return array 配置键值对
+ */
+function loadEnv(string $path): array
+{
+    $config = [];
+    
+    if (!file_exists($path)) {
+        return $config;
+    }
+    
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        // 跳过注释
+        if (str_starts_with(trim($line), '#')) {
+            continue;
+        }
+        
+        // 解析 KEY=VALUE
+        if (strpos($line, '=') !== false) {
+            [$key, $value] = explode('=', $line, 2);
+            $key = trim($key);
+            $value = trim($value);
+            
+            // 移除引号
+            $value = trim($value, '"\'');
+            
+            $config[$key] = $value;
+        }
+    }
+    
+    return $config;
 }
-define('GEMINI_API_KEY', $apiKey);
+
+/**
+ * 获取配置值（只从 .env 读取，不使用系统环境变量）
+ */
+function env(string $key, mixed $default = ''): mixed
+{
+    return $GLOBALS['_env_config'][$key] ?? $default;
+}
+
+// 加载 .env 文件到全局变量（不污染系统环境变量）
+$GLOBALS['_env_config'] = loadEnv(__DIR__ . '/.env');
+
+// ===================================
+// 加载配置文件
+// ===================================
+
+$appConfig = require __DIR__ . '/config/app.php';
+$dbConfig = require __DIR__ . '/config/database.php';
+$promptsConfig = require __DIR__ . '/config/prompts.php';
+
+// 设置全局配置常量
+define('REDIS_HOST', $dbConfig['redis']['host']);
+define('REDIS_PORT', $dbConfig['redis']['port']);
+define('CACHE_TTL', $dbConfig['cache']['ttl']);
+define('CACHE_PREFIX', $dbConfig['redis']['prefix']);
+
+define('GEMINI_API_KEY', $appConfig['ai']['gemini']['api_key']);
 
 if (empty(GEMINI_API_KEY)) {
-    die("错误: 无法获取 GEMINI_API_KEY，请设置环境变量或在 ~/.zprofile 中配置\n");
+    die("❌ 错误: 无法获取 GEMINI_API_KEY\n" .
+        "   请在 smart-book/.env 文件中配置:\n" .
+        "   GEMINI_API_KEY=your_api_key_here\n\n" .
+        "   或复制模板: cp .env.example .env\n");
 }
 
-// 默认书籍配置（使用项目内 books 目录，可通过环境变量覆盖）
-define('DEFAULT_BOOK_CACHE', getenv('BOOK_CACHE') ?: __DIR__ . '/books/西游记_index.json');
-define('DEFAULT_BOOK_PATH', getenv('BOOK_PATH') ?: __DIR__ . '/books/西游记.epub');
+define('DEFAULT_BOOK_CACHE', $appConfig['books']['default']['cache']);
+define('DEFAULT_BOOK_PATH', $appConfig['books']['default']['path']);
+
+// 全局配置变量（供函数访问）
+$GLOBALS['config'] = [
+    'app' => $appConfig,
+    'db' => $dbConfig,
+    'prompts' => $promptsConfig,
+];
 
 // ===================================
 // Redis 向量存储 (基于 Redis 8.0 vectorset)
@@ -1121,15 +1174,23 @@ function AsyncHandleStreamAsk(TcpConnection $connection, Request $request): ?arr
  */
 function handleStreamAskGenerate(TcpConnection $connection, string $question, array $queryEmbedding, int $topK): void
 {
-    // Python 原版提示词格式 (from llm_book.py create_initial_messages)
-    $bookInfo = "I wish to discuss the following book. The book is: 《西游记》 by 吴承恩.";
-    $bookInfo .= "\n---------------\n\n";
+    $prompts = $GLOBALS['config']['prompts'];
+    $libraryPrompts = $prompts['library'];
     
-    // 使用 Python 原版的 system prompt
+    // 使用配置文件中的提示词模板（Python 原版格式）
+    $bookInfo = $libraryPrompts['book_intro'];  // "I wish to discuss the following book. "
+    $bookInfo .= str_replace(
+        ['{which}', '{title}', '{authors}'],
+        ['', '《西游记》', '吴承恩'],
+        $libraryPrompts['book_template']  // "The {which}book is: {title} by {authors}."
+    );
+    $bookInfo .= $libraryPrompts['separator'];  // "\n---------------\n\n"
+    
+    // 组装 system prompt
     $systemPrompt = $bookInfo;
-    $systemPrompt .= " When you answer the questions use markdown formatting for the answers wherever possible.";
-    $systemPrompt .= " If the specified book is unknown to you instead of answering the following questions just say the book is unknown.";
-    $systemPrompt .= " 使用中文回答。";
+    $systemPrompt .= $libraryPrompts['markdown_instruction'];  // " When you answer the questions..."
+    $systemPrompt .= $libraryPrompts['unknown_single'];  // " If the specified book is unknown..."
+    $systemPrompt .= ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
     
     // 第一步：先让 AI 判断是否认识这本书
     echo "🤔 询问 AI 是否认识这本书...\n";
@@ -1149,12 +1210,8 @@ function handleStreamAskGenerate(TcpConnection $connection, string $question, ar
         }
     }
     
-    // 检测 AI 是否说"不认识"这本书
-    $unknownPatterns = [
-        'unknown', 'unfamiliar', 'not familiar', 'don\'t know', 'do not know',
-        '不认识', '不熟悉', '未知', '不了解', '没有了解', '不清楚',
-        'book is unknown', 'books are unknown',
-    ];
+    // 使用配置文件中的关键词检测 AI 是否说"不认识"
+    $unknownPatterns = $prompts['unknown_patterns'];
     
     $isUnknown = false;
     $lowerAnswer = mb_strtolower($aiAnswer);
