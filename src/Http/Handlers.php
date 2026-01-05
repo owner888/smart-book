@@ -7,6 +7,7 @@ use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
 use SmartBook\AI\AIService;
+use SmartBook\AI\TokenCounter;
 use SmartBook\Cache\CacheService;
 use SmartBook\Cache\RedisVectorStore;
 use SmartBook\RAG\EmbeddingClient;
@@ -499,13 +500,26 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
                     sendSSE($connection, $isThought ? 'thinking' : 'content', $text);
                 }
             },
-            function ($fullAnswer) use ($connection, $chatId, $context) {
+            function ($fullAnswer, $usageMetadata = null, $usedModel = null) use ($connection, $chatId, $context, $model) {
                 // 保存助手回复
                 if ($chatId) {
                     CacheService::addToChatHistory($chatId, ['role' => 'assistant', 'content' => $fullAnswer]);
                     // 检查是否需要进行上下文压缩
                     triggerSummarizationIfNeeded($chatId, $context);
                 }
+                
+                // 发送 token 使用统计
+                if ($usageMetadata) {
+                    $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
+                    sendSSE($connection, 'usage', json_encode([
+                        'tokens' => $costInfo['tokens'],
+                        'cost' => $costInfo['cost'],
+                        'cost_formatted' => TokenCounter::formatCost($costInfo['cost']),
+                        'currency' => $costInfo['currency'],
+                        'model' => $usedModel ?? $model,
+                    ], JSON_UNESCAPED_UNICODE));
+                }
+                
                 sendSSE($connection, 'done', '');
                 $connection->close();
             },

@@ -987,3 +987,33 @@ body {
     font-size: 11px;
     font-family: inherit;
 }
+
+/* ===== Token 使用统计 ===== */
+.usage-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 16px;
+    padding: 12px 14px;
+    background: linear-gradient(135deg, rgba(33, 150, 243, 0.08), rgba(76, 175, 80, 0.08));
+    border: 1px solid rgba(33, 150, 243, 0.2);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.usage-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.usage-item:first-child {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.usage-item:last-child {
+    color: var(--accent-green);
+    font-weight: 500;
+}

@@ -26,6 +26,7 @@ async function sendMessage() {
     ChatState.currentSources = null;
     ChatState.currentSummaryInfo = null;
     ChatState.currentSystemPrompt = null;
+    ChatState.currentUsage = null;
     
     // 创建空的助手消息容器
     const assistant = ChatAssistants.assistants[ChatState.currentAssistant];
@@ -137,6 +138,11 @@ function handleSSEEvent(eventType, data) {
         try { ChatState.currentSources = JSON.parse(data); } catch (e) {}
     } else if (eventType === 'summary_used') {
         try { ChatState.currentSummaryInfo = JSON.parse(data); } catch (e) {}
+    } else if (eventType === 'usage') {
+        try { 
+            ChatState.currentUsage = JSON.parse(data);
+            updateUsageDisplay(ChatState.currentUsage);
+        } catch (e) {}
     } else if (eventType === 'cached') {
         try {
             const cacheInfo = JSON.parse(data);
@@ -259,7 +265,22 @@ function finishStreamingMessage(isError = false) {
         `;
     }
     
-    contentDiv.innerHTML = systemPromptHtml + thinkingHtml + htmlContent + summaryHtml + sourcesHtml;
+    // 使用统计
+    let usageHtml = '';
+    if (ChatState.currentUsage) {
+        const usage = ChatState.currentUsage;
+        const tokens = usage.tokens || {};
+        usageHtml = `
+            <div class="usage-container">
+                <span class="usage-item">📊 Tokens: ${formatTokens(tokens.total || 0)}</span>
+                <span class="usage-item">↗ ${formatTokens(tokens.input || 0)}</span>
+                <span class="usage-item">↙ ${formatTokens(tokens.output || 0)}</span>
+                <span class="usage-item">💰 ${usage.cost_formatted || 'Free'}</span>
+            </div>
+        `;
+    }
+    
+    contentDiv.innerHTML = systemPromptHtml + thinkingHtml + htmlContent + summaryHtml + sourcesHtml + usageHtml;
     
     if (!isError) {
         ChatState.getCurrentState().history.push({ role: 'assistant', content: ChatState.currentContent });
@@ -291,6 +312,22 @@ function addMessage(role, content) {
     
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// 格式化 token 数量
+function formatTokens(num) {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(2) + 'M';
+    } else if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toString();
+}
+
+// 更新使用统计显示（实时）
+function updateUsageDisplay(usage) {
+    // 可以在此添加实时统计更新逻辑，比如更新底部状态栏
+    console.log('📊 Usage:', usage);
 }
 
 // 清空对话

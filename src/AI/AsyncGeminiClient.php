@@ -45,9 +45,11 @@ class AsyncGeminiClient
         $fullContent = '';
         $buffer = '';
         $functionCalls = [];
+        $usageMetadata = null;
         $onToolCall = $options['onToolCall'] ?? null;
+        $onUsage = $options['onUsage'] ?? null;
         
-        $onData = function($rawData) use (&$fullContent, &$buffer, &$functionCalls, $onChunk, $onToolCall) {
+        $onData = function($rawData) use (&$fullContent, &$buffer, &$functionCalls, &$usageMetadata, $onChunk, $onToolCall, $onUsage) {
             $buffer .= $rawData;
             while (($pos = strpos($buffer, "\n")) !== false) {
                 $line = trim(substr($buffer, 0, $pos));
@@ -57,6 +59,14 @@ class AsyncGeminiClient
                 
                 $chunk = json_decode(substr($line, 6), true);
                 if (!$chunk || !isset($chunk['candidates'])) continue;
+                
+                // 提取 usageMetadata
+                if (isset($chunk['usageMetadata'])) {
+                    $usageMetadata = $chunk['usageMetadata'];
+                    if ($onUsage) {
+                        $onUsage($usageMetadata);
+                    }
+                }
                 
                 foreach ($chunk['candidates'] as $candidate) {
                     foreach ($candidate['content']['parts'] ?? [] as $part) {
@@ -87,7 +97,7 @@ class AsyncGeminiClient
             }
         };
         
-        $onFinish = function($success, $error) use (&$fullContent, &$functionCalls, $onComplete, $onError, $messages, $options, $onChunk) {
+        $onFinish = function($success, $error) use (&$fullContent, &$functionCalls, &$usageMetadata, $onComplete, $onError, $messages, $options, $onChunk, $model) {
             if (!$success) {
                 $onError ? $onError($error) : null;
                 return;
@@ -97,7 +107,8 @@ class AsyncGeminiClient
             if (!empty($functionCalls)) {
                 $this->handleFunctionCalls($functionCalls, $messages, $fullContent, $onChunk, $onComplete, $onError, $options);
             } else {
-                $onComplete($fullContent);
+                // 返回完整内容和使用统计
+                $onComplete($fullContent, $usageMetadata, $model);
             }
         };
         
