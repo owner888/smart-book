@@ -229,8 +229,8 @@ function handleGetAssistants(): array
     $libraryPrompts = $prompts['library'];
     
     // 从 EPUB 文件读取书籍元数据
-    $bookTitle = '未知书籍';
-    $bookAuthors = '未知作者';
+    $bookTitle = $prompts['defaults']['unknown_book'] ?? '未知书籍';
+    $bookAuthors = $prompts['defaults']['unknown_author'] ?? '未知作者';
     
     if (defined('DEFAULT_BOOK_PATH') && file_exists(DEFAULT_BOOK_PATH)) {
         $metadata = \SmartBook\Parser\EpubParser::extractMetadata(DEFAULT_BOOK_PATH);
@@ -254,12 +254,15 @@ function handleGetAssistants(): array
         . ($libraryPrompts['unknown_single'] ?? ' If the specified book is unknown to you instead of answering the following questions just say the book is unknown.')
         . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
     
+    // 构建书籍助手描述（使用模板替换书名）
+    $bookDescription = str_replace('{title}', $bookTitle, $prompts['book']['description'] ?? '我是书籍问答助手，可以帮你分析{title}的内容。你可以问我关于书中人物、情节、主题等问题。');
+    
     return [
         'book' => [
             'name' => '书籍问答助手',
             'avatar' => '📚',
             'color' => '#4caf50',
-            'description' => "我是书籍问答助手，可以帮你分析{$bookTitle}的内容。你可以问我关于书中人物、情节、主题等问题。",
+            'description' => $bookDescription,
             'systemPrompt' => $bookSystemPrompt,
             'action' => 'ask',
         ],
@@ -267,7 +270,7 @@ function handleGetAssistants(): array
             'name' => '续写小说',
             'avatar' => '✍️',
             'color' => '#ff9800',
-            'description' => '我是小说续写助手，擅长模仿《西游记》的章回体风格续写故事。告诉我你想要的情节设定，我会为你创作新章节。',
+            'description' => $prompts['continue']['description'] ?? '我是小说续写助手，擅长模仿《西游记》的章回体风格续写故事。告诉我你想要的情节设定，我会为你创作新章节。',
             'systemPrompt' => $prompts['continue']['system'] ?? '',
             'action' => 'continue',
         ],
@@ -275,7 +278,7 @@ function handleGetAssistants(): array
             'name' => '通用聊天',
             'avatar' => '💬',
             'color' => '#2196f3',
-            'description' => '我是通用聊天助手，可以和你讨论任何话题。',
+            'description' => $prompts['chat']['description'] ?? '我是通用聊天助手，可以和你讨论任何话题。',
             'systemPrompt' => $prompts['chat']['system'] ?? '',
             'action' => 'chat',
         ],
@@ -355,12 +358,18 @@ function triggerSummarizationIfNeeded(string $chatId, array $context): void
             if (empty($history)) return;
             
             // 构建摘要请求
+            $prompts = $GLOBALS['config']['prompts'];
+            $summarizeConfig = $prompts['summarize'] ?? [];
+            $roleNames = $prompts['role_names'] ?? ['user' => '用户', 'assistant' => 'AI'];
+            
             $conversationText = "";
             if ($context['summary']) {
-                $conversationText .= "【之前的摘要】\n" . $context['summary']['text'] . "\n\n【新对话】\n";
+                $prevLabel = $summarizeConfig['previous_summary_label'] ?? '【之前的摘要】';
+                $newLabel = $summarizeConfig['new_conversation_label'] ?? '【新对话】';
+                $conversationText .= "{$prevLabel}\n" . $context['summary']['text'] . "\n\n{$newLabel}\n";
             }
             foreach ($history as $msg) {
-                $role = $msg['role'] === 'user' ? '用户' : 'AI';
+                $role = $roleNames[$msg['role']] ?? ($msg['role'] === 'user' ? '用户' : 'AI');
                 $conversationText .= "{$role}: {$msg['content']}\n\n";
             }
             
@@ -453,12 +462,13 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
             } else {
                 $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', $bookTitle, $bookAuthors], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
                 $systemPrompt = $bookInfo . $libraryPrompts['markdown_instruction'] . ($libraryPrompts['unknown_single'] ?? '') . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
-                $sourceTexts = ['google' => 'AI 预训练知识 + Google Search', 'mcp' => 'AI 预训练知识 + MCP 工具', 'off' => 'AI 预训练知识（搜索已关闭）'];
+                $sourceTexts = $prompts['source_texts'] ?? ['google' => 'AI 预训练知识 + Google Search', 'mcp' => 'AI 预训练知识 + MCP 工具', 'off' => 'AI 预训练知识（搜索已关闭）'];
                 sendSSE($connection, 'sources', json_encode([['text' => $sourceTexts[$engine] ?? $sourceTexts['off'], 'score' => 100]], JSON_UNESCAPED_UNICODE));
             }
             
             if ($context['summary']) {
-                $systemPrompt .= "\n\n【对话历史摘要】\n" . $context['summary']['text'];
+                $historyLabel = $prompts['summarize']['history_label'] ?? '【对话历史摘要】';
+                $systemPrompt .= "\n\n{$historyLabel}\n" . $context['summary']['text'];
                 sendSSE($connection, 'summary_used', json_encode(['rounds_summarized' => $context['summary']['rounds_summarized'], 'recent_messages' => count($context['messages']) / 2], JSON_UNESCAPED_UNICODE));
             }
             
@@ -551,7 +561,8 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
         
         // 如果有摘要，添加为系统消息，并通知前端
         if ($context['summary']) {
-            $messages[0]['content'] .= "\n\n【对话历史摘要】\n" . $context['summary']['text'];
+            $historyLabel = $prompts['summarize']['history_label'] ?? '【对话历史摘要】';
+            $messages[0]['content'] .= "\n\n{$historyLabel}\n" . $context['summary']['text'];
             sendSSE($connection, 'summary_used', json_encode([
                 'rounds_summarized' => $context['summary']['rounds_summarized'],
                 'recent_messages' => count($context['messages']) / 2
@@ -638,8 +649,13 @@ function streamAsk(TcpConnection $connection, array $request): void
     
     $connection->send(json_encode(['type' => 'sources', 'sources' => array_map(fn($r) => ['text' => mb_substr($r['chunk']['text'], 0, 200) . '...', 'score' => round($r['score'] * 100, 1)], $results)]));
     
+    // 使用配置文件中的片段标签
+    $chunkLabel = $GLOBALS['config']['prompts']['chunk_label'] ?? '【片段 {index}】';
     $context = "";
-    foreach ($results as $i => $result) $context .= "【片段 " . ($i + 1) . "】\n" . $result['chunk']['text'] . "\n\n";
+    foreach ($results as $i => $result) {
+        $label = str_replace('{index}', $i + 1, $chunkLabel);
+        $context .= "{$label}\n" . $result['chunk']['text'] . "\n\n";
+    }
     
     // 使用配置文件中的提示词
     $ragSimplePrompt = $GLOBALS['config']['prompts']['rag_simple']['system'] ?? '你是一个书籍分析助手。根据以下内容回答问题，使用中文：

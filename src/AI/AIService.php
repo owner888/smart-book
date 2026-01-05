@@ -58,9 +58,12 @@ class AIService
         $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
         $results = $vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
         
+        // 使用配置文件中的片段标签
+        $chunkLabel = $GLOBALS['config']['prompts']['chunk_label'] ?? '【片段 {index}】';
         $context = "";
         foreach ($results as $i => $result) {
-            $context .= "【片段 " . ($i + 1) . "】\n" . $result['chunk']['text'] . "\n\n";
+            $label = str_replace('{index}', $i + 1, $chunkLabel);
+            $context .= "{$label}\n" . $result['chunk']['text'] . "\n\n";
         }
         
         // 使用配置文件中的提示词
