@@ -3,7 +3,9 @@
  * 读取 EPUB 并发送给 AI
  */
 
-require_once __DIR__ . '/calibre_ai_prompts.php';
+require_once __DIR__ . '/../src/AI/GeminiClient.php';
+
+use SmartBook\AI\GeminiClient;
 
 // 从 ~/.zprofile 读取 API Key
 $zprofile = file_get_contents(getenv('HOME') . '/.zprofile');
@@ -58,7 +60,7 @@ function extractEpubText(string $epubPath, int $maxLength = 50000): string
 }
 
 // EPUB 文件路径
-$epubPath = __DIR__ . '/books/西游记.epub';
+$epubPath = __DIR__ . '/../books/西游记.epub';
 
 echo "=== EPUB 阅读器 AI 测试 ===\n\n";
 echo "📖 正在读取: {$epubPath}\n\n";

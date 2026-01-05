@@ -6,7 +6,12 @@
  * 或设置环境变量: export GEMINI_API_KEY="your-key" && php test_ai.php
  */
 
-require_once __DIR__ . '/calibre_ai_prompts.php';
+require_once __DIR__ . '/../src/AI/GeminiClient.php';
+
+use SmartBook\AI\GeminiClient;
+
+// 加载配置
+$prompts = require __DIR__ . '/../config/prompts.php';
 
 // 从命令行参数或环境变量获取 API Key
 $apiKey = $argv[1] ?? getenv('GEMINI_API_KEY') ?: '';
@@ -35,9 +40,38 @@ $book = [
 
 echo "📚 测试书籍: {$book['title']} by {$book['authors']}\n\n";
 
-// 生成系统提示词
-$systemPrompt = CalibreAIPrompts::getLibrarySystemPrompt([$book], 'Chinese');
-$actionPrompt = CalibreAIPrompts::getLibraryActionPrompt('summarize', 1);
+// 使用配置生成系统提示词
+$libraryPrompts = $prompts['library'];
+
+// 格式化书籍信息
+$bookInfo = $libraryPrompts['book_intro'];
+$bookInfo .= str_replace(
+    ['{which}', '{title}', '{authors}'],
+    ['', $book['title'], $book['authors']],
+    $libraryPrompts['book_template']
+);
+if (!empty($book['series'])) {
+    $bookInfo .= str_replace('{series}', $book['series'], $libraryPrompts['series_template']);
+}
+if (!empty($book['tags'])) {
+    $tags = is_array($book['tags']) ? implode(', ', $book['tags']) : $book['tags'];
+    $bookInfo .= str_replace('{tags}', $tags, $libraryPrompts['tags_template']);
+}
+$bookInfo .= $libraryPrompts['separator'];
+
+// 组装完整的系统提示词
+$systemPrompt = $bookInfo;
+$systemPrompt .= $libraryPrompts['markdown_instruction'];
+$systemPrompt .= $libraryPrompts['unknown_single'];
+$systemPrompt .= ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
+
+// 获取操作提示
+$action = $libraryPrompts['actions']['summarize'];
+$actionPrompt = str_replace(
+    ['{books_word}', '{is_are}'],
+    ['book', 'is'],
+    $action['prompt']
+);
 
 echo "--- 系统提示词 ---\n{$systemPrompt}\n\n";
 echo "--- 用户提示词 ---\n{$actionPrompt}\n\n";
