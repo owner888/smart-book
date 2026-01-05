@@ -19,8 +19,11 @@ class AIService
     {
         if (self::$ragAssistant === null) {
             self::$ragAssistant = new BookRAGAssistant(GEMINI_API_KEY);
-            if (file_exists(DEFAULT_BOOK_CACHE)) {
-                self::$ragAssistant->loadBook(DEFAULT_BOOK_PATH, DEFAULT_BOOK_CACHE);
+            // 使用当前选中的书籍
+            $currentCache = getCurrentBookCache();
+            $currentPath = getCurrentBookPath();
+            if ($currentCache && $currentPath) {
+                self::$ragAssistant->loadBook($currentPath, $currentCache);
             }
         }
         return self::$ragAssistant;
@@ -52,10 +55,15 @@ class AIService
      */
     public static function askBook(string $question, int $topK = 8): array
     {
+        $currentCache = getCurrentBookCache();
+        if (!$currentCache) {
+            return ['success' => false, 'error' => 'No book index available'];
+        }
+        
         $embedder = new EmbeddingClient(GEMINI_API_KEY);
         $queryEmbedding = $embedder->embedQuery($question);
         
-        $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
+        $vectorStore = new VectorStore($currentCache);
         $results = $vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
         
         // 使用配置文件中的片段标签

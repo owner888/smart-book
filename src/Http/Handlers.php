@@ -224,6 +224,38 @@ function handleGetModels(): array
 }
 
 /**
+ * 获取当前选中的书籍路径
+ */
+function getCurrentBookPath(): ?string
+{
+    // 优先使用运行时选择的书籍
+    if (isset($GLOBALS['selected_book']['path']) && file_exists($GLOBALS['selected_book']['path'])) {
+        return $GLOBALS['selected_book']['path'];
+    }
+    // 回退到默认配置
+    if (defined('DEFAULT_BOOK_PATH') && file_exists(DEFAULT_BOOK_PATH)) {
+        return DEFAULT_BOOK_PATH;
+    }
+    return null;
+}
+
+/**
+ * 获取当前选中的书籍索引路径
+ */
+function getCurrentBookCache(): ?string
+{
+    // 优先使用运行时选择的书籍
+    if (isset($GLOBALS['selected_book']['cache']) && file_exists($GLOBALS['selected_book']['cache'])) {
+        return $GLOBALS['selected_book']['cache'];
+    }
+    // 回退到默认配置
+    if (defined('DEFAULT_BOOK_CACHE') && file_exists(DEFAULT_BOOK_CACHE)) {
+        return DEFAULT_BOOK_CACHE;
+    }
+    return null;
+}
+
+/**
  * 获取所有助手配置（包含系统提示词）
  */
 function handleGetAssistants(): array
@@ -231,17 +263,24 @@ function handleGetAssistants(): array
     $prompts = $GLOBALS['config']['prompts'];
     $libraryPrompts = $prompts['library'];
     
-    // 从 EPUB 文件读取书籍元数据
+    // 从当前选中的书籍读取元数据
     $bookTitle = $prompts['defaults']['unknown_book'] ?? '未知书籍';
     $bookAuthors = $prompts['defaults']['unknown_author'] ?? '未知作者';
     
-    if (defined('DEFAULT_BOOK_PATH') && file_exists(DEFAULT_BOOK_PATH)) {
-        $metadata = \SmartBook\Parser\EpubParser::extractMetadata(DEFAULT_BOOK_PATH);
-        if (!empty($metadata['title'])) {
-            $bookTitle = '《' . $metadata['title'] . '》';
-        }
-        if (!empty($metadata['authors'])) {
-            $bookAuthors = $metadata['authors'];
+    $currentBookPath = getCurrentBookPath();
+    if ($currentBookPath) {
+        $ext = strtolower(pathinfo($currentBookPath, PATHINFO_EXTENSION));
+        if ($ext === 'epub') {
+            $metadata = \SmartBook\Parser\EpubParser::extractMetadata($currentBookPath);
+            if (!empty($metadata['title'])) {
+                $bookTitle = '《' . $metadata['title'] . '》';
+            }
+            if (!empty($metadata['authors'])) {
+                $bookAuthors = $metadata['authors'];
+            }
+        } else {
+            // TXT 文件使用文件名作为标题
+            $bookTitle = '《' . pathinfo($currentBookPath, PATHINFO_FILENAME) . '》';
         }
     }
     
@@ -273,8 +312,8 @@ function handleGetAssistants(): array
             'name' => '续写小说',
             'avatar' => '✍️',
             'color' => '#ff9800',
-            'description' => $prompts['continue']['description'] ?? '我是小说续写助手，擅长模仿《西游记》的章回体风格续写故事。告诉我你想要的情节设定，我会为你创作新章节。',
-            'systemPrompt' => $prompts['continue']['system'] ?? '',
+            'description' => str_replace('{title}', $bookTitle, $prompts['continue']['description'] ?? '我是小说续写助手，可以帮你续写{title}的内容。告诉我你想要的情节设定，我会为你创作新章节。'),
+            'systemPrompt' => str_replace('{title}', $bookTitle, $prompts['continue']['system'] ?? ''),
             'action' => 'continue',
         ],
         'chat' => [
@@ -357,8 +396,9 @@ function handleGetBooks(): array
     $currentBook = null;
     
     // 获取当前选中的书籍
-    if (defined('DEFAULT_BOOK_PATH') && file_exists(DEFAULT_BOOK_PATH)) {
-        $currentBook = basename(DEFAULT_BOOK_PATH);
+    $currentBookPath = getCurrentBookPath();
+    if ($currentBookPath) {
+        $currentBook = basename($currentBookPath);
     }
     
     // 扫描 books 目录
@@ -678,10 +718,17 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
         $bookTitle = '未知书籍';
         $bookAuthors = '未知作者';
         
-        if (defined('DEFAULT_BOOK_PATH') && file_exists(DEFAULT_BOOK_PATH)) {
-            $metadata = \SmartBook\Parser\EpubParser::extractMetadata(DEFAULT_BOOK_PATH);
-            if (!empty($metadata['title'])) $bookTitle = '《' . $metadata['title'] . '》';
-            if (!empty($metadata['authors'])) $bookAuthors = $metadata['authors'];
+        $currentBookPath = getCurrentBookPath();
+        if ($currentBookPath) {
+            $ext = strtolower(pathinfo($currentBookPath, PATHINFO_EXTENSION));
+            if ($ext === 'epub') {
+                $metadata = \SmartBook\Parser\EpubParser::extractMetadata($currentBookPath);
+                if (!empty($metadata['title'])) $bookTitle = '《' . $metadata['title'] . '》';
+                if (!empty($metadata['authors'])) $bookAuthors = $metadata['authors'];
+            } else {
+                // TXT 文件使用文件名作为标题
+                $bookTitle = '《' . pathinfo($currentBookPath, PATHINFO_FILENAME) . '》';
+            }
         }
         
         // 构建提示词并调用 AI 的函数
@@ -738,8 +785,9 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
             );
         };
         
-        // RAG 搜索逻辑：使用文件存储
-        if ($ragEnabled && defined('DEFAULT_BOOK_CACHE') && file_exists(DEFAULT_BOOK_CACHE)) {
+        // RAG 搜索逻辑：使用当前选中的书籍
+        $currentCache = getCurrentBookCache();
+        if ($ragEnabled && $currentCache) {
             try {
                 $embedder = new EmbeddingClient(GEMINI_API_KEY);
                 $queryEmbedding = $embedder->embedQuery($question);
@@ -748,7 +796,7 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
                 $ragSources = [];
                 $chunkTemplate = $ragPrompts['chunk_template'] ?? "【Passage {index}】\n{text}\n";
                 
-                $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
+                $vectorStore = new VectorStore($currentCache);
                 $results = $vectorStore->hybridSearch($question, $queryEmbedding, 5, $keywordWeight);
                 
                 foreach ($results as $i => $result) {
@@ -873,8 +921,22 @@ function handleStreamContinue(TcpConnection $connection, Request $request): ?arr
     
     $prompts = $GLOBALS['config']['prompts'];
     $ragPrompts = $prompts['rag'];
-    $baseSystemPrompt = $prompts['continue']['system'] ?? '';
-    $userPrompt = $prompt ?: ($prompts['continue']['default_prompt'] ?? '');
+    
+    // 获取当前书籍名称
+    $bookTitle = '当前书籍';
+    $currentBookPath = getCurrentBookPath();
+    if ($currentBookPath) {
+        $ext = strtolower(pathinfo($currentBookPath, PATHINFO_EXTENSION));
+        if ($ext === 'epub') {
+            $metadata = \SmartBook\Parser\EpubParser::extractMetadata($currentBookPath);
+            if (!empty($metadata['title'])) $bookTitle = '《' . $metadata['title'] . '》';
+        } else {
+            $bookTitle = '《' . pathinfo($currentBookPath, PATHINFO_FILENAME) . '》';
+        }
+    }
+    
+    $baseSystemPrompt = str_replace('{title}', $bookTitle, $prompts['continue']['system'] ?? '');
+    $userPrompt = $prompt ?: str_replace('{title}', $bookTitle, $prompts['continue']['default_prompt'] ?? '');
     
     // RAG 搜索函数
     $continuePrompts = $prompts['continue'];
@@ -918,8 +980,9 @@ function handleStreamContinue(TcpConnection $connection, Request $request): ?arr
         );
     };
     
-    // RAG 搜索逻辑
-    if ($ragEnabled && defined('DEFAULT_BOOK_CACHE') && file_exists(DEFAULT_BOOK_CACHE)) {
+    // RAG 搜索逻辑：使用当前选中的书籍
+    $currentCache = getCurrentBookCache();
+    if ($ragEnabled && $currentCache) {
         try {
             $embedder = new EmbeddingClient(GEMINI_API_KEY);
             $queryEmbedding = $embedder->embedQuery($userPrompt);
@@ -928,7 +991,7 @@ function handleStreamContinue(TcpConnection $connection, Request $request): ?arr
             $ragSources = [];
             $chunkTemplate = $ragPrompts['chunk_template'] ?? "【Passage {index}】\n{text}\n";
             
-            $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
+            $vectorStore = new VectorStore($currentCache);
             $results = $vectorStore->hybridSearch($userPrompt, $queryEmbedding, 5, $keywordWeight);
             
             foreach ($results as $i => $result) {
@@ -957,10 +1020,13 @@ function streamAsk(TcpConnection $connection, array $request): void
     $topK = $request['top_k'] ?? 8;
     if (empty($question)) { $connection->send(json_encode(['error' => 'Missing question'])); return; }
     
+    $currentCache = getCurrentBookCache();
+    if (!$currentCache) { $connection->send(json_encode(['error' => 'No book index available'])); return; }
+    
     $embedder = new EmbeddingClient(GEMINI_API_KEY);
     $queryEmbedding = $embedder->embedQuery($question);
     
-    $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
+    $vectorStore = new VectorStore($currentCache);
     $results = $vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
     
     $connection->send(json_encode(['type' => 'sources', 'sources' => array_map(fn($r) => ['text' => mb_substr($r['chunk']['text'], 0, 200) . '...', 'score' => round($r['score'] * 100, 1)], $results)]));

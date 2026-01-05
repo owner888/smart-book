@@ -193,14 +193,15 @@ class ToolManager
                 $query = $args['query'] ?? '';
                 $topK = $args['top_k'] ?? 5;
                 
-                if (!file_exists(DEFAULT_BOOK_CACHE)) {
+                $currentCache = getCurrentBookCache();
+                if (!$currentCache) {
                     throw new \Exception('Book index not found');
                 }
                 
                 $embedder = new \SmartBook\RAG\EmbeddingClient(GEMINI_API_KEY);
                 $queryEmbedding = $embedder->embedQuery($query);
                 
-                $vectorStore = new \SmartBook\RAG\VectorStore(DEFAULT_BOOK_CACHE);
+                $vectorStore = new \SmartBook\RAG\VectorStore($currentCache);
                 $results = $vectorStore->hybridSearch($query, $queryEmbedding, $topK, 0.5);
                 
                 $chunks = [];

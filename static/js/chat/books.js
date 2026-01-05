@@ -122,6 +122,11 @@ const ChatBooks = {
                 layer.closeAll();
                 layer.msg(result.message);
                 
+                // 重新加载助手配置以更新书籍相关的提示词
+                await ChatAssistants.loadAssistants();
+                // 刷新当前助手的欢迎消息
+                ChatAssistants.switchAssistant(ChatState.currentAssistant);
+                
                 // 如果没有索引，提示创建
                 if (!result.hasIndex) {
                     layer.confirm('该书籍还没有创建向量索引，是否现在创建？', {
