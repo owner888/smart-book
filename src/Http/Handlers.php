@@ -9,7 +9,6 @@ use Workerman\Protocols\Http\Response;
 use SmartBook\AI\AIService;
 use SmartBook\AI\TokenCounter;
 use SmartBook\Cache\CacheService;
-use SmartBook\Cache\RedisVectorStore;
 use SmartBook\RAG\EmbeddingClient;
 use SmartBook\RAG\VectorStore;
 
@@ -81,8 +80,6 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             '/api/models' => handleGetModels(),
             '/api/assistants' => handleGetAssistants(),
             '/api/cache/stats' => handleCacheStats($connection),
-            '/api/vectors/stats' => handleVectorStats($connection),
-            '/api/vectors/import' => handleVectorImport($connection),
             '/api/ask' => handleAskWithCache($connection, $request),
             '/api/chat' => handleChat($request),
             '/api/continue' => handleContinue($request),
@@ -340,32 +337,6 @@ function handleCacheStats(TcpConnection $connection): ?array
     return null;
 }
 
-function handleVectorStats(TcpConnection $connection): ?array
-{
-    $jsonHeaders = ['Content-Type' => 'application/json; charset=utf-8', 'Access-Control-Allow-Origin' => '*'];
-    RedisVectorStore::getStats(fn($stats) => $connection->send(new Response(200, $jsonHeaders, json_encode($stats))));
-    return null;
-}
-
-function handleVectorImport(TcpConnection $connection): ?array
-{
-    $jsonHeaders = ['Content-Type' => 'application/json; charset=utf-8', 'Access-Control-Allow-Origin' => '*'];
-    
-    if (!file_exists(DEFAULT_BOOK_CACHE)) {
-        $connection->send(new Response(404, $jsonHeaders, json_encode(['error' => 'Index not found'])));
-        return null;
-    }
-    
-    try {
-        $data = json_decode(file_get_contents(DEFAULT_BOOK_CACHE), true);
-        $total = count($data['chunks'] ?? []);
-        RedisVectorStore::importFromJson(DEFAULT_BOOK_CACHE);
-        $connection->send(new Response(200, $jsonHeaders, json_encode(['success' => true, 'total' => $total])));
-    } catch (Exception $e) {
-        $connection->send(new Response(500, $jsonHeaders, json_encode(['error' => $e->getMessage()])));
-    }
-    return null;
-}
 
 // ===================================
 // 上下文压缩（自动摘要）
@@ -441,16 +412,15 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
     $body = json_decode($request->rawBody(), true) ?? [];
     $question = $body['question'] ?? '';
     $chatId = $body['chat_id'] ?? '';
-    $enableSearch = $body['search'] ?? true;  // 默认开启搜索
-    $engine = $body['engine'] ?? 'google';    // 默认使用 Google
-    $ragEnabled = $body['rag'] ?? true;       // RAG 开关，默认开启
-    $model = $body['model'] ?? 'gemini-2.5-flash';  // 模型选择
+    $enableSearch = $body['search'] ?? true;
+    $engine = $body['engine'] ?? 'google';
+    $ragEnabled = $body['rag'] ?? true;
+    $model = $body['model'] ?? 'gemini-2.5-flash';
     
     if (empty($question)) return ['error' => 'Missing question'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     
-    // 获取对话上下文（包含摘要 + 最近消息）
     CacheService::getChatContext($chatId, function($context) use ($connection, $question, $chatId, $headers, $enableSearch, $engine, $ragEnabled, $model) {
         $connection->send(new Response(200, $headers, ''));
         
@@ -458,174 +428,93 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
         $libraryPrompts = $prompts['library'];
         $ragPrompts = $prompts['rag'];
         
-        // 从 EPUB 文件读取书籍元数据
         $bookTitle = '未知书籍';
         $bookAuthors = '未知作者';
         
         if (defined('DEFAULT_BOOK_PATH') && file_exists(DEFAULT_BOOK_PATH)) {
             $metadata = \SmartBook\Parser\EpubParser::extractMetadata(DEFAULT_BOOK_PATH);
-            if (!empty($metadata['title'])) {
-                $bookTitle = '《' . $metadata['title'] . '》';
-            }
-            if (!empty($metadata['authors'])) {
-                $bookAuthors = $metadata['authors'];
-            }
+            if (!empty($metadata['title'])) $bookTitle = '《' . $metadata['title'] . '》';
+            if (!empty($metadata['authors'])) $bookAuthors = $metadata['authors'];
         }
         
-        // RAG 开启时：检索书籍内容（优先 Redis，降级到文件）
-        $ragContext = '';
-        $ragSources = [];
+        // 构建提示词并调用 AI 的函数
+        $doChat = function($ragContext, $ragSources) use (
+            $connection, $question, $chatId, $enableSearch, $engine, $ragEnabled, $model,
+            $context, $bookTitle, $bookAuthors, $prompts, $libraryPrompts, $ragPrompts
+        ) {
+            if ($ragEnabled && !empty($ragContext)) {
+                $bookInfo = str_replace('{title}', $bookTitle, $ragPrompts['book_intro'] ?? 'I am discussing the book: {title}');
+                if (!empty($bookAuthors)) {
+                    $bookInfo .= str_replace('{authors}', $bookAuthors, $ragPrompts['author_template'] ?? ' by {authors}');
+                }
+                $systemPrompt = str_replace(['{book_info}', '{context}'], [$bookInfo, $ragContext], $ragPrompts['system'] ?? 'You are a book analysis assistant. {book_info}\n\nContext:\n{context}');
+                sendSSE($connection, 'sources', json_encode($ragSources, JSON_UNESCAPED_UNICODE));
+            } else {
+                $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', $bookTitle, $bookAuthors], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
+                $systemPrompt = $bookInfo . $libraryPrompts['markdown_instruction'] . ($libraryPrompts['unknown_single'] ?? '') . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
+                $sourceTexts = ['google' => 'AI 预训练知识 + Google Search', 'mcp' => 'AI 预训练知识 + MCP 工具', 'off' => 'AI 预训练知识（搜索已关闭）'];
+                sendSSE($connection, 'sources', json_encode([['text' => $sourceTexts[$engine] ?? $sourceTexts['off'], 'score' => 100]], JSON_UNESCAPED_UNICODE));
+            }
+            
+            if ($context['summary']) {
+                $systemPrompt .= "\n\n【对话历史摘要】\n" . $context['summary']['text'];
+                sendSSE($connection, 'summary_used', json_encode(['rounds_summarized' => $context['summary']['rounds_summarized'], 'recent_messages' => count($context['messages']) / 2], JSON_UNESCAPED_UNICODE));
+            }
+            
+            $messages = [['role' => 'system', 'content' => $systemPrompt]];
+            foreach ($context['messages'] as $msg) {
+                if (isset($msg['role']) && isset($msg['content'])) $messages[] = ['role' => $msg['role'], 'content' => $msg['content']];
+            }
+            $messages[] = ['role' => 'user', 'content' => $question];
+            
+            if ($chatId) CacheService::addToChatHistory($chatId, ['role' => 'user', 'content' => $question]);
+            
+            $asyncGemini = AIService::getAsyncGemini($model);
+            $asyncGemini->chatStreamAsync(
+                $messages,
+                function ($text, $isThought) use ($connection) { if ($text) sendSSE($connection, $isThought ? 'thinking' : 'content', $text); },
+                function ($fullAnswer, $usageMetadata = null, $usedModel = null) use ($connection, $chatId, $context, $model) {
+                    if ($chatId) {
+                        CacheService::addToChatHistory($chatId, ['role' => 'assistant', 'content' => $fullAnswer]);
+                        triggerSummarizationIfNeeded($chatId, $context);
+                    }
+                    if ($usageMetadata) {
+                        $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
+                        sendSSE($connection, 'usage', json_encode(['tokens' => $costInfo['tokens'], 'cost' => $costInfo['cost'], 'cost_formatted' => TokenCounter::formatCost($costInfo['cost']), 'currency' => $costInfo['currency'], 'model' => $usedModel ?? $model], JSON_UNESCAPED_UNICODE));
+                    }
+                    sendSSE($connection, 'done', '');
+                    $connection->close();
+                },
+                function ($error) use ($connection) { sendSSE($connection, 'error', $error); $connection->close(); },
+                ['enableSearch' => $enableSearch && $engine === 'google', 'enableTools' => $engine === 'mcp']
+            );
+        };
+        
+        // RAG 搜索逻辑：使用文件存储
         if ($ragEnabled && defined('DEFAULT_BOOK_CACHE') && file_exists(DEFAULT_BOOK_CACHE)) {
             try {
                 $embedder = new EmbeddingClient(GEMINI_API_KEY);
                 $queryEmbedding = $embedder->embedQuery($question);
                 
-                // 尝试使用 Redis 向量存储（异步）
-                $useRedis = CacheService::isConnected();
+                $ragContext = '';
+                $ragSources = [];
+                $chunkTemplate = $ragPrompts['chunk_template'] ?? "【Passage {index}】\n{text}\n";
                 
-                if ($useRedis) {
-                    // Redis 8.0 向量搜索
-                    RedisVectorStore::search($queryEmbedding, 5, function($results) use (&$ragContext, &$ragSources, $ragPrompts, $question, $queryEmbedding) {
-                        if (!empty($results)) {
-                            $chunkTemplate = $ragPrompts['chunk_template'] ?? "【Passage {index}】\n{text}\n";
-                            foreach ($results as $i => $result) {
-                                $ragContext .= str_replace(
-                                    ['{index}', '{text}'],
-                                    [$i + 1, $result['chunk']['text']],
-                                    $chunkTemplate
-                                );
-                                $ragContext .= "(Relevance: " . round($result['score'] * 100, 1) . "%) [Redis]\n\n";
-                                $ragSources[] = [
-                                    'text' => mb_substr($result['chunk']['text'], 0, 200) . '...',
-                                    'score' => round($result['score'] * 100, 1),
-                                    'source' => 'redis'
-                                ];
-                            }
-                        }
-                    });
-                }
+                $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
+                $results = $vectorStore->hybridSearch($question, $queryEmbedding, 5, 0.6);
                 
-                // 降级到文件存储（或 Redis 没有结果时）
-                if (empty($ragContext)) {
-                    $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
-                    $results = $vectorStore->hybridSearch($question, $queryEmbedding, 5, 0.6);
-                    
-                    if (!empty($results)) {
-                        $chunkTemplate = $ragPrompts['chunk_template'] ?? "【Passage {index}】\n{text}\n";
-                        foreach ($results as $i => $result) {
-                            $ragContext .= str_replace(
-                                ['{index}', '{text}'],
-                                [$i + 1, $result['chunk']['text']],
-                                $chunkTemplate
-                            );
-                            $ragContext .= "(Relevance: " . round($result['score'] * 100, 1) . "%) [File]\n\n";
-                            $ragSources[] = [
-                                'text' => mb_substr($result['chunk']['text'], 0, 200) . '...',
-                                'score' => round($result['score'] * 100, 1),
-                                'source' => 'file'
-                            ];
-                        }
-                    }
+                foreach ($results as $i => $result) {
+                    $ragContext .= str_replace(['{index}', '{text}'], [$i + 1, $result['chunk']['text']], $chunkTemplate);
+                    $ragContext .= "(Relevance: " . round($result['score'] * 100, 1) . "%)\n\n";
+                    $ragSources[] = ['text' => mb_substr($result['chunk']['text'], 0, 200) . '...', 'score' => round($result['score'] * 100, 1)];
                 }
+                $doChat($ragContext, $ragSources);
             } catch (Exception $e) {
-                // RAG 检索失败，静默降级
+                $doChat('', []);
             }
-        }
-        
-        // 构建系统提示词
-        if ($ragEnabled && !empty($ragContext)) {
-            // RAG 模式：使用检索到的内容
-            $bookInfo = str_replace('{title}', $bookTitle, $ragPrompts['book_intro'] ?? 'I am discussing the book: {title}');
-            if (!empty($bookAuthors)) {
-                $bookInfo .= str_replace('{authors}', $bookAuthors, $ragPrompts['author_template'] ?? ' by {authors}');
-            }
-            
-            $systemPrompt = str_replace(
-                ['{book_info}', '{context}'],
-                [$bookInfo, $ragContext],
-                $ragPrompts['system'] ?? 'You are a book analysis assistant. {book_info}\n\nContext:\n{context}'
-            );
-            
-            // 发送检索来源
-            sendSSE($connection, 'sources', json_encode($ragSources, JSON_UNESCAPED_UNICODE));
         } else {
-            // 非 RAG 模式：使用书库讨论模式（AI 预训练知识）
-            $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', $bookTitle, $bookAuthors], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
-            $systemPrompt = $bookInfo 
-                . $libraryPrompts['markdown_instruction']
-                . ($libraryPrompts['unknown_single'] ?? ' If the specified book is unknown to you instead of answering the following questions just say the book is unknown.')
-                . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
-            
-            // 显示来源为 AI 预训练知识
-            $sourceTexts = [
-                'google' => 'AI 预训练知识 + Google Search',
-                'mcp' => 'AI 预训练知识 + MCP 工具',
-                'off' => 'AI 预训练知识（搜索已关闭）',
-            ];
-            $sourceText = $sourceTexts[$engine] ?? $sourceTexts['off'];
-            sendSSE($connection, 'sources', json_encode([['text' => $sourceText, 'score' => 100]], JSON_UNESCAPED_UNICODE));
+            $doChat('', []);
         }
-        
-        // 如果有摘要，添加到系统提示中，并通知前端
-        if ($context['summary']) {
-            $systemPrompt .= "\n\n【对话历史摘要】\n" . $context['summary']['text'];
-            sendSSE($connection, 'summary_used', json_encode([
-                'rounds_summarized' => $context['summary']['rounds_summarized'],
-                'recent_messages' => count($context['messages']) / 2
-            ], JSON_UNESCAPED_UNICODE));
-        }
-        
-        // 构建消息数组：系统提示 + 最近消息 + 当前问题
-        $messages = [['role' => 'system', 'content' => $systemPrompt]];
-        foreach ($context['messages'] as $msg) {
-            if (isset($msg['role']) && isset($msg['content'])) {
-                $messages[] = ['role' => $msg['role'], 'content' => $msg['content']];
-            }
-        }
-        $messages[] = ['role' => 'user', 'content' => $question];
-        
-        // 保存用户消息
-        if ($chatId) {
-            CacheService::addToChatHistory($chatId, ['role' => 'user', 'content' => $question]);
-        }
-        
-        $asyncGemini = AIService::getAsyncGemini($model);
-        $asyncGemini->chatStreamAsync(
-            $messages,
-            function ($text, $isThought) use ($connection) { 
-                if ($text) {
-                    sendSSE($connection, $isThought ? 'thinking' : 'content', $text);
-                }
-            },
-            function ($fullAnswer, $usageMetadata = null, $usedModel = null) use ($connection, $chatId, $context, $model) {
-                // 保存助手回复
-                if ($chatId) {
-                    CacheService::addToChatHistory($chatId, ['role' => 'assistant', 'content' => $fullAnswer]);
-                    // 检查是否需要进行上下文压缩
-                    triggerSummarizationIfNeeded($chatId, $context);
-                }
-                
-                // 发送 token 使用统计
-                if ($usageMetadata) {
-                    $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
-                    sendSSE($connection, 'usage', json_encode([
-                        'tokens' => $costInfo['tokens'],
-                        'cost' => $costInfo['cost'],
-                        'cost_formatted' => TokenCounter::formatCost($costInfo['cost']),
-                        'currency' => $costInfo['currency'],
-                        'model' => $usedModel ?? $model,
-                    ], JSON_UNESCAPED_UNICODE));
-                }
-                
-                sendSSE($connection, 'done', '');
-                $connection->close();
-            },
-            function ($error) use ($connection) { 
-                sendSSE($connection, 'error', $error); 
-                $connection->close(); 
-            },
-            ['enableSearch' => $enableSearch && $engine === 'google', 'enableTools' => $engine === 'mcp']
-        );
     });
     
     return null;

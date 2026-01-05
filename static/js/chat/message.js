@@ -252,11 +252,9 @@ function finishStreamingMessage(isError = false) {
     // 检索来源
     let sourcesHtml = '';
     if (ChatState.currentSources && ChatState.currentSources.length > 0) {
-        const hasRedis = ChatState.currentSources.some(s => s.source === 'redis');
-        const sourceType = hasRedis ? '🔴 Redis' : '📁 File';
         sourcesHtml = `
             <div class="sources-container">
-                <div class="sources-title">📚 检索来源 (${ChatState.currentSources.length}) <span style="font-size: 11px; opacity: 0.7;">${sourceType}</span></div>
+                <div class="sources-title">📚 检索来源 (${ChatState.currentSources.length})</div>
                 ${ChatState.currentSources.slice(0, 3).map(s => `
                     <div class="source-item">
                         <span class="source-score">${s.score}%</span>

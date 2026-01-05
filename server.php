@@ -25,7 +25,6 @@ use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use SmartBook\AI\AsyncCurlManager;
 use SmartBook\Cache\CacheService;
-use SmartBook\Cache\RedisVectorStore;
 use SmartBook\MCP\ToolManager;
 
 // ===================================
@@ -39,19 +38,6 @@ $httpWorker->name = 'AI-HTTP-Server';
 $httpWorker->onWorkerStart = function ($worker) {
     try {
         CacheService::init();
-        $redis = CacheService::getRedis();
-        if ($redis) {
-            RedisVectorStore::init($redis);
-            if ($worker->id === 0) {
-                RedisVectorStore::isImported(function($imported, $count) {
-                    if (!$imported && file_exists(DEFAULT_BOOK_CACHE)) {
-                        echo "💡 提示: 访问 /api/vectors/import 来导入向量\n";
-                    } else {
-                        echo "📊 Redis 向量数量: {$count}\n";
-                    }
-                });
-            }
-        }
     } catch (Exception $e) {
         echo "⚠️  Redis 连接失败: {$e->getMessage()}\n";
     }
