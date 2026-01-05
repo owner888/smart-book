@@ -72,34 +72,30 @@ class GeminiClient
     private function request(string $method, string $endpoint, array $data = []): array
     {
         $ch = curl_init();
-        try {
-            curl_setopt_array($ch, [
-                CURLOPT_URL => $this->baseUrl . $endpoint,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => $this->timeout,
-                CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-goog-api-key: ' . $this->apiKey],
-            ]);
-            
-            if ($method === 'POST') {
-                curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-            }
-            
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $error = curl_error($ch);
-            
-            if ($error) return ['error' => "cURL Error: {$error}"];
-            
-            $result = json_decode($response, true);
-            if ($httpCode >= 400) {
-                return ['error' => "Gemini API Error ({$httpCode}): " . ($result['error']['message'] ?? 'Unknown')];
-            }
-            
-            return $result;
-        } finally {
-            if (PHP_VERSION_ID < 80000 && is_resource($ch)) curl_close($ch);
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $this->baseUrl . $endpoint,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => $this->timeout,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-goog-api-key: ' . $this->apiKey],
+        ]);
+        
+        if ($method === 'POST') {
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
         }
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        
+        if ($error) return ['error' => "cURL Error: {$error}"];
+        
+        $result = json_decode($response, true);
+        if ($httpCode >= 400) {
+            return ['error' => "Gemini API Error ({$httpCode}): " . ($result['error']['message'] ?? 'Unknown')];
+        }
+        
+        return $result;
     }
     
     private function requestStream(string $method, string $endpoint, array $data, callable $onChunk): array
@@ -143,17 +139,13 @@ class GeminiClient
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
         }
         
-        try {
-            curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $error = curl_error($ch);
-            
-            if ($error) return ['error' => "cURL Error: {$error}", 'content' => $fullContent];
-            if ($httpCode >= 400) return ['error' => "Gemini API Error: HTTP {$httpCode}", 'content' => $fullContent];
-            
-            return ['content' => $fullContent, 'reasoning' => $fullReasoning, 'metadata' => $metadata];
-        } finally {
-            if (PHP_VERSION_ID < 80000 && is_resource($ch)) curl_close($ch);
-        }
+        curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        
+        if ($error) return ['error' => "cURL Error: {$error}", 'content' => $fullContent];
+        if ($httpCode >= 400) return ['error' => "Gemini API Error: HTTP {$httpCode}", 'content' => $fullContent];
+        
+        return ['content' => $fullContent, 'reasoning' => $fullReasoning, 'metadata' => $metadata];
     }
 }

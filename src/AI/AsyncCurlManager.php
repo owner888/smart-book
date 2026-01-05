@@ -52,7 +52,6 @@ class AsyncCurlManager
                 if ($handle['ch'] === $ch) {
                     $handle['onComplete']($info['result'] === CURLE_OK, curl_error($ch));
                     curl_multi_remove_handle(self::$multiHandle, $ch);
-                    if (PHP_VERSION_ID < 80000 && is_resource($ch)) curl_close($ch);
                     unset(self::$handles[$requestId]);
                     break;
                 }
@@ -65,7 +64,6 @@ class AsyncCurlManager
         if (isset(self::$handles[$requestId])) {
             $ch = self::$handles[$requestId]['ch'];
             curl_multi_remove_handle(self::$multiHandle, $ch);
-            if (PHP_VERSION_ID < 80000 && is_resource($ch)) curl_close($ch);
             unset(self::$handles[$requestId]);
         }
     }
@@ -77,7 +75,6 @@ class AsyncCurlManager
         if (self::$timerId !== null) { \Workerman\Timer::del(self::$timerId); self::$timerId = null; }
         foreach (self::$handles as $handle) {
             curl_multi_remove_handle(self::$multiHandle, $handle['ch']);
-            if (PHP_VERSION_ID < 80000 && is_resource($handle['ch'])) curl_close($handle['ch']);
         }
         self::$handles = [];
         if (self::$multiHandle !== null) { curl_multi_close(self::$multiHandle); self::$multiHandle = null; }

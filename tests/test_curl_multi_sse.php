@@ -86,7 +86,6 @@ function testSingleSSERequest(): array
     curl_exec($ch);
     $totalTime = microtime(true) - $startTime;
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
     
     return [
         'http_code' => $httpCode,
@@ -171,7 +170,6 @@ function testConcurrentSSE(int $concurrent): array
         }
         
         curl_multi_remove_handle($mh, $ch);
-        curl_close($ch);
     }
     
     curl_multi_close($mh);
@@ -217,7 +215,6 @@ function testLocalCurlMulti(): array
     // 清理
     foreach ($handles as $ch) {
         curl_multi_remove_handle($mh, $ch);
-        curl_close($ch);
     }
     curl_multi_close($mh);
     
