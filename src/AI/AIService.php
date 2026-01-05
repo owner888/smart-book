@@ -63,9 +63,15 @@ class AIService
             $context .= "【片段 " . ($i + 1) . "】\n" . $result['chunk']['text'] . "\n\n";
         }
         
+        // 使用配置文件中的提示词
+        $ragSimplePrompt = $GLOBALS['config']['prompts']['rag_simple']['system'] ?? '你是一个书籍分析助手。根据以下内容回答问题，使用中文：
+
+{context}';
+        $systemPrompt = str_replace('{context}', $context, $ragSimplePrompt);
+        
         $gemini = self::getGemini();
         $response = $gemini->chat([
-            ['role' => 'system', 'content' => "你是一个书籍分析助手。根据以下内容回答问题，使用中文：\n\n{$context}"],
+            ['role' => 'system', 'content' => $systemPrompt],
             ['role' => 'user', 'content' => $question],
         ]);
         

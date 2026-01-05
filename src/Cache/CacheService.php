@@ -187,6 +187,8 @@ class CacheService
      */
     public static function getSummarizePrompt(): string
     {
-        return "请用中文简洁地总结以上对话的要点，包括：1) 用户讨论的主要话题 2) AI 给出的关键信息和结论 3) 任何重要的背景上下文。总结应该简短精炼（100-200字），便于后续对话参考。";
+        // 使用配置文件中的提示词
+        return $GLOBALS['config']['prompts']['summarize']['prompt'] 
+            ?? "请用中文简洁地总结以上对话的要点，包括：1) 用户讨论的主要话题 2) AI 给出的关键信息和结论 3) 任何重要的背景上下文。总结应该简短精炼（100-200字），便于后续对话参考。";
     }
 }

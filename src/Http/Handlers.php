@@ -283,8 +283,8 @@ function handleGetAssistants(): array
             'name' => 'Default Assistant',
             'avatar' => '⭐',
             'color' => '#9c27b0',
-            'description' => '我是默认助手，有什么可以帮你的吗？',
-            'systemPrompt' => '你是一个通用 AI 助手，请友善地帮助用户。',
+            'description' => $prompts['default']['description'] ?? '我是默认助手，有什么可以帮你的吗？',
+            'systemPrompt' => $prompts['default']['system'] ?? '你是一个通用 AI 助手，请友善地帮助用户。',
             'action' => 'chat',
         ],
     ];
@@ -641,9 +641,15 @@ function streamAsk(TcpConnection $connection, array $request): void
     $context = "";
     foreach ($results as $i => $result) $context .= "【片段 " . ($i + 1) . "】\n" . $result['chunk']['text'] . "\n\n";
     
+    // 使用配置文件中的提示词
+    $ragSimplePrompt = $GLOBALS['config']['prompts']['rag_simple']['system'] ?? '你是一个书籍分析助手。根据以下内容回答问题，使用中文：
+
+{context}';
+    $systemPrompt = str_replace('{context}', $context, $ragSimplePrompt);
+    
     $gemini = AIService::getGemini();
     $gemini->chatStream(
-        [['role' => 'system', 'content' => "你是一个书籍分析助手。根据以下内容回答问题，使用中文：\n\n{$context}"], ['role' => 'user', 'content' => $question]],
+        [['role' => 'system', 'content' => $systemPrompt], ['role' => 'user', 'content' => $question]],
         function ($text, $chunk, $isThought) use ($connection) { if (!$isThought && $text) $connection->send(json_encode(['type' => 'content', 'content' => $text])); },
         ['enableSearch' => false]
     );
