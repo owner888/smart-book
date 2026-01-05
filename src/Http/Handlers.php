@@ -553,9 +553,6 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
         // 通用聊天系统提示词
         $systemPrompt = $prompts['chat']['system'] ?? '你是一个友善、博学的 AI 助手，擅长回答各种问题并提供有价值的见解。请用中文回答。';
         
-        // 发送系统提示词给前端显示
-        sendSSE($connection, 'system_prompt', $systemPrompt);
-        
         // 构建消息数组
         $messages = [['role' => 'system', 'content' => $systemPrompt]];
         
