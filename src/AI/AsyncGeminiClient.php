@@ -121,21 +121,62 @@ class AsyncGeminiClient
         ?callable $onError,
         array $options
     ): void {
-        $allResults = [];
+        $functionResponses = [];
         
         foreach ($functionCalls as $fc) {
             $name = $fc['name'];
             $args = $fc['args'];
             
+            // 通知前端工具开始执行
+            $onChunk("\n> 🔧 执行工具: `{$name}`\n\n", false);
+            
             // 执行工具
             $result = ToolManager::execute($name, $args);
-            $allResults[] = ['name' => $name, 'args' => $args, 'result' => $result];
+            
+            $functionResponses[] = [
+                'name' => $name,
+                'args' => $args,
+                'response' => $result,
+            ];
         }
         
-        // 格式化工具结果为自然语言
-        $responseText = $this->formatToolResults($allResults);
-        $onChunk($responseText, false);
-        $onComplete($currentContent . $responseText);
+        // 构建包含工具结果的新消息，让 AI 进行分析总结
+        $newMessages = $originalMessages;
+        
+        // 添加 AI 的 function call
+        $newMessages[] = [
+            'role' => 'assistant',
+            'function_calls' => $functionCalls,
+        ];
+        
+        // 添加工具执行结果
+        foreach ($functionResponses as $fr) {
+            $responseContent = $fr['response']['result'] ?? $fr['response'];
+            $newMessages[] = [
+                'role' => 'function',
+                'name' => $fr['name'],
+                'content' => json_encode($responseContent, JSON_UNESCAPED_UNICODE),
+            ];
+        }
+        
+        // 继续对话让 AI 基于工具结果生成回复
+        $options['enableTools'] = false; // 避免无限循环
+        $options['includeThoughts'] = false;
+        
+        $this->chatStreamAsync(
+            $newMessages,
+            $onChunk,
+            function($finalContent) use ($currentContent, $onComplete) {
+                $onComplete($currentContent . $finalContent);
+            },
+            function($error) use ($functionResponses, $onChunk, $currentContent, $onComplete) {
+                // 如果第二次请求失败，直接显示工具结果
+                $fallback = $this->formatToolResults($functionResponses);
+                $onChunk($fallback, false);
+                $onComplete($currentContent . $fallback);
+            },
+            $options
+        );
     }
     
     /**
@@ -168,7 +209,7 @@ class AsyncGeminiClient
                     
                 case 'fetch_webpage':
                     $url = $args['url'] ?? $data['url'] ?? '';
-                    $content = $this->cleanWebContent($data['content'] ?? '');
+                    $content = $data['content'] ?? '';
                     $output .= "> 🌐 **抓取网页**: [{$url}]({$url})\n\n";
                     $output .= "{$content}\n\n";
                     break;
