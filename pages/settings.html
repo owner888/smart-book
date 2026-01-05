@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设置 - AI 书籍助手</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.8/dist/css/layui.css">
+    <link rel="stylesheet" href="../static/css/base.css">
+    <link rel="stylesheet" href="../static/css/settings.css">
+</head>
+<body>
+    <div class="settings-container">
+        <!-- 菜单导航 -->
+        <div class="menu-nav">
+            <div class="menu-item active" data-page="model-provider">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 6v6l4 2"/>
+                </svg>
+                <span>Model Provider</span>
+            </div>
+            <div class="menu-item" data-page="default-model">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="12" y1="8" x2="12" y2="16"/>
+                    <line x1="8" y1="12" x2="16" y2="12"/>
+                </svg>
+                <span>Default Model</span>
+            </div>
+            
+            <div class="menu-divider"></div>
+            
+            <div class="menu-item" data-page="general-settings">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+                <span>General Settings</span>
+            </div>
+            <div class="menu-item" data-page="display-settings">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                    <line x1="8" y1="21" x2="16" y2="21"/>
+                    <line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+                <span>Display Settings</span>
+            </div>
+            <div class="menu-item" data-page="data-settings">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                </svg>
+                <span>Data Settings</span>
+            </div>
+            
+            <div class="menu-divider"></div>
+            
+            <div class="menu-item" data-page="web-search">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <span>Web Search</span>
+            </div>
+            <div class="menu-item" data-page="keyboard-shortcuts">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="4" width="20" height="16" rx="2" ry="2"/>
+                    <path d="M6 8h.001"/>
+                    <path d="M10 8h.001"/>
+                    <path d="M14 8h.001"/>
+                    <path d="M18 8h.001"/>
+                    <line x1="7" y1="16" x2="17" y2="16"/>
+                </svg>
+                <span>Keyboard Shortcuts</span>
+            </div>
+            
+            <div class="menu-divider"></div>
+            
+            <div class="menu-item" data-page="about">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="16" x2="12" y2="12"/>
+                    <line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+                <span>About & Feedback</span>
+            </div>
+        </div>
+        
+        <!-- 主内容区 -->
+        <div class="settings-content" id="settingsContent">
+            <!-- Model Provider 页面 -->
+            <div class="settings-page active" id="page-model-provider">
+                <div class="provider-list">
+                    <div class="provider-search">
+                        <input type="text" placeholder="Search Providers..." id="providerSearch">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
+                    </div>
+                    
+                    <div class="provider-items" id="providerItems">
+                        <!-- 动态生成 -->
+                    </div>
+                    
+                    <button class="add-provider-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        <span>Add</span>
+                    </button>
+                </div>
+                
+                <div class="provider-config" id="providerConfig">
+                    <!-- 动态生成配置表单 -->
+                </div>
+            </div>
+            
+            <!-- 其他页面占位 -->
+            <div class="settings-page" id="page-default-model">
+                <div style="padding: 24px;">
+                    <h2>Default Model</h2>
+                    <p style="color: #a0a0a0; margin-top: 12px;">配置默认使用的 AI 模型</p>
+                </div>
+            </div>
+            
+            <div class="settings-page" id="page-general-settings">
+                <div style="padding: 24px;">
+                    <h2>General Settings</h2>
+                    <p style="color: #a0a0a0; margin-top: 12px;">通用设置选项</p>
+                </div>
+            </div>
+            
+            <div class="settings-page" id="page-display-settings">
+                <div style="padding: 24px;">
+                    <h2>Display Settings</h2>
+                    <p style="color: #a0a0a0; margin-top: 12px;">显示设置选项</p>
+                </div>
+            </div>
+            
+            <div class="settings-page" id="page-data-settings">
+                <div style="padding: 24px;">
+                    <h2>Data Settings</h2>
+                    <p style="color: #a0a0a0; margin-top: 12px;">数据设置选项</p>
+                </div>
+            </div>
+            
+            <div class="settings-page" id="page-web-search">
+                <div style="padding: 24px;">
+                    <h2>Web Search</h2>
+                    <p style="color: #a0a0a0; margin-top: 12px;">网页搜索配置</p>
+                </div>
+            </div>
+            
+            <div class="settings-page" id="page-keyboard-shortcuts">
+                <div style="padding: 24px;">
+                    <h2>Keyboard Shortcuts</h2>
+                    <p style="color: #a0a0a0; margin-top: 12px;">键盘快捷键设置</p>
+                </div>
+            </div>
+            
+            <div class="settings-page" id="page-about">
+                <div style="padding: 24px;">
+                    <h2>About & Feedback</h2>
+                    <p style="color: #a0a0a0; margin-top: 12px;">关于与反馈</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/layui@2.9.8/dist/layui.js"></script>
+    <script src="../static/js/settings.js"></script>
+</body>
+</html>

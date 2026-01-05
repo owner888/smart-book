@@ -3,23 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 书籍助手</title>
+    <title>聊天 - AI 书籍助手</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/layui@2.9.8/dist/css/layui.css">
-    <link rel="stylesheet" href="static/css/main.css">
+    <link rel="stylesheet" href="../static/css/base.css">
+    <link rel="stylesheet" href="../static/css/chat.css">
 </head>
 <body>
-    <!-- 移动端侧边栏切换按钮 -->
-    <button class="sidebar-toggle" id="sidebarToggle" aria-label="打开菜单">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="3" y1="6" x2="21" y2="6"></line>
-            <line x1="3" y1="12" x2="21" y2="12"></line>
-            <line x1="3" y1="18" x2="21" y2="18"></line>
-        </svg>
-    </button>
-    
-    <!-- 侧边栏遮罩层 -->
-    <div class="sidebar-overlay" id="sidebarOverlay"></div>
-    
     <div class="app-container">
         <!-- 左侧边栏 -->
         <div class="sidebar" id="sidebar">
@@ -126,30 +115,10 @@
                                 <rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/><path d="M7 11V8a5 5 0 0 1 10 0v3"/>
                             </svg>
                         </div>
-                        <div class="toolbar-icon" title="置顶消息" onclick="showTip('置顶')">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 2L12 12"/><path d="M18 8L12 2 6 8"/><path d="M5 12H19"/><path d="M5 22H19"/>
-                            </svg>
-                        </div>
-                        <div class="toolbar-icon" title="@ 提及" onclick="showTip('@ 提及')">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94"/>
-                            </svg>
-                        </div>
                         <div class="toolbar-divider"></div>
                         <div class="toolbar-icon" title="快捷指令" onclick="showQuickCommands()">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                            </svg>
-                        </div>
-                        <div class="toolbar-icon" title="提示词模板" onclick="showPromptTemplates()">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-                            </svg>
-                        </div>
-                        <div class="toolbar-icon" title="全屏" onclick="toggleFullscreen()">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
                             </svg>
                         </div>
                         <div class="toolbar-icon" title="清空对话" onclick="clearChat()">
@@ -157,17 +126,7 @@
                                 <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                             </svg>
                         </div>
-                        <div class="toolbar-icon" title="代码模式" onclick="toggleCodeMode()">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
-                            </svg>
-                        </div>
                         <div class="toolbar-spacer"></div>
-                        <div class="toolbar-icon" title="翻译" onclick="showTip('翻译')">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M5 8l6 6"/><path d="M4 14l6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="M22 22l-5-10-5 10"/><path d="M14 18h6"/>
-                            </svg>
-                        </div>
                         <button class="send-btn" id="sendBtn" title="发送">
                             <i class="layui-icon layui-icon-top"></i>
                         </button>
@@ -179,6 +138,6 @@
     
     <script src="https://cdn.jsdelivr.net/npm/layui@2.9.8/dist/layui.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@11.1.0/marked.min.js"></script>
-    <script src="static/js/main.js"></script>
+    <script src="../static/js/chat.js"></script>
 </body>
 </html>

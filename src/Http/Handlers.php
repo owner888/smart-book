@@ -35,10 +35,37 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
     
     try {
         // 首页
-        if ($path === '/' || $path === '/chat' || $path === '/chat.html') {
-            $chatHtmlPath = dirname(__DIR__, 2) . '/chat.html';
+        if ($path === '/' || $path === '/index.html') {
+            $indexHtmlPath = dirname(__DIR__, 2) . '/index.html';
+            if (file_exists($indexHtmlPath)) {
+                $connection->send(new Response(200, ['Content-Type' => 'text/html; charset=utf-8'], file_get_contents($indexHtmlPath)));
+                return;
+            }
+        }
+        
+        // pages 目录下的页面
+        if (str_starts_with($path, '/pages/')) {
+            $pagePath = dirname(__DIR__, 2) . $path;
+            if (file_exists($pagePath)) {
+                $connection->send(new Response(200, ['Content-Type' => 'text/html; charset=utf-8'], file_get_contents($pagePath)));
+                return;
+            }
+        }
+        
+        // 旧路由兼容 - 聊天页面
+        if ($path === '/chat' || $path === '/chat.html') {
+            $chatHtmlPath = dirname(__DIR__, 2) . '/pages/chat.html';
             if (file_exists($chatHtmlPath)) {
                 $connection->send(new Response(200, ['Content-Type' => 'text/html; charset=utf-8'], file_get_contents($chatHtmlPath)));
+                return;
+            }
+        }
+        
+        // 旧路由兼容 - 设置页面
+        if ($path === '/settings' || $path === '/settings.html') {
+            $settingsHtmlPath = dirname(__DIR__, 2) . '/pages/settings.html';
+            if (file_exists($settingsHtmlPath)) {
+                $connection->send(new Response(200, ['Content-Type' => 'text/html; charset=utf-8'], file_get_contents($settingsHtmlPath)));
                 return;
             }
         }
