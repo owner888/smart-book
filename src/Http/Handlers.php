@@ -627,41 +627,84 @@ function handleStreamContinue(TcpConnection $connection, Request $request): ?arr
     $prompt = $body['prompt'] ?? '';
     $enableSearch = $body['search'] ?? false;  // 续写默认关闭搜索
     $engine = $body['engine'] ?? 'off';        // 默认关闭
+    $ragEnabled = $body['rag'] ?? false;       // 续写默认关闭 RAG
+    $keywordWeight = floatval($body['keyword_weight'] ?? 0.5);
     $model = $body['model'] ?? 'gemini-2.5-flash';
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     $connection->send(new Response(200, $headers, ''));
     
     $prompts = $GLOBALS['config']['prompts'];
-    $systemPrompt = $prompts['continue']['system'] ?? '';
+    $ragPrompts = $prompts['rag'];
+    $baseSystemPrompt = $prompts['continue']['system'] ?? '';
     $userPrompt = $prompt ?: ($prompts['continue']['default_prompt'] ?? '');
     
-    // 发送知识来源信息
-    $sourceTexts = $prompts['source_texts'] ?? ['google' => 'AI 预训练知识 + Google Search', 'mcp' => 'AI 预训练知识 + MCP 工具', 'off' => 'AI 预训练知识（搜索已关闭）'];
-    sendSSE($connection, 'sources', json_encode([['text' => $sourceTexts[$engine] ?? $sourceTexts['off'], 'score' => 100]], JSON_UNESCAPED_UNICODE));
+    // RAG 搜索函数
+    $doChat = function($ragContext, $ragSources) use (
+        $connection, $baseSystemPrompt, $userPrompt, $enableSearch, $engine, $model, $prompts, $ragEnabled
+    ) {
+        $systemPrompt = $baseSystemPrompt;
+        
+        if ($ragEnabled && !empty($ragContext)) {
+            // 如果有 RAG 上下文，添加到系统提示词
+            $systemPrompt .= "\n\n【参考资料】\n以下是从书籍中检索到的相关内容，可以参考这些内容来续写：\n\n" . $ragContext;
+            sendSSE($connection, 'sources', json_encode($ragSources, JSON_UNESCAPED_UNICODE));
+        } else {
+            // 发送知识来源信息
+            $sourceTexts = $prompts['source_texts'] ?? ['google' => 'AI 预训练知识 + Google Search', 'mcp' => 'AI 预训练知识 + MCP 工具', 'off' => 'AI 预训练知识（搜索已关闭）'];
+            sendSSE($connection, 'sources', json_encode([['text' => $sourceTexts[$engine] ?? $sourceTexts['off'], 'score' => 100]], JSON_UNESCAPED_UNICODE));
+        }
+        
+        $asyncGemini = AIService::getAsyncGemini($model);
+        $asyncGemini->chatStreamAsync(
+            [['role' => 'system', 'content' => $systemPrompt], ['role' => 'user', 'content' => $userPrompt]],
+            function ($text, $isThought) use ($connection) { if (!$isThought && $text) sendSSE($connection, 'content', $text); },
+            function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $model) { 
+                // 发送 token 使用统计
+                if ($usageMetadata) {
+                    $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
+                    sendSSE($connection, 'usage', json_encode([
+                        'tokens' => $costInfo['tokens'], 
+                        'cost' => $costInfo['cost'], 
+                        'cost_formatted' => TokenCounter::formatCost($costInfo['cost']), 
+                        'currency' => $costInfo['currency'], 
+                        'model' => $usedModel ?? $model
+                    ], JSON_UNESCAPED_UNICODE));
+                }
+                sendSSE($connection, 'done', ''); 
+                $connection->close(); 
+            },
+            function ($error) use ($connection) { sendSSE($connection, 'error', $error); $connection->close(); },
+            ['enableSearch' => $enableSearch && $engine === 'google', 'enableTools' => $engine === 'mcp']
+        );
+    };
     
-    $asyncGemini = AIService::getAsyncGemini($model);
-    $asyncGemini->chatStreamAsync(
-        [['role' => 'system', 'content' => $systemPrompt], ['role' => 'user', 'content' => $userPrompt]],
-        function ($text, $isThought) use ($connection) { if (!$isThought && $text) sendSSE($connection, 'content', $text); },
-        function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $model) { 
-            // 发送 token 使用统计
-            if ($usageMetadata) {
-                $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
-                sendSSE($connection, 'usage', json_encode([
-                    'tokens' => $costInfo['tokens'], 
-                    'cost' => $costInfo['cost'], 
-                    'cost_formatted' => TokenCounter::formatCost($costInfo['cost']), 
-                    'currency' => $costInfo['currency'], 
-                    'model' => $usedModel ?? $model
-                ], JSON_UNESCAPED_UNICODE));
+    // RAG 搜索逻辑
+    if ($ragEnabled && defined('DEFAULT_BOOK_CACHE') && file_exists(DEFAULT_BOOK_CACHE)) {
+        try {
+            $embedder = new EmbeddingClient(GEMINI_API_KEY);
+            $queryEmbedding = $embedder->embedQuery($userPrompt);
+            
+            $ragContext = '';
+            $ragSources = [];
+            $chunkTemplate = $ragPrompts['chunk_template'] ?? "【Passage {index}】\n{text}\n";
+            
+            $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
+            $results = $vectorStore->hybridSearch($userPrompt, $queryEmbedding, 5, $keywordWeight);
+            
+            foreach ($results as $i => $result) {
+                $ragContext .= str_replace(['{index}', '{text}'], [$i + 1, $result['chunk']['text']], $chunkTemplate);
+                $ragContext .= "(Relevance: " . round($result['score'] * 100, 1) . "%)\n\n";
+                $ragSources[] = ['text' => mb_substr($result['chunk']['text'], 0, 200) . '...', 'score' => round($result['score'] * 100, 1)];
             }
-            sendSSE($connection, 'done', ''); 
-            $connection->close(); 
-        },
-        function ($error) use ($connection) { sendSSE($connection, 'error', $error); $connection->close(); },
-        ['enableSearch' => $enableSearch && $engine === 'google', 'enableTools' => $engine === 'mcp']
-    );
+            $doChat($ragContext, $ragSources);
+        } catch (Exception $e) {
+            $doChat('', []);
+        }
+    } else {
+        $doChat('', []);
+    }
+    
     return null;
 }
 

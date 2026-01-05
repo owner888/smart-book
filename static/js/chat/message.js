@@ -63,7 +63,14 @@ async function sendMessage() {
         };
     } else if (assistant.action === 'continue') {
         url = `${ChatConfig.API_BASE}/api/stream/continue`;
-        body = { prompt: message, search: searchConfig.enabled, engine: searchConfig.engine, model: modelId };
+        body = { 
+            prompt: message, 
+            search: searchConfig.enabled, 
+            engine: searchConfig.engine, 
+            rag: ragConfig.enabled,
+            keyword_weight: ragConfig.keywordWeight,
+            model: modelId 
+        };
     } else {
         url = `${ChatConfig.API_BASE}/api/stream/chat`;
         body = { message: message, chat_id: ChatState.getCurrentState().chatId, search: searchConfig.enabled, engine: searchConfig.engine, model: modelId };
