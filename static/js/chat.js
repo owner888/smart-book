@@ -33,41 +33,68 @@ function generateChatId() {
     return 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
-// 助手配置
-const assistants = {
-    book: {
-        name: '书籍问答助手',
-        avatar: '📚',
-        color: '#4caf50',
-        systemPrompt: '我是书籍问答助手，可以帮你分析《西游记》的内容。你可以问我关于书中人物、情节、主题等问题。',
-        action: 'ask',
-        useRAG: true
-    },
-    continue: {
-        name: '续写小说',
-        avatar: '✍️',
-        color: '#ff9800',
-        systemPrompt: '我是小说续写助手，擅长模仿《西游记》的章回体风格续写故事。告诉我你想要的情节设定，我会为你创作新章节。',
-        action: 'continue',
-        useRAG: false
-    },
-    chat: {
-        name: '通用聊天',
-        avatar: '💬',
-        color: '#2196f3',
-        systemPrompt: '我是通用聊天助手，可以和你讨论任何话题。',
-        action: 'chat',
-        useRAG: false
-    },
-    default: {
-        name: 'Default Assistant',
-        avatar: '⭐',
-        color: '#9c27b0',
-        systemPrompt: '我是默认助手，有什么可以帮你的吗？',
-        action: 'chat',
-        useRAG: false
+// 助手配置（从后端加载）
+let assistants = {};
+
+// 加载助手配置
+async function loadAssistants() {
+    try {
+        const response = await fetch(`${API_BASE}/api/assistants`);
+        const data = await response.json();
+        
+        // 转换后端格式为前端格式
+        for (const [id, config] of Object.entries(data)) {
+            assistants[id] = {
+                name: config.name,
+                avatar: config.avatar,
+                color: config.color,
+                systemPrompt: config.description,  // 简介
+                fullSystemPrompt: config.systemPrompt,  // 完整系统提示词
+                action: config.action,
+                useRAG: config.action === 'ask',
+            };
+        }
+        
+        // 更新初始界面
+        const assistant = assistants[currentAssistant];
+        if (assistant && chatMessages) {
+            chatMessages.innerHTML = buildWelcomeMessage(assistant);
+        }
+    } catch (error) {
+        console.error('加载助手配置失败:', error);
+        // 使用默认配置
+        assistants = getDefaultAssistants();
     }
-};
+}
+
+// 构建欢迎消息 HTML
+function buildWelcomeMessage(assistant) {
+    return `
+        <div class="message">
+            <div class="message-system">
+                ${assistant.systemPrompt}
+                <div class="thinking-container collapsed" style="margin-top: 12px; background: linear-gradient(135deg, rgba(33, 150, 243, 0.1), rgba(3, 169, 244, 0.1)); border-color: rgba(33, 150, 243, 0.3);">
+                    <div class="thinking-header" onclick="this.parentElement.classList.toggle('collapsed')" style="background: rgba(33, 150, 243, 0.15);">
+                        <span class="thinking-icon">📋</span>
+                        <span>系统提示词</span>
+                        <span class="thinking-toggle">▶</span>
+                    </div>
+                    <div class="thinking-content">${escapeHtml(assistant.fullSystemPrompt || '')}</div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// 默认助手配置（离线备用）
+function getDefaultAssistants() {
+    return {
+        book: { name: '书籍问答助手', avatar: '📚', color: '#4caf50', systemPrompt: '我是书籍问答助手', fullSystemPrompt: '', action: 'ask' },
+        continue: { name: '续写小说', avatar: '✍️', color: '#ff9800', systemPrompt: '我是小说续写助手', fullSystemPrompt: '', action: 'continue' },
+        chat: { name: '通用聊天', avatar: '💬', color: '#2196f3', systemPrompt: '我是通用聊天助手', fullSystemPrompt: '', action: 'chat' },
+        default: { name: 'Default Assistant', avatar: '⭐', color: '#9c27b0', systemPrompt: '我是默认助手', fullSystemPrompt: '', action: 'chat' },
+    };
+}
 
 // DOM 元素
 let chatMessages, chatInput, sendBtn, headerAvatar, headerTitle, systemPrompt;
@@ -122,8 +149,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
-    // 首次加载时自动聚焦输入框
-    setTimeout(() => chatInput.focus(), 100);
+    // 加载助手配置并初始化
+    loadAssistants().then(() => {
+        // 首次加载时自动聚焦输入框
+        setTimeout(() => chatInput.focus(), 100);
+    });
 });
 
 // 切换助手
@@ -147,17 +177,12 @@ function switchAssistant(assistantId) {
     headerAvatar.textContent = assistant.avatar;
     headerAvatar.style.background = assistant.color;
     headerTitle.textContent = assistant.name;
-    systemPrompt.textContent = assistant.systemPrompt;
     
     // 恢复或初始化聊天内容
     if (newState.html) {
         chatMessages.innerHTML = newState.html;
     } else {
-        chatMessages.innerHTML = `
-            <div class="message">
-                <div class="message-system">${assistant.systemPrompt}</div>
-            </div>
-        `;
+        chatMessages.innerHTML = buildWelcomeMessage(assistant);
     }
     
     // 滚动到底部
@@ -186,6 +211,7 @@ async function sendMessage() {
     currentThinking = '';
     currentSources = null;
     currentSummaryInfo = null;
+    currentSystemPrompt = null;
     
     // 创建空的助手消息容器
     const assistant = assistants[currentAssistant];
@@ -280,6 +306,10 @@ async function sendMessage() {
                         } catch (e) {
                             layer.msg('📦 来自缓存，秒回！', { time: 1500 });
                         }
+                    } else if (currentEvent === 'system_prompt') {
+                        // 系统提示词
+                        currentSystemPrompt = data;
+                        updateStreamingMessage();
                     } else if (currentEvent === 'thinking') {
                         // AI 思考过程
                         currentThinking += data;
@@ -353,6 +383,21 @@ function finishStreamingMessage(isError = false) {
     
     const contentDiv = currentMessageDiv.querySelector('.message-content');
     
+    // 构建系统提示词 HTML（可折叠，默认收起，蓝色主题）
+    let systemPromptHtml = '';
+    if (currentSystemPrompt) {
+        systemPromptHtml = `
+            <div class="thinking-container collapsed" style="background: linear-gradient(135deg, rgba(33, 150, 243, 0.1), rgba(3, 169, 244, 0.1)); border-color: rgba(33, 150, 243, 0.3);">
+                <div class="thinking-header" onclick="this.parentElement.classList.toggle('collapsed')" style="background: rgba(33, 150, 243, 0.15);">
+                    <span class="thinking-icon">📋</span>
+                    <span>系统提示词</span>
+                    <span class="thinking-toggle">▶</span>
+                </div>
+                <div class="thinking-content">${escapeHtml(currentSystemPrompt)}</div>
+            </div>
+        `;
+    }
+    
     // 构建思考过程 HTML（可折叠，默认收起）
     let thinkingHtml = '';
     if (currentThinking) {
@@ -405,7 +450,7 @@ function finishStreamingMessage(isError = false) {
         `;
     }
     
-    contentDiv.innerHTML = thinkingHtml + htmlContent + summaryHtml + sourcesHtml;
+    contentDiv.innerHTML = systemPromptHtml + thinkingHtml + htmlContent + summaryHtml + sourcesHtml;
     
     // 保存到历史
     if (!isError) {

@@ -77,6 +77,7 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
         $result = match ($path) {
             '/api' => ['status' => 'ok', 'message' => 'Smart Book AI API'],
             '/api/health' => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s'), 'redis' => CacheService::isConnected()],
+            '/api/assistants' => handleGetAssistants(),
             '/api/cache/stats' => handleCacheStats($connection),
             '/api/vectors/stats' => handleVectorStats($connection),
             '/api/vectors/import' => handleVectorImport($connection),
@@ -128,6 +129,57 @@ function handleWebSocketMessage(TcpConnection $connection, string $data): void
 // ===================================
 // API 处理函数
 // ===================================
+
+/**
+ * 获取所有助手配置（包含系统提示词）
+ */
+function handleGetAssistants(): array
+{
+    $prompts = $GLOBALS['config']['prompts'];
+    $libraryPrompts = $prompts['library'];
+    
+    // 构建书籍助手的系统提示词
+    $bookSystemPrompt = $libraryPrompts['book_intro'] 
+        . str_replace(['{which}', '{title}', '{authors}'], ['', '《西游记》', '吴承恩'], $libraryPrompts['book_template']) 
+        . $libraryPrompts['separator']
+        . $libraryPrompts['markdown_instruction'] 
+        . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
+    
+    return [
+        'book' => [
+            'name' => '书籍问答助手',
+            'avatar' => '📚',
+            'color' => '#4caf50',
+            'description' => '我是书籍问答助手，可以帮你分析《西游记》的内容。你可以问我关于书中人物、情节、主题等问题。',
+            'systemPrompt' => $bookSystemPrompt,
+            'action' => 'ask',
+        ],
+        'continue' => [
+            'name' => '续写小说',
+            'avatar' => '✍️',
+            'color' => '#ff9800',
+            'description' => '我是小说续写助手，擅长模仿《西游记》的章回体风格续写故事。告诉我你想要的情节设定，我会为你创作新章节。',
+            'systemPrompt' => $prompts['continue']['system'] ?? '',
+            'action' => 'continue',
+        ],
+        'chat' => [
+            'name' => '通用聊天',
+            'avatar' => '💬',
+            'color' => '#2196f3',
+            'description' => '我是通用聊天助手，可以和你讨论任何话题。',
+            'systemPrompt' => $prompts['chat']['system'] ?? '',
+            'action' => 'chat',
+        ],
+        'default' => [
+            'name' => 'Default Assistant',
+            'avatar' => '⭐',
+            'color' => '#9c27b0',
+            'description' => '我是默认助手，有什么可以帮你的吗？',
+            'systemPrompt' => '你是一个通用 AI 助手，请友善地帮助用户。',
+            'action' => 'chat',
+        ],
+    ];
+}
 
 function handleChat(Request $request): array
 {
@@ -362,21 +414,30 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
     $message = $body['message'] ?? '';
     $chatId = $body['chat_id'] ?? '';
     $enableSearch = $body['search'] ?? true;  // 默认开启搜索
+    $engine = $body['engine'] ?? 'google';    // 默认使用 Google
     
     if (empty($message)) return ['error' => 'Missing message'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     
     // 获取对话上下文（包含摘要 + 最近消息）
-    CacheService::getChatContext($chatId, function($context) use ($connection, $message, $chatId, $headers, $enableSearch) {
+    CacheService::getChatContext($chatId, function($context) use ($connection, $message, $chatId, $headers, $enableSearch, $engine) {
         $connection->send(new Response(200, $headers, ''));
         
+        $prompts = $GLOBALS['config']['prompts'];
+        
+        // 通用聊天系统提示词
+        $systemPrompt = $prompts['chat']['system'] ?? '你是一个友善、博学的 AI 助手，擅长回答各种问题并提供有价值的见解。请用中文回答。';
+        
+        // 发送系统提示词给前端显示
+        sendSSE($connection, 'system_prompt', $systemPrompt);
+        
         // 构建消息数组
-        $messages = [];
+        $messages = [['role' => 'system', 'content' => $systemPrompt]];
         
         // 如果有摘要，添加为系统消息，并通知前端
         if ($context['summary']) {
-            $messages[] = ['role' => 'system', 'content' => "【对话历史摘要】\n" . $context['summary']['text']];
+            $messages[0]['content'] .= "\n\n【对话历史摘要】\n" . $context['summary']['text'];
             sendSSE($connection, 'summary_used', json_encode([
                 'rounds_summarized' => $context['summary']['rounds_summarized'],
                 'recent_messages' => count($context['messages']) / 2
@@ -416,7 +477,7 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
                 sendSSE($connection, 'error', $error); 
                 $connection->close(); 
             },
-            ['enableSearch' => $enableSearch, 'enableTools' => true]  // 启用 MCP 工具
+            ['enableSearch' => $enableSearch && $engine === 'google', 'enableTools' => $engine === 'mcp']
         );
     });
     
