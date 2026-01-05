@@ -350,17 +350,19 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
     $chatId = $body['chat_id'] ?? '';
     $enableSearch = $body['search'] ?? true;  // 默认开启搜索
     $engine = $body['engine'] ?? 'google';    // 默认使用 Google
+    $ragEnabled = $body['rag'] ?? true;       // RAG 开关，默认开启
     
     if (empty($question)) return ['error' => 'Missing question'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     
     // 获取对话上下文（包含摘要 + 最近消息）
-    CacheService::getChatContext($chatId, function($context) use ($connection, $question, $chatId, $headers, $enableSearch, $engine) {
+    CacheService::getChatContext($chatId, function($context) use ($connection, $question, $chatId, $headers, $enableSearch, $engine, $ragEnabled) {
         $connection->send(new Response(200, $headers, ''));
         
         $prompts = $GLOBALS['config']['prompts'];
         $libraryPrompts = $prompts['library'];
+        $ragPrompts = $prompts['rag'];
         
         // 从 EPUB 文件读取书籍元数据
         $bookTitle = '未知书籍';
@@ -376,16 +378,69 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
             }
         }
         
-        // 构建书籍上下文提示词（完全对齐 Python 的拼接顺序）
-        // 1. book_intro + book_template + separator
-        // 2. markdown_instruction
-        // 3. unknown_single
-        // 4. language_instruction
-        $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', $bookTitle, $bookAuthors], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
-        $systemPrompt = $bookInfo 
-            . $libraryPrompts['markdown_instruction']
-            . ($libraryPrompts['unknown_single'] ?? ' If the specified book is unknown to you instead of answering the following questions just say the book is unknown.')
-            . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
+        // RAG 开启时：检索书籍内容
+        $ragContext = '';
+        $ragSources = [];
+        if ($ragEnabled && defined('DEFAULT_BOOK_CACHE') && file_exists(DEFAULT_BOOK_CACHE)) {
+            try {
+                $embedder = new EmbeddingClient(GEMINI_API_KEY);
+                $queryEmbedding = $embedder->embedQuery($question);
+                $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
+                $results = $vectorStore->hybridSearch($question, $queryEmbedding, 5, 0.6);
+                
+                if (!empty($results)) {
+                    $chunkTemplate = $ragPrompts['chunk_template'] ?? "【Passage {index}】\n{text}\n";
+                    foreach ($results as $i => $result) {
+                        $ragContext .= str_replace(
+                            ['{index}', '{text}'],
+                            [$i + 1, $result['chunk']['text']],
+                            $chunkTemplate
+                        );
+                        $ragContext .= "(Relevance: " . round($result['score'] * 100, 1) . "%)\n\n";
+                        $ragSources[] = [
+                            'text' => mb_substr($result['chunk']['text'], 0, 200) . '...',
+                            'score' => round($result['score'] * 100, 1)
+                        ];
+                    }
+                }
+            } catch (Exception $e) {
+                // RAG 检索失败，静默降级
+            }
+        }
+        
+        // 构建系统提示词
+        if ($ragEnabled && !empty($ragContext)) {
+            // RAG 模式：使用检索到的内容
+            $bookInfo = str_replace('{title}', $bookTitle, $ragPrompts['book_intro'] ?? 'I am discussing the book: {title}');
+            if (!empty($bookAuthors)) {
+                $bookInfo .= str_replace('{authors}', $bookAuthors, $ragPrompts['author_template'] ?? ' by {authors}');
+            }
+            
+            $systemPrompt = str_replace(
+                ['{book_info}', '{context}'],
+                [$bookInfo, $ragContext],
+                $ragPrompts['system'] ?? 'You are a book analysis assistant. {book_info}\n\nContext:\n{context}'
+            );
+            
+            // 发送检索来源
+            sendSSE($connection, 'sources', json_encode($ragSources, JSON_UNESCAPED_UNICODE));
+        } else {
+            // 非 RAG 模式：使用书库讨论模式（AI 预训练知识）
+            $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', $bookTitle, $bookAuthors], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
+            $systemPrompt = $bookInfo 
+                . $libraryPrompts['markdown_instruction']
+                . ($libraryPrompts['unknown_single'] ?? ' If the specified book is unknown to you instead of answering the following questions just say the book is unknown.')
+                . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
+            
+            // 显示来源为 AI 预训练知识
+            $sourceTexts = [
+                'google' => 'AI 预训练知识 + Google Search',
+                'mcp' => 'AI 预训练知识 + MCP 工具',
+                'off' => 'AI 预训练知识（搜索已关闭）',
+            ];
+            $sourceText = $sourceTexts[$engine] ?? $sourceTexts['off'];
+            sendSSE($connection, 'sources', json_encode([['text' => $sourceText, 'score' => 100]], JSON_UNESCAPED_UNICODE));
+        }
         
         // 如果有摘要，添加到系统提示中，并通知前端
         if ($context['summary']) {
@@ -395,15 +450,6 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
                 'recent_messages' => count($context['messages']) / 2
             ], JSON_UNESCAPED_UNICODE));
         }
-        
-        // 根据搜索引擎显示不同来源
-        $sourceTexts = [
-            'google' => 'AI 预训练知识 + Google Search',
-            'mcp' => 'AI 预训练知识 + MCP 工具',
-            'off' => 'AI 预训练知识（搜索已关闭）',
-        ];
-        $sourceText = $sourceTexts[$engine] ?? $sourceTexts['off'];
-        sendSSE($connection, 'sources', json_encode([['text' => $sourceText, 'score' => 100]], JSON_UNESCAPED_UNICODE));
         
         // 构建消息数组：系统提示 + 最近消息 + 当前问题
         $messages = [['role' => 'system', 'content' => $systemPrompt]];

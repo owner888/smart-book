@@ -46,10 +46,17 @@ async function sendMessage() {
     
     // 构建请求
     const searchConfig = ChatToolbar.getSearchConfig();
+    const ragConfig = ChatToolbar.getRAGConfig();
     let url, body;
     if (assistant.action === 'ask') {
         url = `${ChatConfig.API_BASE}/api/stream/ask`;
-        body = { question: message, chat_id: ChatState.getCurrentState().chatId, search: searchConfig.enabled, engine: searchConfig.engine };
+        body = { 
+            question: message, 
+            chat_id: ChatState.getCurrentState().chatId, 
+            search: searchConfig.enabled, 
+            engine: searchConfig.engine,
+            rag: ragConfig.enabled  // RAG 开关
+        };
     } else if (assistant.action === 'continue') {
         url = `${ChatConfig.API_BASE}/api/stream/continue`;
         body = { prompt: message, search: searchConfig.enabled, engine: searchConfig.engine };

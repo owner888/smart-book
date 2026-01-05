@@ -2,6 +2,29 @@
  * 工具栏模块
  */
 
+// RAG 开关状态
+let ragEnabled = true;
+
+// 切换 RAG 开关
+function toggleRAG() {
+    ragEnabled = !ragEnabled;
+    const btn = document.getElementById('ragToggle');
+    
+    if (btn) {
+        btn.classList.toggle('active', ragEnabled);
+        btn.title = ragEnabled ? 'RAG 检索 (已开启)' : 'RAG 检索 (已关闭)';
+    }
+    
+    layer.msg(ragEnabled ? '📚 RAG 检索已开启 - 基于书籍内容回答' : '🤖 RAG 检索已关闭 - 使用 AI 预训练知识');
+}
+
+// 获取 RAG 状态
+function getRAGConfig() {
+    return {
+        enabled: ragEnabled
+    };
+}
+
 // 搜索引擎配置
 const searchEngines = [
     { id: 'google', name: 'Google', icon: 'G', free: true },
@@ -94,5 +117,11 @@ window.ChatToolbar = {
     selectSearchEngine,
     getSearchConfig,
     showAITools,
-    toggleFullscreen
+    toggleFullscreen,
+    toggleRAG,
+    getRAGConfig,
+    get ragEnabled() { return ragEnabled; }
 };
+
+// 全局函数
+window.toggleRAG = toggleRAG;

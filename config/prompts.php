@@ -114,13 +114,88 @@ return [
     ],
     
     // ===================================
-    // RAG 问答模式
+    // RAG 问答模式 (基于书籍内容检索的问答)
     // ===================================
     'rag' => [
-        'system' => '你是一个书籍分析助手。根据以下从书中检索到的内容回答问题，使用中文：
+        // 书籍信息模板 (参考 library 模式)
+        'book_intro' => 'I am discussing the book: {title}',
+        'author_template' => ' by {authors}',
+        'series_template' => '. It is part of the series: {series}',
+        'tags_template' => '. Tagged with: {tags}',
+        
+        // System prompt 模板
+        'system' => 'You are a knowledgeable book analysis assistant. {book_info}
 
-{context}',
-        'chunk_template' => "【片段 {index}】\n{text}\n\n",
+I have retrieved the following relevant passages from this book to help answer questions:
+
+{context}
+
+Instructions:
+1. Answer questions based PRIMARILY on the retrieved passages above
+2. If the passages contain relevant information, cite them in your answer
+3. If the passages don\'t contain enough information, you may supplement with your general knowledge, but clearly indicate this
+4. Use markdown formatting for better readability
+5. Be accurate and avoid making up information not in the text
+6. Respond in the user\'s language (Chinese if asked in Chinese)',
+
+        // 检索片段模板
+        'chunk_template' => "【Passage {index}】\n{text}\n",
+        'chunk_separator' => "\n",
+        
+        // 无检索结果时的 fallback
+        'no_context_system' => 'You are a knowledgeable book analysis assistant. {book_info}
+
+Note: No relevant passages were found in the book for this query. Please:
+1. Try to answer based on your general knowledge of the book (if known)
+2. Clearly indicate that this is not based on the book\'s actual text
+3. Suggest the user try rephrasing their question if needed',
+        
+        // 预定义操作 (参考 library 和 viewer 模式)
+        'actions' => [
+            'summarize' => [
+                'name' => 'summarize',
+                'human_name' => '总结内容',
+                'prompt' => 'Based on the retrieved passages, provide a concise summary of this part of the book.',
+            ],
+            'explain' => [
+                'name' => 'explain',
+                'human_name' => '解释说明',
+                'prompt' => 'Explain the content of the retrieved passages in simple, easy to understand language.',
+            ],
+            'characters' => [
+                'name' => 'characters',
+                'human_name' => '人物分析',
+                'prompt' => 'Analyze the characters mentioned in the retrieved passages. Describe their traits, motivations, and roles.',
+            ],
+            'themes' => [
+                'name' => 'themes',
+                'human_name' => '主题分析',
+                'prompt' => 'Identify and analyze the themes present in the retrieved passages.',
+            ],
+            'key_points' => [
+                'name' => 'key_points',
+                'human_name' => '关键要点',
+                'prompt' => 'Extract the key points from the retrieved passages as a bulleted list.',
+            ],
+            'translate' => [
+                'name' => 'translate',
+                'human_name' => '翻译',
+                'prompt' => 'Translate the retrieved passages into {language}.',
+            ],
+            'compare' => [
+                'name' => 'compare',
+                'human_name' => '对比分析',
+                'prompt' => 'Compare and contrast the different elements or viewpoints in the retrieved passages.',
+            ],
+            'context' => [
+                'name' => 'context',
+                'human_name' => '背景知识',
+                'prompt' => 'Provide historical, cultural, or literary context for the content in the retrieved passages.',
+            ],
+        ],
+        
+        // Markdown 格式指令
+        'markdown_instruction' => ' When you answer the questions use markdown formatting for the answers wherever possible.',
     ],
     
     // ===================================
