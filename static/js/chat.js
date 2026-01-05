@@ -110,6 +110,9 @@ document.addEventListener('DOMContentLoaded', () => {
             tab.classList.add('active');
         });
     });
+    
+    // 首次加载时自动聚焦输入框
+    setTimeout(() => chatInput.focus(), 100);
 });
 
 // 切换助手
@@ -135,6 +138,9 @@ function switchAssistant(assistantId) {
             <div class="message-system">${assistant.systemPrompt}</div>
         </div>
     `;
+    
+    // 自动聚焦输入框
+    setTimeout(() => chatInput.focus(), 100);
 }
 
 // 发送消息（SSE 流式）
