@@ -17,6 +17,25 @@
                 <div class="sidebar-tab" data-tab="topics">Topics</div>
             </div>
             <div class="sidebar-content">
+                <!-- 书籍选择区域 -->
+                <div class="book-selector-section">
+                    <div class="section-title" onclick="ChatBooks.toggleSection()">
+                        <span>📖 当前书籍</span>
+                        <i class="layui-icon layui-icon-down section-toggle"></i>
+                    </div>
+                    <div class="book-selector-content" id="bookSelectorContent">
+                        <div class="current-book" id="currentBook">
+                            <span class="book-name">加载中...</span>
+                            <span class="book-status"></span>
+                        </div>
+                        <div class="book-actions">
+                            <button class="book-btn" onclick="ChatBooks.showBookList()">
+                                <i class="layui-icon layui-icon-read"></i> 切换书籍
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="add-assistant">
                     <i class="layui-icon layui-icon-add-1"></i>
                     <span>Add Assistant</span>
@@ -151,6 +170,7 @@
     <script src="../static/js/chat/toolbar.js"></script>
     <script src="../static/js/chat/phrases.js"></script>
     <script src="../static/js/chat/sidebar.js"></script>
+    <script src="../static/js/chat/books.js"></script>
     <script src="../static/js/chat/main.js"></script>
 </body>
 </html>

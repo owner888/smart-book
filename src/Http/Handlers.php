@@ -79,6 +79,9 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             '/api/health' => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s'), 'redis' => CacheService::isConnected()],
             '/api/models' => handleGetModels(),
             '/api/assistants' => handleGetAssistants(),
+            '/api/books' => handleGetBooks(),
+            '/api/books/select' => handleSelectBook($request),
+            '/api/books/index' => handleIndexBook($connection, $request),
             '/api/cache/stats' => handleCacheStats($connection),
             '/api/ask' => handleAskWithCache($connection, $request),
             '/api/chat' => handleChat($request),
@@ -340,6 +343,240 @@ function handleCacheStats(TcpConnection $connection): ?array
     return null;
 }
 
+// ===================================
+// 书籍管理
+// ===================================
+
+/**
+ * 获取所有可用书籍列表
+ */
+function handleGetBooks(): array
+{
+    $booksDir = dirname(__DIR__, 2) . '/books';
+    $books = [];
+    $currentBook = null;
+    
+    // 获取当前选中的书籍
+    if (defined('DEFAULT_BOOK_PATH') && file_exists(DEFAULT_BOOK_PATH)) {
+        $currentBook = basename(DEFAULT_BOOK_PATH);
+    }
+    
+    // 扫描 books 目录
+    if (is_dir($booksDir)) {
+        $files = scandir($booksDir);
+        foreach ($files as $file) {
+            if ($file === '.' || $file === '..') continue;
+            
+            $filePath = $booksDir . '/' . $file;
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            
+            // 支持 epub 和 txt 格式
+            if (!in_array($ext, ['epub', 'txt'])) continue;
+            
+            $baseName = pathinfo($file, PATHINFO_FILENAME);
+            $indexFile = $booksDir . '/' . $baseName . '_index.json';
+            $hasIndex = file_exists($indexFile);
+            
+            // 获取书籍元数据
+            $title = $baseName;
+            $author = '';
+            $fileSize = filesize($filePath);
+            $indexSize = $hasIndex ? filesize($indexFile) : 0;
+            $chunkCount = 0;
+            
+            if ($ext === 'epub') {
+                try {
+                    $metadata = \SmartBook\Parser\EpubParser::extractMetadata($filePath);
+                    $title = $metadata['title'] ?? $baseName;
+                    $author = $metadata['authors'] ?? '';
+                } catch (Exception $e) {}
+            }
+            
+            // 如果有索引，读取块数量
+            if ($hasIndex) {
+                try {
+                    $indexData = json_decode(file_get_contents($indexFile), true);
+                    $chunkCount = count($indexData['chunks'] ?? []);
+                } catch (Exception $e) {}
+            }
+            
+            $books[] = [
+                'file' => $file,
+                'title' => $title,
+                'author' => $author,
+                'format' => strtoupper($ext),
+                'fileSize' => formatFileSize($fileSize),
+                'hasIndex' => $hasIndex,
+                'indexSize' => $hasIndex ? formatFileSize($indexSize) : null,
+                'chunkCount' => $chunkCount,
+                'isSelected' => ($file === $currentBook),
+            ];
+        }
+    }
+    
+    // 按标题排序
+    usort($books, fn($a, $b) => strcmp($a['title'], $b['title']));
+    
+    return [
+        'books' => $books,
+        'currentBook' => $currentBook,
+        'booksDir' => $booksDir,
+    ];
+}
+
+/**
+ * 选择当前书籍
+ */
+function handleSelectBook(Request $request): array
+{
+    $body = json_decode($request->rawBody(), true) ?? [];
+    $bookFile = $body['book'] ?? '';
+    
+    if (empty($bookFile)) {
+        return ['error' => 'Missing book parameter'];
+    }
+    
+    $booksDir = dirname(__DIR__, 2) . '/books';
+    $bookPath = $booksDir . '/' . $bookFile;
+    
+    if (!file_exists($bookPath)) {
+        return ['error' => 'Book not found: ' . $bookFile];
+    }
+    
+    $baseName = pathinfo($bookFile, PATHINFO_FILENAME);
+    $indexPath = $booksDir . '/' . $baseName . '_index.json';
+    
+    // 更新全局配置（运行时）
+    $GLOBALS['selected_book'] = [
+        'path' => $bookPath,
+        'cache' => $indexPath,
+        'hasIndex' => file_exists($indexPath),
+    ];
+    
+    // 返回选择结果
+    return [
+        'success' => true,
+        'book' => $bookFile,
+        'path' => $bookPath,
+        'hasIndex' => file_exists($indexPath),
+        'message' => file_exists($indexPath) 
+            ? "已选择书籍: {$baseName}" 
+            : "已选择书籍: {$baseName}（需要先创建索引）",
+    ];
+}
+
+/**
+ * 为书籍创建向量索引（SSE 流式返回进度）
+ */
+function handleIndexBook(TcpConnection $connection, Request $request): ?array
+{
+    $body = json_decode($request->rawBody(), true) ?? [];
+    $bookFile = $body['book'] ?? '';
+    
+    if (empty($bookFile)) {
+        return ['error' => 'Missing book parameter'];
+    }
+    
+    $booksDir = dirname(__DIR__, 2) . '/books';
+    $bookPath = $booksDir . '/' . $bookFile;
+    
+    if (!file_exists($bookPath)) {
+        return ['error' => 'Book not found: ' . $bookFile];
+    }
+    
+    $baseName = pathinfo($bookFile, PATHINFO_FILENAME);
+    $ext = strtolower(pathinfo($bookFile, PATHINFO_EXTENSION));
+    $indexPath = $booksDir . '/' . $baseName . '_index.json';
+    
+    // SSE 响应
+    $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
+    $connection->send(new Response(200, $headers, ''));
+    
+    try {
+        sendSSE($connection, 'progress', json_encode(['step' => 'start', 'message' => "开始处理: {$baseName}"]));
+        
+        // 提取文本
+        sendSSE($connection, 'progress', json_encode(['step' => 'extract', 'message' => '正在提取文本...']));
+        
+        if ($ext === 'epub') {
+            $text = \SmartBook\Parser\EpubParser::extractText($bookPath);
+        } else {
+            // TXT 文件直接读取
+            $text = file_get_contents($bookPath);
+        }
+        
+        $textLength = mb_strlen($text);
+        sendSSE($connection, 'progress', json_encode(['step' => 'extract_done', 'message' => "提取完成: {$textLength} 字符"]));
+        
+        // 分块
+        sendSSE($connection, 'progress', json_encode(['step' => 'chunk', 'message' => '正在分块...']));
+        
+        $chunker = new \SmartBook\RAG\DocumentChunker(chunkSize: 800, chunkOverlap: 150);
+        $chunks = $chunker->chunk($text);
+        $chunkCount = count($chunks);
+        
+        sendSSE($connection, 'progress', json_encode(['step' => 'chunk_done', 'message' => "分块完成: {$chunkCount} 个块"]));
+        
+        // 生成向量嵌入
+        sendSSE($connection, 'progress', json_encode(['step' => 'embed', 'message' => '正在生成向量嵌入...']));
+        
+        $embedder = new EmbeddingClient(GEMINI_API_KEY);
+        $vectorStore = new VectorStore();
+        
+        $batchSize = 20;
+        $totalBatches = ceil($chunkCount / $batchSize);
+        
+        for ($i = 0; $i < $chunkCount; $i += $batchSize) {
+            $batch = array_slice($chunks, $i, $batchSize);
+            $embeddings = $embedder->embedBatch(array_column($batch, 'text'));
+            $vectorStore->addBatch($batch, $embeddings);
+            
+            $currentBatch = floor($i / $batchSize) + 1;
+            $progress = round(($currentBatch / $totalBatches) * 100);
+            sendSSE($connection, 'progress', json_encode([
+                'step' => 'embed_batch', 
+                'batch' => $currentBatch, 
+                'total' => $totalBatches,
+                'progress' => $progress,
+                'message' => "向量化进度: {$currentBatch}/{$totalBatches} ({$progress}%)"
+            ]));
+        }
+        
+        // 保存索引
+        sendSSE($connection, 'progress', json_encode(['step' => 'save', 'message' => '正在保存索引...']));
+        $vectorStore->save($indexPath);
+        
+        $indexSize = formatFileSize(filesize($indexPath));
+        sendSSE($connection, 'done', json_encode([
+            'success' => true,
+            'book' => $bookFile,
+            'chunkCount' => $chunkCount,
+            'indexSize' => $indexSize,
+            'message' => "索引创建完成！共 {$chunkCount} 个块，索引大小 {$indexSize}"
+        ]));
+        
+    } catch (Exception $e) {
+        sendSSE($connection, 'error', $e->getMessage());
+    }
+    
+    $connection->close();
+    return null;
+}
+
+/**
+ * 格式化文件大小
+ */
+function formatFileSize(int $bytes): string
+{
+    if ($bytes >= 1073741824) {
+        return number_format($bytes / 1073741824, 2) . ' GB';
+    } elseif ($bytes >= 1048576) {
+        return number_format($bytes / 1048576, 2) . ' MB';
+    } elseif ($bytes >= 1024) {
+        return number_format($bytes / 1024, 2) . ' KB';
+    }
+    return $bytes . ' B';
+}
 
 // ===================================
 // 上下文压缩（自动摘要）
