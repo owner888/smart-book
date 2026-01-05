@@ -204,17 +204,18 @@ async function sendMessage() {
     chatMessages.appendChild(currentMessageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
-    // 构建请求（使用 Chat ID，传递 search 开关状态）
+    // 构建请求（使用 Chat ID，传递搜索配置）
+    const searchConfig = getSearchConfig();
     let url, body;
     if (assistant.action === 'ask') {
         url = `${API_BASE}/api/stream/ask`;
-        body = { question: message, chat_id: getCurrentState().chatId, search: webSearchEnabled };
+        body = { question: message, chat_id: getCurrentState().chatId, search: searchConfig.enabled, engine: searchConfig.engine };
     } else if (assistant.action === 'continue') {
         url = `${API_BASE}/api/stream/continue`;
-        body = { prompt: message, search: webSearchEnabled };
+        body = { prompt: message, search: searchConfig.enabled, engine: searchConfig.engine };
     } else {
         url = `${API_BASE}/api/stream/chat`;
-        body = { message: message, chat_id: getCurrentState().chatId, search: webSearchEnabled };
+        body = { message: message, chat_id: getCurrentState().chatId, search: searchConfig.enabled, engine: searchConfig.engine };
     }
     
     // 使用 fetch + SSE
@@ -512,13 +513,66 @@ function showTip(feature) {
     layer.msg(`🔧 ${feature} 功能开发中...`);
 }
 
-// 切换网页搜索（默认开启）
-let webSearchEnabled = true;
+// 搜索引擎配置
+const searchEngines = [
+    { id: 'google', name: 'Google', icon: 'G', free: true },
+    { id: 'mcp', name: 'MCP 工具', icon: '🔧', free: true },
+    { id: 'off', name: '关闭搜索', icon: '⊘', free: true },
+];
+let currentSearchEngine = 'google';  // 默认使用 Google
+
+// 点击搜索按钮显示选择菜单
 function toggleWebSearch() {
-    webSearchEnabled = !webSearchEnabled;
-    const btn = event.currentTarget;
-    btn.classList.toggle('active', webSearchEnabled);
-    layer.msg(webSearchEnabled ? '🌐 网页搜索已开启' : '🌐 网页搜索已关闭');
+    const currentEngine = searchEngines.find(e => e.id === currentSearchEngine);
+    
+    // 构建简洁的选项列表
+    const menuItems = searchEngines.map(engine => {
+        const isSelected = engine.id === currentSearchEngine;
+        const style = isSelected 
+            ? 'background: var(--accent-green); color: white;' 
+            : 'background: var(--bg-tertiary);';
+        return `
+            <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; margin-bottom: 8px; border-radius: 8px; cursor: pointer; ${style}" 
+                 onclick="selectSearchEngine('${engine.id}')" 
+                 onmouseover="this.style.opacity='0.85'" 
+                 onmouseout="this.style.opacity='1'">
+                <span style="font-size: 18px;">${engine.icon}</span>
+                <span style="flex: 1; font-size: 15px;">${engine.name}</span>
+                <span style="font-size: 12px; opacity: 0.7;">Free</span>
+            </div>
+        `;
+    }).join('');
+    
+    layui.layer.open({
+        type: 1,
+        title: '🌐 选择搜索引擎',
+        area: ['340px', 'auto'],
+        shadeClose: true,
+        content: `<div style="padding: 16px;">${menuItems}</div>`
+    });
+}
+
+// 选择搜索引擎
+function selectSearchEngine(engineId) {
+    currentSearchEngine = engineId;
+    const engine = searchEngines.find(e => e.id === engineId);
+    
+    // 更新按钮状态
+    const btn = document.querySelector('.toolbar-icon[title="网页搜索"]');
+    if (btn) {
+        btn.classList.toggle('active', engineId !== 'off');
+    }
+    
+    layer.closeAll();
+    layer.msg(`🌐 已切换到: ${engine?.name || engineId}`);
+}
+
+// 获取搜索状态
+function getSearchConfig() {
+    return {
+        enabled: currentSearchEngine !== 'off',
+        engine: currentSearchEngine
+    };
 }
 
 // 显示 AI 工具菜单

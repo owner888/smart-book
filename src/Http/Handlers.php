@@ -278,13 +278,14 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
     $question = $body['question'] ?? '';
     $chatId = $body['chat_id'] ?? '';
     $enableSearch = $body['search'] ?? true;  // 默认开启搜索
+    $engine = $body['engine'] ?? 'google';    // 默认使用 Google
     
     if (empty($question)) return ['error' => 'Missing question'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     
     // 获取对话上下文（包含摘要 + 最近消息）
-    CacheService::getChatContext($chatId, function($context) use ($connection, $question, $chatId, $headers, $enableSearch) {
+    CacheService::getChatContext($chatId, function($context) use ($connection, $question, $chatId, $headers, $enableSearch, $engine) {
         $connection->send(new Response(200, $headers, ''));
         
         $prompts = $GLOBALS['config']['prompts'];
@@ -303,8 +304,13 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
             ], JSON_UNESCAPED_UNICODE));
         }
         
-        // 根据搜索开关状态显示不同来源
-        $sourceText = $enableSearch ? 'AI 预训练知识 + Google Search' : 'AI 预训练知识（搜索已关闭）';
+        // 根据搜索引擎显示不同来源
+        $sourceTexts = [
+            'google' => 'AI 预训练知识 + Google Search',
+            'mcp' => 'AI 预训练知识 + MCP 工具',
+            'off' => 'AI 预训练知识（搜索已关闭）',
+        ];
+        $sourceText = $sourceTexts[$engine] ?? $sourceTexts['off'];
         sendSSE($connection, 'sources', json_encode([['text' => $sourceText, 'score' => 100]], JSON_UNESCAPED_UNICODE));
         
         // 构建消息数组：系统提示 + 最近消息 + 当前问题
@@ -343,7 +349,7 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
                 sendSSE($connection, 'error', $error); 
                 $connection->close(); 
             },
-            ['enableSearch' => $enableSearch]
+            ['enableSearch' => $enableSearch && $engine === 'google', 'enableTools' => $engine === 'mcp']
         );
     });
     

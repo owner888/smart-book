@@ -881,3 +881,109 @@ body {
         }
     }
 }
+
+/* ===== 搜索引擎选择菜单 ===== */
+.search-menu {
+    padding: 12px;
+}
+
+.search-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border-radius: 10px;
+    margin-bottom: 6px;
+    border: 2px solid transparent;
+}
+
+.search-menu-item:last-of-type {
+    margin-bottom: 0;
+}
+
+.search-menu-item:hover {
+    background: var(--bg-hover);
+}
+
+.search-menu-item.selected {
+    background: rgba(76, 175, 80, 0.12);
+    border: 2px solid var(--accent-green);
+}
+
+.search-menu-item.selected .search-menu-icon {
+    color: var(--accent-green);
+    background: rgba(76, 175, 80, 0.2);
+}
+
+.search-menu-item.selected .search-menu-name {
+    color: var(--accent-green);
+    font-weight: 600;
+}
+
+.search-menu-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: bold;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+}
+
+.search-menu-name {
+    flex: 1;
+    font-size: 16px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.search-menu-badge {
+    font-size: 13px;
+    color: var(--text-secondary);
+    padding: 6px 14px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+}
+
+.search-menu-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px;
+    border-top: 1px solid var(--border-color);
+    margin-top: 12px;
+}
+
+.search-menu-current {
+    font-size: 14px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.search-menu-shortcuts {
+    display: flex;
+    gap: 20px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.search-menu-shortcuts span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.search-menu-shortcuts kbd {
+    background: var(--bg-tertiary);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: inherit;
+}
