@@ -90,20 +90,37 @@ const searchEngines = [
     { id: 'mcp', name: 'MCP 工具', icon: '🔧', free: true },
     { id: 'off', name: '关闭搜索', icon: '⊘', free: true },
 ];
-let currentSearchEngine = 'google';
+let currentSearchEngine = 'off';  // 默认关闭
 
-// 点击搜索按钮显示选择菜单
+// 点击搜索按钮（关闭时显示选择，开启时直接关闭）
 function toggleWebSearch() {
-    const menuItems = searchEngines.map(engine => {
+    if (currentSearchEngine !== 'off') {
+        // 已开启，直接关闭
+        currentSearchEngine = 'off';
+        const btn = document.querySelector('.toolbar-icon[title*="搜索"]');
+        if (btn) {
+            btn.classList.remove('active');
+            btn.title = '网页搜索 (已关闭)';
+        }
+        layer.msg('🌐 搜索已关闭');
+    } else {
+        // 未开启，显示选择面板
+        showSearchSettings();
+    }
+}
+
+// 显示搜索设置面板
+function showSearchSettings() {
+    // 只显示可开启的选项（排除 off）
+    const activeEngines = searchEngines.filter(e => e.id !== 'off');
+    const menuItems = activeEngines.map(engine => {
         const isSelected = engine.id === currentSearchEngine;
         const style = isSelected 
             ? 'background: var(--accent-green); color: white;' 
             : 'background: var(--bg-tertiary);';
         return `
             <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; margin-bottom: 8px; border-radius: 8px; cursor: pointer; ${style}" 
-                 onclick="ChatToolbar.selectSearchEngine('${engine.id}')" 
-                 onmouseover="this.style.opacity='0.85'" 
-                 onmouseout="this.style.opacity='1'">
+                 onclick="ChatToolbar.selectSearchEngine('${engine.id}')">
                 <span style="font-size: 18px;">${engine.icon}</span>
                 <span style="flex: 1; font-size: 15px;">${engine.name}</span>
                 <span style="font-size: 12px; opacity: 0.7;">Free</span>
@@ -120,16 +137,19 @@ function toggleWebSearch() {
     });
 }
 
-// 选择搜索引擎
+// 选择搜索引擎并激活
 function selectSearchEngine(engineId) {
     currentSearchEngine = engineId;
     const engine = searchEngines.find(e => e.id === engineId);
     
-    const btn = document.querySelector('.toolbar-icon[title="网页搜索"]');
-    if (btn) btn.classList.toggle('active', engineId !== 'off');
+    const btn = document.querySelector('.toolbar-icon[title*="搜索"]');
+    if (btn) {
+        btn.classList.add('active');
+        btn.title = `网页搜索 (${engine?.name || engineId})`;
+    }
     
     layer.closeAll();
-    layer.msg(`🌐 已切换到: ${engine?.name || engineId}`);
+    layer.msg(`🌐 搜索已开启 - ${engine?.name || engineId}`);
 }
 
 // 获取搜索状态
