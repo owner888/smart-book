@@ -143,14 +143,18 @@ class AsyncGeminiClient
      */
     private function formatToolResults(array $results): string
     {
-        $output = "\n";
+        $output = "";
+        
+        // 显示工具调用信息
+        $toolNames = array_map(fn($r) => "`{$r['name']}`", $results);
+        $output .= "\n🔧 调用工具: " . implode(', ', $toolNames) . "\n\n";
         
         foreach ($results as $item) {
             $name = $item['name'];
             $result = $item['result'];
             
             if (isset($result['error'])) {
-                $output .= "❌ 工具执行失败: {$result['error']}\n";
+                $output .= "❌ 执行失败: {$result['error']}\n";
                 continue;
             }
             
