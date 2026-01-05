@@ -373,13 +373,12 @@ const MCPSettings = {
             this.servers = data.servers || [];
         } catch (error) {
             console.error('加载 MCP 服务器失败:', error);
-            // 使用默认配置
+            // 使用默认配置（HTTP/SSE 协议）
             this.servers = [
                 {
                     name: 'smart-book',
-                    type: 'stdio',
-                    command: 'php',
-                    args: ['/Users/kaka/Development/other/calibre/smart-book/mcp-server.php'],
+                    type: 'http',
+                    url: 'http://localhost:8089/mcp',
                     enabled: true,
                     tools: ['search_book', 'get_book_info', 'list_books', 'select_book']
                 }

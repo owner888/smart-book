@@ -22,19 +22,18 @@ require_once __DIR__ . '/bootstrap.php';
 
 use Workerman\Worker;
 use Workerman\Connection\TcpConnection;
+use Workerman\Protocols\Http\Request;
 use SmartBook\RAG\BookIndexer;
+use SmartBook\AI\AsyncCurlManager;
+use SmartBook\Cache\CacheService;
+use SmartBook\MCP\ToolManager;
 
 // 启动前检查并自动创建书籍索引
 $indexer = new BookIndexer(__DIR__ . '/books', GEMINI_API_KEY);
 $indexer->checkAndIndexAll();
 
-use Workerman\Protocols\Http\Request;
-use SmartBook\AI\AsyncCurlManager;
-use SmartBook\Cache\CacheService;
-use SmartBook\MCP\ToolManager;
-
 // ===================================
-// HTTP 服务器
+// HTTP 服务器 (主服务)
 // ===================================
 
 $httpWorker = new Worker('http://0.0.0.0:8088');
@@ -48,8 +47,6 @@ $httpWorker->onWorkerStart = function ($worker) {
         echo "⚠️  Redis 连接失败: {$e->getMessage()}\n";
     }
     AsyncCurlManager::init();
-    
-    // 初始化 MCP 工具
     ToolManager::initDefaultTools();
 };
 
@@ -72,13 +69,26 @@ $wsWorker->onMessage = function (TcpConnection $connection, $data) {
 $wsWorker->onClose = fn($conn) => null;
 
 // ===================================
+// MCP Server (HTTP/SSE 协议)
+// ===================================
+
+$mcpWorker = new Worker('http://0.0.0.0:8089');
+$mcpWorker->count = 1;
+$mcpWorker->name = 'MCP-Server';
+
+$mcpWorker->onMessage = function (TcpConnection $connection, Request $request) {
+    handleMCPRequest($connection, $request);
+};
+
+// ===================================
 // 启动
 // ===================================
 
 echo "=========================================\n";
 echo "   AI 书籍助手 Smart Book 服务\n";
 echo "=========================================\n";
-echo "🌐 打开浏览器访问: http://localhost:8088\n";
+echo "🌐 Web UI:    http://localhost:8088\n";
+echo "🔌 MCP API:   http://localhost:8089/mcp\n";
 echo "=========================================\n";
 
 Worker::runAll();
