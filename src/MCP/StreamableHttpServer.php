@@ -22,6 +22,7 @@ class StreamableHttpServer
 {
     private string $booksDir;
     private array $sessions = [];
+    private bool $debug = true; // 启用调试日志
     
     // 服务器信息
     private const SERVER_INFO = [
@@ -29,8 +30,8 @@ class StreamableHttpServer
         'version' => '1.0.0',
     ];
     
-    // 支持的协议版本
-    private const PROTOCOL_VERSION = '2024-11-05';
+    // 支持的协议版本 (Cline 3.46.1 使用 2025-11-25)
+    private const PROTOCOL_VERSION = '2025-03-26';
     
     // CORS 响应头
     private const CORS_HEADERS = [
@@ -40,9 +41,38 @@ class StreamableHttpServer
         'Access-Control-Expose-Headers' => 'Mcp-Session-Id',
     ];
     
-    public function __construct(string $booksDir)
+    public function __construct(string $booksDir, bool $debug = true)
     {
         $this->booksDir = $booksDir;
+        $this->debug = $debug;
+    }
+    
+    /**
+     * 打印调试日志
+     */
+    private function log(string $type, string $message, mixed $data = null): void
+    {
+        if (!$this->debug) {
+            return;
+        }
+        
+        $timestamp = date('Y-m-d H:i:s');
+        $color = match ($type) {
+            'REQUEST' => "\033[36m",   // 青色
+            'RESPONSE' => "\033[32m",  // 绿色
+            'ERROR' => "\033[31m",     // 红色
+            'INFO' => "\033[33m",      // 黄色
+            default => "\033[0m",
+        };
+        $reset = "\033[0m";
+        
+        echo "{$color}[{$timestamp}] [{$type}]{$reset} {$message}\n";
+        
+        if ($data !== null) {
+            $jsonData = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+            echo "{$color}{$jsonData}{$reset}\n";
+        }
+        echo "\n";
     }
     
     /**
@@ -126,6 +156,7 @@ class StreamableHttpServer
         
         // 验证 Content-Type
         if (!str_contains($contentType, 'application/json')) {
+            $this->log('ERROR', 'Invalid Content-Type', ['contentType' => $contentType]);
             $this->sendJsonRpcError($connection, null, -32700, 'Invalid Content-Type, expected application/json');
             return;
         }
@@ -134,12 +165,27 @@ class StreamableHttpServer
         $data = json_decode($body, true);
         
         if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
+            $this->log('ERROR', 'Parse error', ['body' => $body, 'error' => json_last_error_msg()]);
             $this->sendJsonRpcError($connection, null, -32700, 'Parse error: ' . json_last_error_msg());
             return;
         }
         
-        // 获取或创建会话
+        // 获取会话 ID
         $sessionId = $request->header('Mcp-Session-Id');
+        
+        // 如果客户端发送了 session ID 但服务器不认识（可能是服务器重启了），
+        // 记录日志但继续处理，让客户端能够重新初始化
+        if ($sessionId && !isset($this->sessions[$sessionId])) {
+            $this->log('INFO', 'Unknown session ID (server may have restarted), will create new session if needed', [
+                'receivedSessionId' => $sessionId,
+            ]);
+        }
+        
+        // 打印请求日志
+        $this->log('REQUEST', 'MCP JSON-RPC Request', [
+            'sessionId' => $sessionId,
+            'data' => $data,
+        ]);
         
         // 检查是否是批量请求
         if (isset($data[0])) {
@@ -198,6 +244,7 @@ class StreamableHttpServer
                 'tools/list' => ['tools' => $this->getTools()],
                 'tools/call' => $this->handleToolCall($params, $sessionId),
                 'resources/list' => ['resources' => []],
+                'resources/templates/list' => ['resourceTemplates' => []],
                 'resources/read' => throw new \Exception('Resource not found'),
                 'prompts/list' => ['prompts' => []],
                 'prompts/get' => throw new \Exception('Prompt not found'),
@@ -587,6 +634,12 @@ class StreamableHttpServer
         if ($sessionId) {
             $headers['Mcp-Session-Id'] = $sessionId;
         }
+        
+        // 打印响应日志
+        $this->log('RESPONSE', "MCP JSON-RPC Response (HTTP {$statusCode})", [
+            'sessionId' => $sessionId,
+            'data' => $data,
+        ]);
         
         $connection->send(new Response(
             $statusCode,
