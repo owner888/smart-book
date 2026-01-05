@@ -22,6 +22,12 @@ require_once __DIR__ . '/bootstrap.php';
 
 use Workerman\Worker;
 use Workerman\Connection\TcpConnection;
+use SmartBook\RAG\BookIndexer;
+
+// 启动前检查并自动创建书籍索引
+$indexer = new BookIndexer(__DIR__ . '/books', GEMINI_API_KEY);
+$indexer->checkAndIndexAll();
+
 use Workerman\Protocols\Http\Request;
 use SmartBook\AI\AsyncCurlManager;
 use SmartBook\Cache\CacheService;
