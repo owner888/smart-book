@@ -640,8 +640,8 @@ body {
     z-index: 998;
 }
 
-/* 平板 (768px - 1024px) */
-@media screen and (max-width: 1024px) {
+/* 平板 (768px - 900px) */
+@media screen and (max-width: 900px) {
     .sidebar {
         width: 260px;
     }
@@ -654,7 +654,7 @@ body {
         padding: 16px 40px 20px;
     }
     
-    .toolbar-icon:nth-child(n+6):not(.send-btn):not(:last-child) {
+    .toolbar-icon:nth-child(n+8):not(.send-btn):not(:last-child) {
         display: none;
     }
 }
@@ -748,7 +748,7 @@ body {
     }
     
     /* 隐藏部分工具栏图标 */
-    .toolbar-icon:not(:nth-child(-n+4)):not(.send-btn):not(:last-child):not(.toolbar-spacer) {
+    .toolbar-icon:not(:nth-child(-n+6)):not(.send-btn):not(:last-child):not(.toolbar-spacer) {
         display: none;
     }
     
