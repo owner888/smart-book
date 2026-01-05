@@ -138,9 +138,23 @@ function handleGetAssistants(): array
     $prompts = $GLOBALS['config']['prompts'];
     $libraryPrompts = $prompts['library'];
     
+    // 从 EPUB 文件读取书籍元数据
+    $bookTitle = '未知书籍';
+    $bookAuthors = '未知作者';
+    
+    if (defined('DEFAULT_BOOK_PATH') && file_exists(DEFAULT_BOOK_PATH)) {
+        $metadata = \SmartBook\Parser\EpubParser::extractMetadata(DEFAULT_BOOK_PATH);
+        if (!empty($metadata['title'])) {
+            $bookTitle = '《' . $metadata['title'] . '》';
+        }
+        if (!empty($metadata['authors'])) {
+            $bookAuthors = $metadata['authors'];
+        }
+    }
+    
     // 构建书籍助手的系统提示词
     $bookSystemPrompt = $libraryPrompts['book_intro'] 
-        . str_replace(['{which}', '{title}', '{authors}'], ['', '《西游记》', '吴承恩'], $libraryPrompts['book_template']) 
+        . str_replace(['{which}', '{title}', '{authors}'], ['', $bookTitle, $bookAuthors], $libraryPrompts['book_template']) 
         . $libraryPrompts['separator']
         . $libraryPrompts['markdown_instruction'] 
         . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
@@ -150,7 +164,7 @@ function handleGetAssistants(): array
             'name' => '书籍问答助手',
             'avatar' => '📚',
             'color' => '#4caf50',
-            'description' => '我是书籍问答助手，可以帮你分析《西游记》的内容。你可以问我关于书中人物、情节、主题等问题。',
+            'description' => "我是书籍问答助手，可以帮你分析{$bookTitle}的内容。你可以问我关于书中人物、情节、主题等问题。",
             'systemPrompt' => $bookSystemPrompt,
             'action' => 'ask',
         ],
@@ -343,8 +357,22 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
         $prompts = $GLOBALS['config']['prompts'];
         $libraryPrompts = $prompts['library'];
         
+        // 从 EPUB 文件读取书籍元数据
+        $bookTitle = '未知书籍';
+        $bookAuthors = '未知作者';
+        
+        if (defined('DEFAULT_BOOK_PATH') && file_exists(DEFAULT_BOOK_PATH)) {
+            $metadata = \SmartBook\Parser\EpubParser::extractMetadata(DEFAULT_BOOK_PATH);
+            if (!empty($metadata['title'])) {
+                $bookTitle = '《' . $metadata['title'] . '》';
+            }
+            if (!empty($metadata['authors'])) {
+                $bookAuthors = $metadata['authors'];
+            }
+        }
+        
         // 构建书籍上下文提示词
-        $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', '《西游记》', '吴承恩'], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
+        $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', $bookTitle, $bookAuthors], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
         $systemPrompt = $bookInfo . $libraryPrompts['markdown_instruction'] . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
         
         // 如果有摘要，添加到系统提示中，并通知前端
