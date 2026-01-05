@@ -322,7 +322,9 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
         $asyncGemini->chatStreamAsync(
             $messages,
             function ($text, $isThought) use ($connection) { 
-                if (!$isThought && $text) sendSSE($connection, 'content', $text); 
+                if ($text) {
+                    sendSSE($connection, $isThought ? 'thinking' : 'content', $text);
+                }
             },
             function ($fullAnswer) use ($connection, $chatId, $context) {
                 // 保存助手回复

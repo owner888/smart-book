@@ -430,6 +430,64 @@ body {
     font-weight: 500;
 }
 
+/* Thinking 思考过程样式 */
+.thinking-container {
+    background: linear-gradient(135deg, rgba(156, 39, 176, 0.1), rgba(103, 58, 183, 0.1));
+    border: 1px solid rgba(156, 39, 176, 0.3);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+
+.thinking-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+    background: rgba(156, 39, 176, 0.15);
+    transition: background 0.2s;
+}
+
+.thinking-header:hover {
+    background: rgba(156, 39, 176, 0.25);
+}
+
+.thinking-icon {
+    font-size: 16px;
+}
+
+.thinking-toggle {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--text-secondary);
+    transition: transform 0.3s;
+}
+
+.thinking-content {
+    padding: 12px 14px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+    transition: max-height 0.3s, padding 0.3s, opacity 0.3s;
+}
+
+/* 折叠状态 */
+.thinking-container.collapsed .thinking-content {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    opacity: 0;
+}
+
+.thinking-container.collapsed .thinking-toggle {
+    transform: rotate(-90deg);
+}
+
 /* 滚动条 */
 ::-webkit-scrollbar {
     width: 6px;

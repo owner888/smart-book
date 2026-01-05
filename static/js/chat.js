@@ -11,6 +11,7 @@ let isLoading = false;
 let conversationHistory = [];
 let currentMessageDiv = null;
 let currentContent = '';
+let currentThinking = '';
 let currentSources = null;
 let currentSummaryInfo = null;
 let abortController = null;
@@ -152,6 +153,7 @@ async function sendMessage() {
     
     // 重置流式状态
     currentContent = '';
+    currentThinking = '';
     currentSources = null;
     currentSummaryInfo = null;
     
@@ -247,6 +249,10 @@ async function sendMessage() {
                         } catch (e) {
                             layer.msg('📦 来自缓存，秒回！', { time: 1500 });
                         }
+                    } else if (currentEvent === 'thinking') {
+                        // AI 思考过程
+                        currentThinking += data;
+                        updateStreamingMessage();
                     } else if (currentEvent === 'content') {
                         currentContent += data;
                         updateStreamingMessage();
@@ -287,9 +293,24 @@ function updateStreamingMessage() {
     
     const contentDiv = currentMessageDiv.querySelector('.message-content');
     
+    // 构建思考过程 HTML
+    let thinkingHtml = '';
+    if (currentThinking) {
+        thinkingHtml = `
+            <div class="thinking-container">
+                <div class="thinking-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                    <span class="thinking-icon">🧠</span>
+                    <span>Thinking...</span>
+                    <span class="thinking-toggle">▼</span>
+                </div>
+                <div class="thinking-content">${escapeHtml(currentThinking)}</div>
+            </div>
+        `;
+    }
+    
     // 渲染 Markdown（实时）
-    const htmlContent = marked.parse(currentContent);
-    contentDiv.innerHTML = htmlContent;
+    const htmlContent = currentContent ? marked.parse(currentContent) : '';
+    contentDiv.innerHTML = thinkingHtml + htmlContent;
     
     // 滚动到底部
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -300,6 +321,21 @@ function finishStreamingMessage(isError = false) {
     if (!currentMessageDiv) return;
     
     const contentDiv = currentMessageDiv.querySelector('.message-content');
+    
+    // 构建思考过程 HTML（可折叠，默认收起）
+    let thinkingHtml = '';
+    if (currentThinking) {
+        thinkingHtml = `
+            <div class="thinking-container collapsed">
+                <div class="thinking-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                    <span class="thinking-icon">🧠</span>
+                    <span>已完成思考</span>
+                    <span class="thinking-toggle">▶</span>
+                </div>
+                <div class="thinking-content">${escapeHtml(currentThinking)}</div>
+            </div>
+        `;
+    }
     
     // 渲染最终内容
     const htmlContent = isError 
@@ -335,7 +371,7 @@ function finishStreamingMessage(isError = false) {
         `;
     }
     
-    contentDiv.innerHTML = htmlContent + summaryHtml + sourcesHtml;
+    contentDiv.innerHTML = thinkingHtml + htmlContent + summaryHtml + sourcesHtml;
     
     // 保存到历史
     if (!isError) {
