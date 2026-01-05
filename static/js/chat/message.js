@@ -1,0 +1,312 @@
+/**
+ * 消息处理模块
+ */
+
+// 发送消息（SSE 流式）
+async function sendMessage() {
+    const chatInput = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const chatMessages = document.getElementById('chatMessages');
+    
+    const message = chatInput.value.trim();
+    if (!message || ChatState.isLoading) return;
+    
+    ChatState.isLoading = true;
+    sendBtn.disabled = true;
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+    
+    // 添加用户消息
+    addMessage('user', message);
+    ChatState.getCurrentState().history.push({ role: 'user', content: message });
+    
+    // 重置流式状态
+    ChatState.currentContent = '';
+    ChatState.currentThinking = '';
+    ChatState.currentSources = null;
+    ChatState.currentSummaryInfo = null;
+    ChatState.currentSystemPrompt = null;
+    
+    // 创建空的助手消息容器
+    const assistant = ChatAssistants.assistants[ChatState.currentAssistant];
+    ChatState.currentMessageDiv = document.createElement('div');
+    ChatState.currentMessageDiv.className = 'message message-assistant';
+    ChatState.currentMessageDiv.innerHTML = `
+        <div class="message-avatar" style="background: ${assistant.color};">${assistant.avatar}</div>
+        <div class="message-content">
+            <div class="typing-indicator">
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            </div>
+        </div>
+    `;
+    chatMessages.appendChild(ChatState.currentMessageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // 构建请求
+    const searchConfig = ChatToolbar.getSearchConfig();
+    let url, body;
+    if (assistant.action === 'ask') {
+        url = `${ChatConfig.API_BASE}/api/stream/ask`;
+        body = { question: message, chat_id: ChatState.getCurrentState().chatId, search: searchConfig.enabled, engine: searchConfig.engine };
+    } else if (assistant.action === 'continue') {
+        url = `${ChatConfig.API_BASE}/api/stream/continue`;
+        body = { prompt: message, search: searchConfig.enabled, engine: searchConfig.engine };
+    } else {
+        url = `${ChatConfig.API_BASE}/api/stream/chat`;
+        body = { message: message, chat_id: ChatState.getCurrentState().chatId, search: searchConfig.enabled, engine: searchConfig.engine };
+    }
+    
+    // 使用 fetch + SSE
+    try {
+        ChatState.abortController = new AbortController();
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: ChatState.abortController.signal
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            
+            // 解析 SSE 事件
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            
+            let currentEvent = null;
+            let dataLines = [];
+            for (const line of lines) {
+                if (line.startsWith('event: ')) {
+                    currentEvent = line.slice(7);
+                    dataLines = [];
+                } else if (line.startsWith('data: ')) {
+                    dataLines.push(line.slice(6));
+                } else if (line === '' && currentEvent && dataLines.length > 0) {
+                    const data = dataLines.join('\n');
+                    handleSSEEvent(currentEvent, data);
+                    currentEvent = null;
+                }
+            }
+        }
+        
+        // 处理缓冲区剩余内容
+        if (buffer.trim()) {
+            finishStreamingMessage();
+        }
+        
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            ChatState.currentContent += '\n\n⏹️ 已停止生成';
+        } else {
+            ChatState.currentContent = `❌ 请求失败: ${error.message}\n\n请确保 Workerman 服务已启动:\n\`php workerman_ai_server.php start\``;
+        }
+        finishStreamingMessage(error.name !== 'AbortError');
+    } finally {
+        ChatState.isLoading = false;
+        sendBtn.disabled = false;
+        ChatState.abortController = null;
+    }
+}
+
+// 处理 SSE 事件
+function handleSSEEvent(eventType, data) {
+    if (eventType === 'sources') {
+        try { ChatState.currentSources = JSON.parse(data); } catch (e) {}
+    } else if (eventType === 'summary_used') {
+        try { ChatState.currentSummaryInfo = JSON.parse(data); } catch (e) {}
+    } else if (eventType === 'cached') {
+        try {
+            const cacheInfo = JSON.parse(data);
+            if (cacheInfo.hit) layer.msg(`📦 语义缓存命中！`, { time: 1500 });
+        } catch (e) {}
+    } else if (eventType === 'system_prompt') {
+        ChatState.currentSystemPrompt = data;
+        updateStreamingMessage();
+    } else if (eventType === 'thinking') {
+        ChatState.currentThinking += data;
+        updateStreamingMessage();
+    } else if (eventType === 'content') {
+        ChatState.currentContent += data;
+        updateStreamingMessage();
+    } else if (eventType === 'error') {
+        ChatState.currentContent = `❌ 服务端错误: ${data}`;
+        finishStreamingMessage(true);
+    } else if (eventType === 'done') {
+        finishStreamingMessage();
+    }
+}
+
+// 更新流式消息显示
+function updateStreamingMessage() {
+    if (!ChatState.currentMessageDiv) return;
+    
+    const contentDiv = ChatState.currentMessageDiv.querySelector('.message-content');
+    
+    let thinkingHtml = '';
+    if (ChatState.currentThinking) {
+        thinkingHtml = `
+            <div class="thinking-container">
+                <div class="thinking-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                    <span class="thinking-icon">🧠</span>
+                    <span>Thinking...</span>
+                    <span class="thinking-toggle">▼</span>
+                </div>
+                <div class="thinking-content">${ChatUtils.escapeHtml(ChatState.currentThinking)}</div>
+            </div>
+        `;
+    }
+    
+    const htmlContent = ChatState.currentContent ? marked.parse(ChatState.currentContent) : '';
+    contentDiv.innerHTML = thinkingHtml + htmlContent;
+    
+    const chatMessages = document.getElementById('chatMessages');
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// 完成流式消息
+function finishStreamingMessage(isError = false) {
+    if (!ChatState.currentMessageDiv) return;
+    
+    const contentDiv = ChatState.currentMessageDiv.querySelector('.message-content');
+    const chatMessages = document.getElementById('chatMessages');
+    
+    // 构建系统提示词 HTML
+    let systemPromptHtml = '';
+    if (ChatState.currentSystemPrompt) {
+        systemPromptHtml = `
+            <div class="thinking-container collapsed" style="background: linear-gradient(135deg, rgba(33, 150, 243, 0.1), rgba(3, 169, 244, 0.1)); border-color: rgba(33, 150, 243, 0.3);">
+                <div class="thinking-header" onclick="this.parentElement.classList.toggle('collapsed')" style="background: rgba(33, 150, 243, 0.15);">
+                    <span class="thinking-icon">📋</span>
+                    <span>系统提示词</span>
+                    <span class="thinking-toggle">▼</span>
+                </div>
+                <div class="thinking-content">${ChatUtils.escapeHtml(ChatState.currentSystemPrompt)}</div>
+            </div>
+        `;
+    }
+    
+    // 构建思考过程 HTML
+    let thinkingHtml = '';
+    if (ChatState.currentThinking) {
+        thinkingHtml = `
+            <div class="thinking-container collapsed">
+                <div class="thinking-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                    <span class="thinking-icon">🧠</span>
+                    <span>已完成思考</span>
+                    <span class="thinking-toggle">▼</span>
+                </div>
+                <div class="thinking-content">${ChatUtils.escapeHtml(ChatState.currentThinking)}</div>
+            </div>
+        `;
+    }
+    
+    // 渲染最终内容
+    let htmlContent = isError 
+        ? ChatUtils.escapeHtml(ChatState.currentContent).replace(/\n/g, '<br>') 
+        : marked.parse(ChatState.currentContent);
+    
+    htmlContent = ChatUtils.makeUrlsClickable(htmlContent);
+    
+    // 摘要信息
+    let summaryHtml = '';
+    if (ChatState.currentSummaryInfo) {
+        summaryHtml = `
+            <div class="sources-container" style="border-left-color: #9c27b0;">
+                <div class="sources-title">📝 上下文摘要</div>
+                <div class="source-item" style="background: rgba(156, 39, 176, 0.1);">
+                    已压缩 <strong>${ChatState.currentSummaryInfo.rounds_summarized}</strong> 轮历史对话
+                </div>
+            </div>
+        `;
+    }
+    
+    // 检索来源
+    let sourcesHtml = '';
+    if (ChatState.currentSources && ChatState.currentSources.length > 0) {
+        sourcesHtml = `
+            <div class="sources-container">
+                <div class="sources-title">📚 检索来源 (${ChatState.currentSources.length})</div>
+                ${ChatState.currentSources.slice(0, 3).map(s => `
+                    <div class="source-item">
+                        <span class="source-score">${s.score}%</span>
+                        ${ChatUtils.escapeHtml(s.text)}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+    
+    contentDiv.innerHTML = systemPromptHtml + thinkingHtml + htmlContent + summaryHtml + sourcesHtml;
+    
+    if (!isError) {
+        ChatState.getCurrentState().history.push({ role: 'assistant', content: ChatState.currentContent });
+    }
+    
+    ChatState.currentMessageDiv = null;
+    ChatState.currentContent = '';
+    ChatState.currentSources = null;
+    
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// 添加消息
+function addMessage(role, content) {
+    const chatMessages = document.getElementById('chatMessages');
+    const assistant = ChatAssistants.assistants[ChatState.currentAssistant];
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message message-${role}`;
+    
+    if (role === 'user') {
+        messageDiv.innerHTML = `<div class="message-content">${ChatUtils.escapeHtml(content)}</div>`;
+    } else {
+        const htmlContent = marked.parse(content);
+        messageDiv.innerHTML = `
+            <div class="message-avatar" style="background: ${assistant.color};">${assistant.avatar}</div>
+            <div class="message-content">${htmlContent}</div>
+        `;
+    }
+    
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// 清空对话
+function clearChat() {
+    layer.confirm('确定要清空当前对话吗？', {
+        btn: ['确定', '取消'],
+        title: '清空对话'
+    }, function(index) {
+        const chatMessages = document.getElementById('chatMessages');
+        const state = ChatState.getCurrentState();
+        state.history = [];
+        state.chatId = ChatState.generateChatId();
+        state.html = null;
+        const assistant = ChatAssistants.assistants[ChatState.currentAssistant];
+        chatMessages.innerHTML = ChatAssistants.buildWelcomeMessage(assistant);
+        layer.close(index);
+        layer.msg('🗑️ 对话已清空');
+    });
+}
+
+// 导出
+window.ChatMessage = {
+    sendMessage,
+    addMessage,
+    clearChat,
+    updateStreamingMessage,
+    finishStreamingMessage
+};
