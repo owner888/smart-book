@@ -26,6 +26,7 @@ use Workerman\Protocols\Http\Request;
 use SmartBook\AI\AsyncCurlManager;
 use SmartBook\Cache\CacheService;
 use SmartBook\Cache\RedisVectorStore;
+use SmartBook\MCP\ToolManager;
 
 // ===================================
 // HTTP 服务器
@@ -55,6 +56,9 @@ $httpWorker->onWorkerStart = function ($worker) {
         echo "⚠️  Redis 连接失败: {$e->getMessage()}\n";
     }
     AsyncCurlManager::init();
+    
+    // 初始化 MCP 工具
+    ToolManager::initDefaultTools();
 };
 
 $httpWorker->onMessage = function (TcpConnection $connection, Request $request) {

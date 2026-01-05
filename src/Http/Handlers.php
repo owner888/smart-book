@@ -390,7 +390,7 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
         $asyncGemini->chatStreamAsync(
             $messages,
             function ($text, $isThought) use ($connection) { 
-                if (!$isThought && $text) sendSSE($connection, 'content', $text); 
+                if ($text) sendSSE($connection, $isThought ? 'thinking' : 'content', $text); 
             },
             function ($fullContent) use ($connection, $chatId, $context) { 
                 // 保存助手回复
@@ -406,7 +406,7 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
                 sendSSE($connection, 'error', $error); 
                 $connection->close(); 
             },
-            ['enableSearch' => true]
+            ['enableSearch' => false, 'enableTools' => true]  // 启用 MCP 工具
         );
     });
     
