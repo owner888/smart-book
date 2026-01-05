@@ -222,6 +222,57 @@ function handleVectorImport(TcpConnection $connection): ?array
 }
 
 // ===================================
+// 上下文压缩（自动摘要）
+// ===================================
+
+/**
+ * 检查并触发上下文摘要
+ */
+function triggerSummarizationIfNeeded(string $chatId, array $context): void
+{
+    CacheService::needsSummarization($chatId, function($needsSummary) use ($chatId, $context) {
+        if (!$needsSummary) return;
+        
+        // 获取完整历史用于生成摘要
+        CacheService::getChatHistory($chatId, function($history) use ($chatId, $context) {
+            if (empty($history)) return;
+            
+            // 构建摘要请求
+            $conversationText = "";
+            if ($context['summary']) {
+                $conversationText .= "【之前的摘要】\n" . $context['summary']['text'] . "\n\n【新对话】\n";
+            }
+            foreach ($history as $msg) {
+                $role = $msg['role'] === 'user' ? '用户' : 'AI';
+                $conversationText .= "{$role}: {$msg['content']}\n\n";
+            }
+            
+            $summarizePrompt = CacheService::getSummarizePrompt();
+            
+            // 异步调用 AI 生成摘要
+            $asyncGemini = AIService::getAsyncGemini();
+            $asyncGemini->chatStreamAsync(
+                [
+                    ['role' => 'user', 'content' => $conversationText . "\n\n" . $summarizePrompt]
+                ],
+                function ($text, $isThought) { /* 忽略流式输出 */ },
+                function ($summaryText) use ($chatId) {
+                    // 保存摘要并压缩历史
+                    if (!empty($summaryText)) {
+                        CacheService::saveSummaryAndCompress($chatId, $summaryText);
+                        echo "📝 对话 {$chatId} 已自动摘要\n";
+                    }
+                },
+                function ($error) use ($chatId) {
+                    echo "❌ 摘要生成失败 ({$chatId}): {$error}\n";
+                },
+                ['enableSearch' => false]
+            );
+        });
+    });
+}
+
+// ===================================
 // SSE 流式处理
 // ===================================
 
@@ -243,14 +294,14 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
 {
     $body = json_decode($request->rawBody(), true) ?? [];
     $question = $body['question'] ?? '';
-    $chatId = $body['chat_id'] ?? '';  // Chat ID
+    $chatId = $body['chat_id'] ?? '';
     
     if (empty($question)) return ['error' => 'Missing question'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     
-    // 从 Redis 获取对话历史
-    CacheService::getChatHistory($chatId, function($history) use ($connection, $question, $chatId, $headers) {
+    // 获取对话上下文（包含摘要 + 最近消息）
+    CacheService::getChatContext($chatId, function($context) use ($connection, $question, $chatId, $headers) {
         $connection->send(new Response(200, $headers, ''));
         
         $prompts = $GLOBALS['config']['prompts'];
@@ -260,34 +311,39 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
         $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', '《西游记》', '吴承恩'], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
         $systemPrompt = $bookInfo . $libraryPrompts['markdown_instruction'] . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
         
-        // 发送来源信息
+        // 如果有摘要，添加到系统提示中
+        if ($context['summary']) {
+            $systemPrompt .= "\n\n【对话历史摘要】\n" . $context['summary']['text'];
+        }
+        
         sendSSE($connection, 'sources', json_encode([['text' => 'AI 预训练知识 + Google Search', 'score' => 100]], JSON_UNESCAPED_UNICODE));
         
-        // 构建消息数组：系统提示 + 历史消息 + 当前问题
+        // 构建消息数组：系统提示 + 最近消息 + 当前问题
         $messages = [['role' => 'system', 'content' => $systemPrompt]];
-        foreach ($history as $msg) {
+        foreach ($context['messages'] as $msg) {
             if (isset($msg['role']) && isset($msg['content'])) {
                 $messages[] = ['role' => $msg['role'], 'content' => $msg['content']];
             }
         }
         $messages[] = ['role' => 'user', 'content' => $question];
         
-        // 保存用户消息到历史
+        // 保存用户消息
         if ($chatId) {
             CacheService::addToChatHistory($chatId, ['role' => 'user', 'content' => $question]);
         }
         
-        // 使用异步流式调用，启用 Google Search
         $asyncGemini = AIService::getAsyncGemini();
         $asyncGemini->chatStreamAsync(
             $messages,
             function ($text, $isThought) use ($connection) { 
                 if (!$isThought && $text) sendSSE($connection, 'content', $text); 
             },
-            function ($fullAnswer) use ($connection, $chatId) {
-                // 保存助手回复到历史
+            function ($fullAnswer) use ($connection, $chatId, $context) {
+                // 保存助手回复
                 if ($chatId) {
                     CacheService::addToChatHistory($chatId, ['role' => 'assistant', 'content' => $fullAnswer]);
+                    // 检查是否需要进行上下文压缩
+                    triggerSummarizationIfNeeded($chatId, $context);
                 }
                 sendSSE($connection, 'done', '');
                 $connection->close();
@@ -313,20 +369,27 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     
-    // 从 Redis 获取对话历史
-    CacheService::getChatHistory($chatId, function($history) use ($connection, $message, $chatId, $headers) {
+    // 获取对话上下文（包含摘要 + 最近消息）
+    CacheService::getChatContext($chatId, function($context) use ($connection, $message, $chatId, $headers) {
         $connection->send(new Response(200, $headers, ''));
         
         // 构建消息数组
         $messages = [];
-        foreach ($history as $msg) {
+        
+        // 如果有摘要，添加为系统消息
+        if ($context['summary']) {
+            $messages[] = ['role' => 'system', 'content' => "【对话历史摘要】\n" . $context['summary']['text']];
+        }
+        
+        // 添加最近消息
+        foreach ($context['messages'] as $msg) {
             if (isset($msg['role']) && isset($msg['content'])) {
                 $messages[] = ['role' => $msg['role'], 'content' => $msg['content']];
             }
         }
         $messages[] = ['role' => 'user', 'content' => $message];
         
-        // 保存用户消息到历史
+        // 保存用户消息
         if ($chatId) {
             CacheService::addToChatHistory($chatId, ['role' => 'user', 'content' => $message]);
         }
@@ -337,10 +400,12 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
             function ($text, $isThought) use ($connection) { 
                 if (!$isThought && $text) sendSSE($connection, 'content', $text); 
             },
-            function ($fullContent) use ($connection, $chatId) { 
-                // 保存助手回复到历史
+            function ($fullContent) use ($connection, $chatId, $context) { 
+                // 保存助手回复
                 if ($chatId) {
                     CacheService::addToChatHistory($chatId, ['role' => 'assistant', 'content' => $fullContent]);
+                    // 检查是否需要进行上下文压缩
+                    triggerSummarizationIfNeeded($chatId, $context);
                 }
                 sendSSE($connection, 'done', ''); 
                 $connection->close(); 
