@@ -12,6 +12,7 @@ let conversationHistory = [];
 let currentMessageDiv = null;
 let currentContent = '';
 let currentSources = null;
+let currentSummaryInfo = null;
 let abortController = null;
 let currentChatId = generateChatId();  // Chat ID
 
@@ -152,6 +153,7 @@ async function sendMessage() {
     // 重置流式状态
     currentContent = '';
     currentSources = null;
+    currentSummaryInfo = null;
     
     // 创建空的助手消息容器
     const assistant = assistants[currentAssistant];
@@ -228,6 +230,13 @@ async function sendMessage() {
                         try {
                             currentSources = JSON.parse(data);
                         } catch (e) {}
+                    } else if (currentEvent === 'summary_used') {
+                        // 使用了上下文摘要 - 保存信息用于显示
+                        try {
+                            currentSummaryInfo = JSON.parse(data);
+                        } catch (e) {
+                            currentSummaryInfo = { rounds_summarized: 0, recent_messages: 0 };
+                        }
                     } else if (currentEvent === 'cached') {
                         // 语义缓存命中提示
                         try {
@@ -297,6 +306,19 @@ function finishStreamingMessage(isError = false) {
         ? escapeHtml(currentContent).replace(/\n/g, '<br>') 
         : marked.parse(currentContent);
     
+    // 添加上下文摘要信息
+    let summaryHtml = '';
+    if (currentSummaryInfo) {
+        summaryHtml = `
+            <div class="sources-container" style="border-left-color: #9c27b0;">
+                <div class="sources-title">📝 上下文摘要</div>
+                <div class="source-item" style="background: rgba(156, 39, 176, 0.1);">
+                    已压缩 <strong>${currentSummaryInfo.rounds_summarized}</strong> 轮历史对话 + 保留最近 <strong>${currentSummaryInfo.recent_messages}</strong> 轮
+                </div>
+            </div>
+        `;
+    }
+    
     // 添加检索来源
     let sourcesHtml = '';
     if (currentSources && currentSources.length > 0) {
@@ -313,7 +335,7 @@ function finishStreamingMessage(isError = false) {
         `;
     }
     
-    contentDiv.innerHTML = htmlContent + sourcesHtml;
+    contentDiv.innerHTML = htmlContent + summaryHtml + sourcesHtml;
     
     // 保存到历史
     if (!isError) {

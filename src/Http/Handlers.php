@@ -52,24 +52,6 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             }
         }
         
-        // 旧路由兼容 - 聊天页面
-        if ($path === '/chat' || $path === '/chat.html') {
-            $chatHtmlPath = dirname(__DIR__, 2) . '/pages/chat.html';
-            if (file_exists($chatHtmlPath)) {
-                $connection->send(new Response(200, ['Content-Type' => 'text/html; charset=utf-8'], file_get_contents($chatHtmlPath)));
-                return;
-            }
-        }
-        
-        // 旧路由兼容 - 设置页面
-        if ($path === '/settings' || $path === '/settings.html') {
-            $settingsHtmlPath = dirname(__DIR__, 2) . '/pages/settings.html';
-            if (file_exists($settingsHtmlPath)) {
-                $connection->send(new Response(200, ['Content-Type' => 'text/html; charset=utf-8'], file_get_contents($settingsHtmlPath)));
-                return;
-            }
-        }
-        
         // 静态文件
         if (str_starts_with($path, '/static/')) {
             $filePath = dirname(__DIR__, 2) . $path;
@@ -311,9 +293,13 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
         $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', '《西游记》', '吴承恩'], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
         $systemPrompt = $bookInfo . $libraryPrompts['markdown_instruction'] . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
         
-        // 如果有摘要，添加到系统提示中
+        // 如果有摘要，添加到系统提示中，并通知前端
         if ($context['summary']) {
             $systemPrompt .= "\n\n【对话历史摘要】\n" . $context['summary']['text'];
+            sendSSE($connection, 'summary_used', json_encode([
+                'rounds_summarized' => $context['summary']['rounds_summarized'],
+                'recent_messages' => count($context['messages']) / 2
+            ], JSON_UNESCAPED_UNICODE));
         }
         
         sendSSE($connection, 'sources', json_encode([['text' => 'AI 预训练知识 + Google Search', 'score' => 100]], JSON_UNESCAPED_UNICODE));
@@ -376,9 +362,13 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
         // 构建消息数组
         $messages = [];
         
-        // 如果有摘要，添加为系统消息
+        // 如果有摘要，添加为系统消息，并通知前端
         if ($context['summary']) {
             $messages[] = ['role' => 'system', 'content' => "【对话历史摘要】\n" . $context['summary']['text']];
+            sendSSE($connection, 'summary_used', json_encode([
+                'rounds_summarized' => $context['summary']['rounds_summarized'],
+                'recent_messages' => count($context['messages']) / 2
+            ], JSON_UNESCAPED_UNICODE));
         }
         
         // 添加最近消息

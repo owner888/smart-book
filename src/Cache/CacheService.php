@@ -54,8 +54,8 @@ class CacheService
     
     private static int $chatHistoryTTL = 3600;      // 对话历史保存 1 小时
     private static int $maxHistoryLength = 20;       // 最多保存 20 轮对话
-    private static int $summarizeThreshold = 8;      // 超过 8 轮后进行摘要
-    private static int $keepRecentMessages = 4;      // 摘要后保留最近 4 轮对话
+    private static int $summarizeThreshold = 6;      // 超过 6 轮后进行摘要
+    private static int $keepRecentMessages = 3;      // 摘要后保留最近 3 轮对话
     
     /**
      * 获取对话上下文（包含摘要 + 最近消息）
