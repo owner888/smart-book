@@ -8,14 +8,25 @@ const API_BASE = 'http://localhost:8088';
 // 当前状态
 let currentAssistant = 'book';
 let isLoading = false;
-let conversationHistory = [];
 let currentMessageDiv = null;
 let currentContent = '';
 let currentThinking = '';
 let currentSources = null;
 let currentSummaryInfo = null;
 let abortController = null;
-let currentChatId = generateChatId();  // Chat ID
+
+// 每个助手独立的状态存储
+const assistantStates = {
+    book: { history: [], chatId: generateChatId(), html: null },
+    continue: { history: [], chatId: generateChatId(), html: null },
+    chat: { history: [], chatId: generateChatId(), html: null },
+    default: { history: [], chatId: generateChatId(), html: null },
+};
+
+// 获取当前助手的状态
+function getCurrentState() {
+    return assistantStates[currentAssistant];
+}
 
 // 生成 Chat ID
 function generateChatId() {
@@ -117,8 +128,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // 切换助手
 function switchAssistant(assistantId) {
+    if (assistantId === currentAssistant) return;
+    
+    // 保存当前助手的状态
+    const prevState = assistantStates[currentAssistant];
+    prevState.html = chatMessages.innerHTML;
+    
+    // 切换到新助手
     currentAssistant = assistantId;
     const assistant = assistants[assistantId];
+    const newState = assistantStates[assistantId];
     
     // 更新 UI
     document.querySelectorAll('.assistant-item').forEach(item => {
@@ -130,14 +149,19 @@ function switchAssistant(assistantId) {
     headerTitle.textContent = assistant.name;
     systemPrompt.textContent = assistant.systemPrompt;
     
-    // 清空对话并重置 Chat ID
-    conversationHistory = [];
-    currentChatId = generateChatId();  // 新会话 ID
-    chatMessages.innerHTML = `
-        <div class="message">
-            <div class="message-system">${assistant.systemPrompt}</div>
-        </div>
-    `;
+    // 恢复或初始化聊天内容
+    if (newState.html) {
+        chatMessages.innerHTML = newState.html;
+    } else {
+        chatMessages.innerHTML = `
+            <div class="message">
+                <div class="message-system">${assistant.systemPrompt}</div>
+            </div>
+        `;
+    }
+    
+    // 滚动到底部
+    chatMessages.scrollTop = chatMessages.scrollHeight;
     
     // 自动聚焦输入框
     setTimeout(() => chatInput.focus(), 100);
@@ -155,7 +179,7 @@ async function sendMessage() {
     
     // 添加用户消息
     addMessage('user', message);
-    conversationHistory.push({ role: 'user', content: message });
+    getCurrentState().history.push({ role: 'user', content: message });
     
     // 重置流式状态
     currentContent = '';
@@ -184,13 +208,13 @@ async function sendMessage() {
     let url, body;
     if (assistant.action === 'ask') {
         url = `${API_BASE}/api/stream/ask`;
-        body = { question: message, chat_id: currentChatId };
+        body = { question: message, chat_id: getCurrentState().chatId };
     } else if (assistant.action === 'continue') {
         url = `${API_BASE}/api/stream/continue`;
         body = { prompt: message };
     } else {
         url = `${API_BASE}/api/stream/chat`;
-        body = { message: message, chat_id: currentChatId };
+        body = { message: message, chat_id: getCurrentState().chatId };
     }
     
     // 使用 fetch + SSE
@@ -384,7 +408,7 @@ function finishStreamingMessage(isError = false) {
     
     // 保存到历史
     if (!isError) {
-        conversationHistory.push({ role: 'assistant', content: currentContent });
+        getCurrentState().history.push({ role: 'assistant', content: currentContent });
     }
     
     // 重置状态
@@ -577,8 +601,10 @@ function clearChat() {
         btn: ['确定', '取消'],
         title: '清空对话'
     }, function(index) {
-        conversationHistory = [];
-        currentChatId = generateChatId();  // 重置 Chat ID
+        const state = getCurrentState();
+        state.history = [];
+        state.chatId = generateChatId();
+        state.html = null;
         const assistant = assistants[currentAssistant];
         chatMessages.innerHTML = `
             <div class="message">
