@@ -222,13 +222,12 @@ class AsyncGeminiClient
         
         if ($systemInstruction) $data['system_instruction'] = $systemInstruction;
         
-        // 添加工具
+        // 添加工具（Google Search 和 MCP 工具可以同时使用）
         $tools = [];
         if ($options['enableSearch'] ?? false) {
             $tools[] = ['google_search' => new \stdClass()];
         }
-        // MCP 工具（需要显式启用，与 google_search 互斥）
-        if (($options['enableTools'] ?? false) && !($options['enableSearch'] ?? false)) {
+        if ($options['enableTools'] ?? false) {
             $declarations = ToolManager::getToolDefinitions();
             if (!empty($declarations)) {
                 $tools[] = ['function_declarations' => $declarations];
