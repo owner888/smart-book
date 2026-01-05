@@ -297,6 +297,21 @@ body {
     text-decoration: underline;
 }
 
+/* code 标签中的 URL 也显示为蓝色 */
+.message-assistant .message-content code {
+    color: var(--accent-blue);
+    background: rgba(33, 150, 243, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* 代码块不变色 */
+.message-assistant .message-content pre code {
+    color: var(--text-primary);
+    background: transparent;
+    padding: 0;
+}
+
 /* 加载动画 */
 .typing-indicator {
     display: flex;
