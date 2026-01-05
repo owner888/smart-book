@@ -136,10 +136,11 @@ return [
     
     // ===================================
     // AI 不认识书籍的检测关键词
+    // 与 Python 源码 (src/calibre/gui2/dialogs/llm_book.py) 保持一致
+    // Python: "just say the book is unknown" / "just say the books are unknown"
     // ===================================
     'unknown_patterns' => [
-        'unknown', 'unfamiliar', 'not familiar', "don't know", 'do not know',
-        '不认识', '不熟悉', '未知', '不了解', '没有了解', '不清楚',
-        'book is unknown', 'books are unknown',
+        'the book is unknown',
+        'the books are unknown',
     ],
 ];
