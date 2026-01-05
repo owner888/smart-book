@@ -129,7 +129,7 @@ class AsyncGeminiClient
             
             // 执行工具
             $result = ToolManager::execute($name, $args);
-            $allResults[] = ['name' => $name, 'result' => $result];
+            $allResults[] = ['name' => $name, 'args' => $args, 'result' => $result];
         }
         
         // 格式化工具结果为自然语言
@@ -143,18 +143,15 @@ class AsyncGeminiClient
      */
     private function formatToolResults(array $results): string
     {
-        $output = "";
-        
-        // 显示工具调用信息
-        $toolNames = array_map(fn($r) => "`{$r['name']}`", $results);
-        $output .= "\n🔧 调用工具: " . implode(', ', $toolNames) . "\n\n";
+        $output = "\n";
         
         foreach ($results as $item) {
             $name = $item['name'];
+            $args = $item['args'] ?? [];
             $result = $item['result'];
             
             if (isset($result['error'])) {
-                $output .= "❌ 执行失败: {$result['error']}\n";
+                $output .= "> ❌ **{$name}** 执行失败: {$result['error']}\n\n";
                 continue;
             }
             
@@ -162,31 +159,50 @@ class AsyncGeminiClient
             
             switch ($name) {
                 case 'get_current_time':
-                    $output .= "🕐 **当前时间**: {$data['datetime']} ({$data['timezone']})\n";
+                    $output .= "> 🕐 **{$data['datetime']}** `{$data['timezone']}`\n\n";
                     break;
                     
                 case 'calculator':
-                    $output .= "🔢 **计算结果**: {$data['expression']} = **{$data['result']}**\n";
+                    $output .= "> 🔢 `{$data['expression']}` = **{$data['result']}**\n\n";
                     break;
                     
                 case 'fetch_webpage':
-                    $content = mb_substr($data['content'] ?? '', 0, 500);
-                    $output .= "🌐 **网页内容** ({$data['url']}):\n\n{$content}...\n";
+                    $url = $args['url'] ?? $data['url'] ?? '';
+                    $content = $this->cleanWebContent($data['content'] ?? '');
+                    $output .= "> 🌐 **抓取网页**: [{$url}]({$url})\n\n";
+                    $output .= "{$content}\n\n";
                     break;
                     
                 case 'search_book':
-                    $output .= "📚 **书籍搜索结果** (找到 {$data['count']} 条):\n\n";
+                    $output .= "> 📚 **书籍搜索** \"{$args['query']}\" - 找到 {$data['count']} 条结果\n\n";
                     foreach ($data['results'] ?? [] as $i => $r) {
-                        $output .= ($i + 1) . ". {$r['text']}... (相关度: {$r['score']}%)\n\n";
+                        $output .= "**" . ($i + 1) . ".** {$r['text']}... `{$r['score']}%`\n\n";
                     }
                     break;
                     
                 default:
-                    $output .= "🔧 **{$name}**: " . json_encode($data, JSON_UNESCAPED_UNICODE) . "\n";
+                    $output .= "> 🔧 **{$name}**\n\n";
+                    $output .= "```json\n" . json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n```\n\n";
             }
         }
         
         return $output;
+    }
+    
+    /**
+     * 清理网页内容，提取有意义的文本
+     */
+    private function cleanWebContent(string $content): string
+    {
+        // 移除多余空白
+        $content = preg_replace('/\s+/', ' ', $content);
+        // 截取前 800 字符
+        $content = mb_substr(trim($content), 0, 800);
+        // 尝试在句子结尾截断
+        if (preg_match('/^(.{600,}?[。！？.!?])/u', $content, $m)) {
+            $content = $m[1];
+        }
+        return $content . '...';
     }
     
     public function cancel(string $requestId): void { AsyncCurlManager::cancel($requestId); }

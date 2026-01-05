@@ -288,6 +288,15 @@ body {
     color: var(--text-secondary);
 }
 
+.message-assistant .message-content a {
+    color: var(--accent-blue);
+    text-decoration: none;
+}
+
+.message-assistant .message-content a:hover {
+    text-decoration: underline;
+}
+
 /* 加载动画 */
 .typing-indicator {
     display: flex;
