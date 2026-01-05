@@ -160,7 +160,21 @@ class ToolManager
             }
             
             // 提取文本内容
-            $text = strip_tags($html);
+            // 1. 移除 script, style, noscript 标签及其内容
+            $text = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $html);
+            $text = preg_replace('/<style\b[^>]*>.*?<\/style>/is', '', $text);
+            $text = preg_replace('/<noscript\b[^>]*>.*?<\/noscript>/is', '', $text);
+            
+            // 2. 移除 HTML 注释
+            $text = preg_replace('/<!--.*?-->/s', '', $text);
+            
+            // 3. 移除所有标签
+            $text = strip_tags($text);
+            
+            // 4. 解码 HTML 实体
+            $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            
+            // 5. 清理空白
             $text = preg_replace('/\s+/', ' ', $text);
             $text = trim(mb_substr($text, 0, $maxLength));
             
