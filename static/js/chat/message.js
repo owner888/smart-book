@@ -47,6 +47,7 @@ async function sendMessage() {
     // 构建请求
     const searchConfig = ChatToolbar.getSearchConfig();
     const ragConfig = ChatToolbar.getRAGConfig();
+    const modelId = ChatModels.getCurrentModelId();
     let url, body;
     if (assistant.action === 'ask') {
         url = `${ChatConfig.API_BASE}/api/stream/ask`;
@@ -55,14 +56,15 @@ async function sendMessage() {
             chat_id: ChatState.getCurrentState().chatId, 
             search: searchConfig.enabled, 
             engine: searchConfig.engine,
-            rag: ragConfig.enabled  // RAG 开关
+            rag: ragConfig.enabled,  // RAG 开关
+            model: modelId  // 模型
         };
     } else if (assistant.action === 'continue') {
         url = `${ChatConfig.API_BASE}/api/stream/continue`;
-        body = { prompt: message, search: searchConfig.enabled, engine: searchConfig.engine };
+        body = { prompt: message, search: searchConfig.enabled, engine: searchConfig.engine, model: modelId };
     } else {
         url = `${ChatConfig.API_BASE}/api/stream/chat`;
-        body = { message: message, chat_id: ChatState.getCurrentState().chatId, search: searchConfig.enabled, engine: searchConfig.engine };
+        body = { message: message, chat_id: ChatState.getCurrentState().chatId, search: searchConfig.enabled, engine: searchConfig.engine, model: modelId };
     }
     
     // 使用 fetch + SSE

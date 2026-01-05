@@ -2,74 +2,66 @@
  * 模型管理模块
  */
 
-// 模型配置列表
-const modelsList = [
-    // Gemini 系列
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'google', rate: '0.33x', default: true },
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', provider: 'google', rate: '1x' },
-    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', provider: 'google', rate: '0x' },
-    
-    // Claude 系列 (预留)
-    { id: 'claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'anthropic', rate: '1x', disabled: true },
-    { id: 'claude-opus-4.5', name: 'Claude Opus 4.5', provider: 'anthropic', rate: '3x', disabled: true },
-    
-    // OpenAI 系列 (预留)
-    { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai', rate: '1x', disabled: true },
-    { id: 'gpt-4o-mini', name: 'GPT-4o mini', provider: 'openai', rate: '0.33x', disabled: true },
-];
+// 模型配置列表（从后端加载）
+let modelsList = [];
+let currentModel = null;
 
-// 当前选中的模型
-let currentModel = modelsList.find(m => m.default) || modelsList[0];
-
-// 按价格分组
-function getModelsByRate() {
-    const groups = {
-        '0x': [],
-        '0.33x': [],
-        '1x': [],
-        '3x': []
-    };
-    
-    modelsList.forEach(model => {
-        if (groups[model.rate]) {
-            groups[model.rate].push(model);
-        }
-    });
-    
-    return groups;
+// 从后端加载模型列表
+async function loadModels() {
+    try {
+        const response = await fetch(`${ChatConfig.API_BASE}/api/models`);
+        const data = await response.json();
+        
+        modelsList = data.models || [];
+        
+        // 设置默认模型
+        const defaultId = data.default || 'gemini-2.5-flash';
+        currentModel = modelsList.find(m => m.id === defaultId) || modelsList.find(m => m.default) || modelsList[0];
+        
+        // 更新 UI
+        updateModelDisplay();
+        
+        console.log('✅ 模型列表加载完成:', modelsList.length, '个模型');
+    } catch (error) {
+        console.error('❌ 加载模型列表失败:', error);
+        // 使用默认配置
+        modelsList = [
+            { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'google', rate: '0.33x', default: true }
+        ];
+        currentModel = modelsList[0];
+    }
 }
 
 // 显示模型选择菜单
 function showModelSelector() {
-    const groups = getModelsByRate();
-    
     let menuHtml = '<div style="padding: 8px 0;">';
     
-    // 分组显示
-    Object.entries(groups).forEach(([rate, models]) => {
-        if (models.length === 0) return;
+    // 按价格分组排序
+    const rateOrder = ['0x', '0.33x', '1x', '3x'];
+    const sortedModels = [...modelsList].sort((a, b) => {
+        return rateOrder.indexOf(a.rate) - rateOrder.indexOf(b.rate);
+    });
+    
+    sortedModels.forEach(model => {
+        const isSelected = model.id === currentModel?.id;
+        const isDisabled = model.disabled;
         
-        models.forEach(model => {
-            const isSelected = model.id === currentModel.id;
-            const isDisabled = model.disabled;
-            
-            const selectedStyle = isSelected ? 'background: #0066b8; color: white;' : '';
-            const disabledStyle = isDisabled ? 'opacity: 0.5; cursor: not-allowed;' : 'cursor: pointer;';
-            const hoverAttr = !isDisabled ? 'onmouseover="this.style.background=\'#3d3d3d\'" onmouseout="this.style.background=\'' + (isSelected ? '#0066b8' : 'transparent') + '\'"' : '';
-            
-            menuHtml += `
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; ${selectedStyle} ${disabledStyle}"
-                     ${!isDisabled ? `onclick="ChatModels.selectModel('${model.id}')"` : ''}
-                     ${hoverAttr}>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        ${isSelected ? '<span style="width: 16px;">✓</span>' : '<span style="width: 16px;"></span>'}
-                        <span>${model.name}</span>
-                        ${isDisabled ? '<span style="font-size: 11px; opacity: 0.7;">(即将支持)</span>' : ''}
-                    </div>
-                    <span style="font-size: 12px; opacity: 0.7;">${model.rate}</span>
+        const selectedStyle = isSelected ? 'background: #0066b8; color: white;' : '';
+        const disabledStyle = isDisabled ? 'opacity: 0.5; cursor: not-allowed;' : 'cursor: pointer;';
+        const hoverAttr = !isDisabled ? `onmouseover="this.style.background='#3d3d3d'" onmouseout="this.style.background='${isSelected ? '#0066b8' : 'transparent'}'"` : '';
+        
+        menuHtml += `
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; ${selectedStyle} ${disabledStyle}"
+                 ${!isDisabled ? `onclick="ChatModels.selectModel('${model.id}')"` : ''}
+                 ${hoverAttr}>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    ${isSelected ? '<span style="width: 16px;">✓</span>' : '<span style="width: 16px;"></span>'}
+                    <span>${model.name}</span>
+                    ${isDisabled ? '<span style="font-size: 11px; opacity: 0.7;">(即将支持)</span>' : ''}
                 </div>
-            `;
-        });
+                <span style="font-size: 12px; opacity: 0.7;">${model.rate}</span>
+            </div>
+        `;
     });
     
     // 分隔线
@@ -94,7 +86,7 @@ function showModelSelector() {
         shadeClose: true,
         shade: 0.3,
         area: ['280px', 'auto'],
-        offset: ['60px', '350px'],  // 靠近模型选择器位置
+        offset: ['60px', '350px'],
         skin: 'model-selector-layer',
         content: menuHtml
     });
@@ -117,7 +109,7 @@ function selectModel(modelId) {
 // 更新模型显示
 function updateModelDisplay() {
     const modelSelector = document.querySelector('.model-selector');
-    if (modelSelector) {
+    if (modelSelector && currentModel) {
         const spans = modelSelector.querySelectorAll('span');
         if (spans.length >= 2) {
             spans[1].textContent = currentModel.name;
@@ -128,6 +120,11 @@ function updateModelDisplay() {
 // 获取当前模型
 function getCurrentModel() {
     return currentModel;
+}
+
+// 获取当前模型 ID（用于 API 请求）
+function getCurrentModelId() {
+    return currentModel?.id || 'gemini-2.5-flash';
 }
 
 // 显示管理模型对话框
@@ -176,10 +173,12 @@ function showManageModels() {
 
 // 导出
 window.ChatModels = {
-    modelsList,
+    loadModels,
     getCurrentModel,
+    getCurrentModelId,
     selectModel,
     showModelSelector,
     showManageModels,
-    updateModelDisplay
+    updateModelDisplay,
+    get modelsList() { return modelsList; }
 };

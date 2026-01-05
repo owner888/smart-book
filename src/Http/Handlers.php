@@ -77,6 +77,7 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
         $result = match ($path) {
             '/api' => ['status' => 'ok', 'message' => 'Smart Book AI API'],
             '/api/health' => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s'), 'redis' => CacheService::isConnected()],
+            '/api/models' => handleGetModels(),
             '/api/assistants' => handleGetAssistants(),
             '/api/cache/stats' => handleCacheStats($connection),
             '/api/vectors/stats' => handleVectorStats($connection),
@@ -129,6 +130,30 @@ function handleWebSocketMessage(TcpConnection $connection, string $data): void
 // ===================================
 // API 处理函数
 // ===================================
+
+/**
+ * 获取可用模型列表
+ */
+function handleGetModels(): array
+{
+    return [
+        'models' => [
+            // Gemini 系列
+            ['id' => 'gemini-2.5-flash', 'name' => 'Gemini 2.5 Flash', 'provider' => 'google', 'rate' => '0.33x', 'default' => true],
+            ['id' => 'gemini-2.5-pro', 'name' => 'Gemini 2.5 Pro', 'provider' => 'google', 'rate' => '1x'],
+            ['id' => 'gemini-2.0-flash', 'name' => 'Gemini 2.0 Flash', 'provider' => 'google', 'rate' => '0x'],
+            
+            // Claude 系列 (预留)
+            ['id' => 'claude-sonnet-4', 'name' => 'Claude Sonnet 4', 'provider' => 'anthropic', 'rate' => '1x', 'disabled' => true],
+            ['id' => 'claude-opus-4.5', 'name' => 'Claude Opus 4.5', 'provider' => 'anthropic', 'rate' => '3x', 'disabled' => true],
+            
+            // OpenAI 系列 (预留)
+            ['id' => 'gpt-4o', 'name' => 'GPT-4o', 'provider' => 'openai', 'rate' => '1x', 'disabled' => true],
+            ['id' => 'gpt-4o-mini', 'name' => 'GPT-4o mini', 'provider' => 'openai', 'rate' => '0.33x', 'disabled' => true],
+        ],
+        'default' => 'gemini-2.5-flash'
+    ];
+}
 
 /**
  * 获取所有助手配置（包含系统提示词）
@@ -351,13 +376,14 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
     $enableSearch = $body['search'] ?? true;  // 默认开启搜索
     $engine = $body['engine'] ?? 'google';    // 默认使用 Google
     $ragEnabled = $body['rag'] ?? true;       // RAG 开关，默认开启
+    $model = $body['model'] ?? 'gemini-2.5-flash';  // 模型选择
     
     if (empty($question)) return ['error' => 'Missing question'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     
     // 获取对话上下文（包含摘要 + 最近消息）
-    CacheService::getChatContext($chatId, function($context) use ($connection, $question, $chatId, $headers, $enableSearch, $engine, $ragEnabled) {
+    CacheService::getChatContext($chatId, function($context) use ($connection, $question, $chatId, $headers, $enableSearch, $engine, $ragEnabled, $model) {
         $connection->send(new Response(200, $headers, ''));
         
         $prompts = $GLOBALS['config']['prompts'];
@@ -465,7 +491,7 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
             CacheService::addToChatHistory($chatId, ['role' => 'user', 'content' => $question]);
         }
         
-        $asyncGemini = AIService::getAsyncGemini();
+        $asyncGemini = AIService::getAsyncGemini($model);
         $asyncGemini->chatStreamAsync(
             $messages,
             function ($text, $isThought) use ($connection) { 
@@ -501,6 +527,7 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
     $chatId = $body['chat_id'] ?? '';
     $enableSearch = $body['search'] ?? true;  // 默认开启搜索
     $engine = $body['engine'] ?? 'google';    // 默认使用 Google
+    $model = $body['model'] ?? 'gemini-2.5-flash';  // 模型选择
     
     if (empty($message)) return ['error' => 'Missing message'];
     

@@ -34,10 +34,15 @@ class AIService
         return self::$gemini;
     }
     
-    public static function getAsyncGemini(): AsyncGeminiClient
+    public static function getAsyncGemini(?string $model = null): AsyncGeminiClient
     {
-        if (self::$asyncGemini === null) {
-            self::$asyncGemini = new AsyncGeminiClient(GEMINI_API_KEY, AsyncGeminiClient::MODEL_GEMINI_25_FLASH);
+        // 如果指定了模型且与缓存的不同，创建新实例
+        if ($model) {
+            return new AsyncGeminiClient(GEMINI_API_KEY, $model);
+        }
+        
+        if (!self::$asyncGemini) {
+            self::$asyncGemini = new AsyncGeminiClient(GEMINI_API_KEY);
         }
         return self::$asyncGemini;
     }

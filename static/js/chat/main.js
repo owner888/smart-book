@@ -41,8 +41,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
-    // 加载助手配置并初始化
-    ChatAssistants.loadAssistants().then(() => {
+    // 加载模型列表和助手配置并初始化
+    Promise.all([
+        ChatModels.loadModels(),
+        ChatAssistants.loadAssistants()
+    ]).then(() => {
         setTimeout(() => chatInput.focus(), 100);
     });
 });
