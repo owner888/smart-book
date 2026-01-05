@@ -340,7 +340,7 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
                 sendSSE($connection, 'error', $error); 
                 $connection->close(); 
             },
-            ['enableSearch' => true, 'enableTools' => true]  // 同时启用 Google Search 和 MCP 工具
+            ['enableSearch' => true]  // 暂时禁用 MCP 工具
         );
     });
     

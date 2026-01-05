@@ -121,57 +121,68 @@ class AsyncGeminiClient
         ?callable $onError,
         array $options
     ): void {
-        $functionResponses = [];
+        $allResults = [];
         
         foreach ($functionCalls as $fc) {
             $name = $fc['name'];
             $args = $fc['args'];
             
-            // 通知前端工具开始执行
-            $onChunk("\n\n🔧 执行工具: {$name}\n", false);
-            
             // 执行工具
             $result = ToolManager::execute($name, $args);
-            
-            // 通知前端工具结果
-            $resultJson = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-            $onChunk("```json\n{$resultJson}\n```\n\n", false);
-            
-            $functionResponses[] = [
-                'name' => $name,
-                'response' => $result,
-            ];
+            $allResults[] = ['name' => $name, 'result' => $result];
         }
         
-        // 构建包含工具结果的新消息
-        $newMessages = $originalMessages;
+        // 格式化工具结果为自然语言
+        $responseText = $this->formatToolResults($allResults);
+        $onChunk($responseText, false);
+        $onComplete($currentContent . $responseText);
+    }
+    
+    /**
+     * 格式化工具结果为自然语言
+     */
+    private function formatToolResults(array $results): string
+    {
+        $output = "\n";
         
-        // 添加 AI 的 function call 响应
-        $newMessages[] = [
-            'role' => 'assistant',
-            'function_calls' => $functionCalls,
-        ];
-        
-        // 添加工具执行结果
-        foreach ($functionResponses as $fr) {
-            $newMessages[] = [
-                'role' => 'function',
-                'name' => $fr['name'],
-                'content' => json_encode($fr['response'], JSON_UNESCAPED_UNICODE),
-            ];
+        foreach ($results as $item) {
+            $name = $item['name'];
+            $result = $item['result'];
+            
+            if (isset($result['error'])) {
+                $output .= "❌ 工具执行失败: {$result['error']}\n";
+                continue;
+            }
+            
+            $data = $result['result'] ?? $result;
+            
+            switch ($name) {
+                case 'get_current_time':
+                    $output .= "🕐 **当前时间**: {$data['datetime']} ({$data['timezone']})\n";
+                    break;
+                    
+                case 'calculator':
+                    $output .= "🔢 **计算结果**: {$data['expression']} = **{$data['result']}**\n";
+                    break;
+                    
+                case 'fetch_webpage':
+                    $content = mb_substr($data['content'] ?? '', 0, 500);
+                    $output .= "🌐 **网页内容** ({$data['url']}):\n\n{$content}...\n";
+                    break;
+                    
+                case 'search_book':
+                    $output .= "📚 **书籍搜索结果** (找到 {$data['count']} 条):\n\n";
+                    foreach ($data['results'] ?? [] as $i => $r) {
+                        $output .= ($i + 1) . ". {$r['text']}... (相关度: {$r['score']}%)\n\n";
+                    }
+                    break;
+                    
+                default:
+                    $output .= "🔧 **{$name}**: " . json_encode($data, JSON_UNESCAPED_UNICODE) . "\n";
+            }
         }
         
-        // 继续对话获取最终回复
-        $options['enableTools'] = false; // 避免无限循环
-        $this->chatStreamAsync(
-            $newMessages,
-            $onChunk,
-            function($finalContent) use ($currentContent, $onComplete) {
-                $onComplete($currentContent . $finalContent);
-            },
-            $onError,
-            $options
-        );
+        return $output;
     }
     
     public function cancel(string $requestId): void { AsyncCurlManager::cancel($requestId); }
@@ -188,13 +199,13 @@ class AsyncGeminiClient
             if ($role === 'system') {
                 $systemInstruction = ['parts' => [['text' => $content]]];
             } elseif ($role === 'function') {
-                // Function response
+                // Function response - 使用 function 角色
                 $contents[] = [
-                    'role' => 'user',
+                    'role' => 'function',
                     'parts' => [[
                         'functionResponse' => [
                             'name' => $msg['name'],
-                            'response' => json_decode($content, true) ?? $content,
+                            'response' => ['result' => json_decode($content, true) ?? $content],
                         ]
                     ]]
                 ];
