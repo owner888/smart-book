@@ -1,0 +1,101 @@
+{
+  "mcpServers": {
+    "builtin-tools": {
+      "command": "php",
+      "args": ["builtin"],
+      "disabled": false,
+      "autoApprove": ["get_current_time"],
+      "tools": {
+        "get_current_time": {
+          "description": "获取当前日期和时间",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "timezone": {
+                "type": "string",
+                "description": "时区，如 Asia/Shanghai"
+              }
+            }
+          }
+        },
+        "calculator": {
+          "description": "执行数学计算",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "expression": {
+                "type": "string",
+                "description": "数学表达式，如 2+3*4"
+              }
+            },
+            "required": ["expression"]
+          }
+        },
+        "fetch_webpage": {
+          "description": "抓取网页内容（返回纯文本）",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "要抓取的网页 URL"
+              },
+              "max_length": {
+                "type": "integer",
+                "description": "返回的最大字符数，默认 5000"
+              }
+            },
+            "required": ["url"]
+          }
+        },
+        "search_book": {
+          "description": "在书籍中搜索相关内容（RAG）",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "搜索关键词或问题"
+              },
+              "top_k": {
+                "type": "integer",
+                "description": "返回结果数量，默认 5"
+              }
+            },
+            "required": ["query"]
+          }
+        }
+      }
+    },
+    "fetch": {
+      "command": "npx",
+      "args": ["mcp-fetch-server"],
+      "env": {
+        "DEFAULT_LIMIT": "50000"
+      },
+      "disabled": true,
+      "autoApprove": []
+    },
+    "notion": {
+      "command": "npx",
+      "args": ["-y", "@notionhq/notion-mcp-server"],
+      "env": {
+        "NOTION_TOKEN": "your-notion-token-here"
+      },
+      "disabled": true,
+      "autoApprove": []
+    },
+    "figma": {
+      "command": "npx",
+      "args": ["-y", "figma-developer-mcp", "--figma-api-key=your-key", "--stdio"],
+      "disabled": true,
+      "autoApprove": []
+    },
+    "browser-tools": {
+      "command": "npx",
+      "args": ["-y", "@agentdeskai/browser-tools-mcp@latest"],
+      "disabled": true,
+      "autoApprove": []
+    }
+  }
+}
