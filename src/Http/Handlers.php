@@ -152,11 +152,16 @@ function handleGetAssistants(): array
         }
     }
     
-    // 构建书籍助手的系统提示词
+    // 构建书籍助手的系统提示词（完全对齐 Python 的拼接顺序）
+    // 1. book_intro + book_template + separator
+    // 2. markdown_instruction
+    // 3. unknown_single (单本书) 或 unknown_multiple (多本书)
+    // 4. language_instruction
     $bookSystemPrompt = $libraryPrompts['book_intro'] 
         . str_replace(['{which}', '{title}', '{authors}'], ['', $bookTitle, $bookAuthors], $libraryPrompts['book_template']) 
         . $libraryPrompts['separator']
-        . $libraryPrompts['markdown_instruction'] 
+        . $libraryPrompts['markdown_instruction']
+        . ($libraryPrompts['unknown_single'] ?? ' If the specified book is unknown to you instead of answering the following questions just say the book is unknown.')
         . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
     
     return [
@@ -371,9 +376,16 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
             }
         }
         
-        // 构建书籍上下文提示词
+        // 构建书籍上下文提示词（完全对齐 Python 的拼接顺序）
+        // 1. book_intro + book_template + separator
+        // 2. markdown_instruction
+        // 3. unknown_single
+        // 4. language_instruction
         $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', $bookTitle, $bookAuthors], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
-        $systemPrompt = $bookInfo . $libraryPrompts['markdown_instruction'] . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
+        $systemPrompt = $bookInfo 
+            . $libraryPrompts['markdown_instruction']
+            . ($libraryPrompts['unknown_single'] ?? ' If the specified book is unknown to you instead of answering the following questions just say the book is unknown.')
+            . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
         
         // 如果有摘要，添加到系统提示中，并通知前端
         if ($context['summary']) {
