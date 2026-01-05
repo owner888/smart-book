@@ -243,39 +243,62 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
 {
     $body = json_decode($request->rawBody(), true) ?? [];
     $question = $body['question'] ?? '';
+    $chatId = $body['chat_id'] ?? '';  // Chat ID
     
     if (empty($question)) return ['error' => 'Missing question'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
-    $connection->send(new Response(200, $headers, ''));
     
-    $prompts = $GLOBALS['config']['prompts'];
-    $libraryPrompts = $prompts['library'];
-    
-    // 构建书籍上下文提示词
-    $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', '《西游记》', '吴承恩'], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
-    $systemPrompt = $bookInfo . $libraryPrompts['markdown_instruction'] . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
-    
-    // 发送来源信息
-    sendSSE($connection, 'sources', json_encode([['text' => 'AI 预训练知识 + Google Search', 'score' => 100]], JSON_UNESCAPED_UNICODE));
-    
-    // 使用异步流式调用，启用 Google Search
-    $asyncGemini = AIService::getAsyncGemini();
-    $asyncGemini->chatStreamAsync(
-        [['role' => 'system', 'content' => $systemPrompt], ['role' => 'user', 'content' => $question]],
-        function ($text, $isThought) use ($connection) { 
-            if (!$isThought && $text) sendSSE($connection, 'content', $text); 
-        },
-        function ($fullAnswer) use ($connection) {
-            sendSSE($connection, 'done', '');
-            $connection->close();
-        },
-        function ($error) use ($connection) { 
-            sendSSE($connection, 'error', $error); 
-            $connection->close(); 
-        },
-        ['enableSearch' => true]
-    );
+    // 从 Redis 获取对话历史
+    CacheService::getChatHistory($chatId, function($history) use ($connection, $question, $chatId, $headers) {
+        $connection->send(new Response(200, $headers, ''));
+        
+        $prompts = $GLOBALS['config']['prompts'];
+        $libraryPrompts = $prompts['library'];
+        
+        // 构建书籍上下文提示词
+        $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', '《西游记》', '吴承恩'], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
+        $systemPrompt = $bookInfo . $libraryPrompts['markdown_instruction'] . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
+        
+        // 发送来源信息
+        sendSSE($connection, 'sources', json_encode([['text' => 'AI 预训练知识 + Google Search', 'score' => 100]], JSON_UNESCAPED_UNICODE));
+        
+        // 构建消息数组：系统提示 + 历史消息 + 当前问题
+        $messages = [['role' => 'system', 'content' => $systemPrompt]];
+        foreach ($history as $msg) {
+            if (isset($msg['role']) && isset($msg['content'])) {
+                $messages[] = ['role' => $msg['role'], 'content' => $msg['content']];
+            }
+        }
+        $messages[] = ['role' => 'user', 'content' => $question];
+        
+        // 保存用户消息到历史
+        if ($chatId) {
+            CacheService::addToChatHistory($chatId, ['role' => 'user', 'content' => $question]);
+        }
+        
+        // 使用异步流式调用，启用 Google Search
+        $asyncGemini = AIService::getAsyncGemini();
+        $asyncGemini->chatStreamAsync(
+            $messages,
+            function ($text, $isThought) use ($connection) { 
+                if (!$isThought && $text) sendSSE($connection, 'content', $text); 
+            },
+            function ($fullAnswer) use ($connection, $chatId) {
+                // 保存助手回复到历史
+                if ($chatId) {
+                    CacheService::addToChatHistory($chatId, ['role' => 'assistant', 'content' => $fullAnswer]);
+                }
+                sendSSE($connection, 'done', '');
+                $connection->close();
+            },
+            function ($error) use ($connection) { 
+                sendSSE($connection, 'error', $error); 
+                $connection->close(); 
+            },
+            ['enableSearch' => true]
+        );
+    });
     
     return null;
 }
@@ -283,20 +306,53 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
 function handleStreamChat(TcpConnection $connection, Request $request): ?array
 {
     $body = json_decode($request->rawBody(), true) ?? [];
-    $messages = $body['messages'] ?? [];
-    if (empty($messages)) return ['error' => 'Missing messages'];
+    $message = $body['message'] ?? '';
+    $chatId = $body['chat_id'] ?? '';
+    
+    if (empty($message)) return ['error' => 'Missing message'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
-    $connection->send(new Response(200, $headers, ''));
     
-    $asyncGemini = AIService::getAsyncGemini();
-    $asyncGemini->chatStreamAsync(
-        $messages,
-        function ($text, $isThought) use ($connection) { if (!$isThought && $text) sendSSE($connection, 'content', $text); },
-        function ($fullContent) use ($connection) { sendSSE($connection, 'done', ''); $connection->close(); },
-        function ($error) use ($connection) { sendSSE($connection, 'error', $error); $connection->close(); },
-        ['enableSearch' => true]  // 通用聊天启用 Google Search
-    );
+    // 从 Redis 获取对话历史
+    CacheService::getChatHistory($chatId, function($history) use ($connection, $message, $chatId, $headers) {
+        $connection->send(new Response(200, $headers, ''));
+        
+        // 构建消息数组
+        $messages = [];
+        foreach ($history as $msg) {
+            if (isset($msg['role']) && isset($msg['content'])) {
+                $messages[] = ['role' => $msg['role'], 'content' => $msg['content']];
+            }
+        }
+        $messages[] = ['role' => 'user', 'content' => $message];
+        
+        // 保存用户消息到历史
+        if ($chatId) {
+            CacheService::addToChatHistory($chatId, ['role' => 'user', 'content' => $message]);
+        }
+        
+        $asyncGemini = AIService::getAsyncGemini();
+        $asyncGemini->chatStreamAsync(
+            $messages,
+            function ($text, $isThought) use ($connection) { 
+                if (!$isThought && $text) sendSSE($connection, 'content', $text); 
+            },
+            function ($fullContent) use ($connection, $chatId) { 
+                // 保存助手回复到历史
+                if ($chatId) {
+                    CacheService::addToChatHistory($chatId, ['role' => 'assistant', 'content' => $fullContent]);
+                }
+                sendSSE($connection, 'done', ''); 
+                $connection->close(); 
+            },
+            function ($error) use ($connection) { 
+                sendSSE($connection, 'error', $error); 
+                $connection->close(); 
+            },
+            ['enableSearch' => true]
+        );
+    });
+    
     return null;
 }
 

@@ -47,4 +47,55 @@ class CacheService
             'connected' => true, 'cached_items' => count($keys ?? [])
         ]));
     }
+    
+    // ===================================
+    // 对话历史管理（Chat ID）
+    // ===================================
+    
+    private static int $chatHistoryTTL = 3600; // 对话历史保存 1 小时
+    private static int $maxHistoryLength = 20; // 最多保存 20 轮对话
+    
+    /**
+     * 获取对话历史
+     */
+    public static function getChatHistory(string $chatId, callable $callback): void
+    {
+        if (!self::$connected || !self::$redis || empty($chatId)) { 
+            $callback([]); 
+            return; 
+        }
+        $key = CACHE_PREFIX . 'chat:' . $chatId;
+        self::$redis->get($key, fn($r) => $callback($r ? json_decode($r, true) ?? [] : []));
+    }
+    
+    /**
+     * 添加消息到对话历史
+     */
+    public static function addToChatHistory(string $chatId, array $message): void
+    {
+        if (!self::$connected || !self::$redis || empty($chatId)) return;
+        
+        $key = CACHE_PREFIX . 'chat:' . $chatId;
+        self::$redis->get($key, function($result) use ($key, $message) {
+            $history = $result ? (json_decode($result, true) ?? []) : [];
+            $history[] = $message;
+            
+            // 限制历史长度
+            if (count($history) > self::$maxHistoryLength * 2) {
+                $history = array_slice($history, -self::$maxHistoryLength * 2);
+            }
+            
+            self::$redis->setex($key, self::$chatHistoryTTL, json_encode($history, JSON_UNESCAPED_UNICODE));
+        });
+    }
+    
+    /**
+     * 清空对话历史
+     */
+    public static function clearChatHistory(string $chatId): void
+    {
+        if (!self::$connected || !self::$redis || empty($chatId)) return;
+        $key = CACHE_PREFIX . 'chat:' . $chatId;
+        self::$redis->del($key);
+    }
 }

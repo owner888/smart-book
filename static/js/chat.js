@@ -13,6 +13,12 @@ let currentMessageDiv = null;
 let currentContent = '';
 let currentSources = null;
 let abortController = null;
+let currentChatId = generateChatId();  // Chat ID
+
+// 生成 Chat ID
+function generateChatId() {
+    return 'chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
 
 // 助手配置
 const assistants = {
@@ -119,8 +125,9 @@ function switchAssistant(assistantId) {
     headerTitle.textContent = assistant.name;
     systemPrompt.textContent = assistant.systemPrompt;
     
-    // 清空对话
+    // 清空对话并重置 Chat ID
     conversationHistory = [];
+    currentChatId = generateChatId();  // 新会话 ID
     chatMessages.innerHTML = `
         <div class="message">
             <div class="message-system">${assistant.systemPrompt}</div>
@@ -163,17 +170,17 @@ async function sendMessage() {
     chatMessages.appendChild(currentMessageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
-    // 构建请求
+    // 构建请求（使用 Chat ID）
     let url, body;
     if (assistant.action === 'ask') {
         url = `${API_BASE}/api/stream/ask`;
-        body = { question: message, top_k: 8 };
+        body = { question: message, chat_id: currentChatId };
     } else if (assistant.action === 'continue') {
         url = `${API_BASE}/api/stream/continue`;
         body = { prompt: message };
     } else {
         url = `${API_BASE}/api/stream/chat`;
-        body = { messages: conversationHistory };
+        body = { message: message, chat_id: currentChatId };
     }
     
     // 使用 fetch + SSE
@@ -495,6 +502,7 @@ function clearChat() {
         title: '清空对话'
     }, function(index) {
         conversationHistory = [];
+        currentChatId = generateChatId();  // 重置 Chat ID
         const assistant = assistants[currentAssistant];
         chatMessages.innerHTML = `
             <div class="message">
