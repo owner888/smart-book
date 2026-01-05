@@ -338,9 +338,12 @@ function finishStreamingMessage(isError = false) {
     }
     
     // 渲染最终内容
-    const htmlContent = isError 
+    let htmlContent = isError 
         ? escapeHtml(currentContent).replace(/\n/g, '<br>') 
         : marked.parse(currentContent);
+    
+    // 将 code 标签中的 URL 转为可点击链接
+    htmlContent = makeUrlsClickable(htmlContent);
     
     // 添加上下文摘要信息
     let summaryHtml = '';
@@ -461,6 +464,15 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// 将 code 标签中的 URL 转为可点击链接
+function makeUrlsClickable(html) {
+    // 匹配 <code> 标签中的 URL
+    const urlPattern = /<code>(https?:\/\/[^\s<]+)<\/code>/gi;
+    return html.replace(urlPattern, (match, url) => {
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+    });
 }
 
 // ===== 工具栏功能 =====
