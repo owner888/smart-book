@@ -273,60 +273,33 @@ function handleStreamAskGenerate(TcpConnection $connection, string $question, ar
     $prompts = $GLOBALS['config']['prompts'];
     $libraryPrompts = $prompts['library'];
     
+    // 构建书籍上下文提示词
     $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', '《西游记》', '吴承恩'], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
-    $systemPrompt = $bookInfo . $libraryPrompts['markdown_instruction'] . $libraryPrompts['unknown_single'] . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
+    $systemPrompt = $bookInfo . $libraryPrompts['markdown_instruction'] . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
     
-    $gemini = AIService::getGemini();
-    $response = $gemini->chat([
-        ['role' => 'system', 'content' => $systemPrompt],
-        ['role' => 'user', 'content' => $question],
-    ], ['enableSearch' => true]);  // 启用 Google Search
+    // 发送来源信息（AI 预训练知识 + Google Search）
+    sendSSE($connection, 'sources', json_encode([['text' => 'AI 预训练知识 + Google Search', 'score' => 100]], JSON_UNESCAPED_UNICODE));
     
-    $aiAnswer = '';
-    foreach ($response['candidates'] ?? [] as $candidate) {
-        foreach ($candidate['content']['parts'] ?? [] as $part) {
-            if (!($part['thought'] ?? false)) $aiAnswer .= $part['text'] ?? '';
-        }
-    }
-    
-    $isUnknown = false;
-    $lowerAnswer = mb_strtolower($aiAnswer);
-    foreach ($prompts['unknown_patterns'] as $pattern) {
-        if (strpos($lowerAnswer, mb_strtolower($pattern)) !== false) { $isUnknown = true; break; }
-    }
-    
-    if (!$isUnknown) {
-        sendSSE($connection, 'sources', json_encode([['text' => 'AI 预训练知识', 'score' => 100]], JSON_UNESCAPED_UNICODE));
-        sendSSE($connection, 'content', $aiAnswer);
-        sendSSE($connection, 'done', '');
-        $connection->close();
-        return;
-    }
-    
-    $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
-    $results = $vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
-    
-    $sources = array_map(fn($r) => ['text' => mb_substr($r['chunk']['text'], 0, 200) . '...', 'score' => round($r['score'] * 100, 1)], $results);
-    sendSSE($connection, 'sources', json_encode($sources, JSON_UNESCAPED_UNICODE));
-    
-    $context = "";
-    foreach ($results as $i => $result) {
-        $context .= "【片段 " . ($i + 1) . "】\n" . $result['chunk']['text'] . "\n\n";
-    }
-    
+    // 使用异步流式调用，启用 Google Search
     $asyncGemini = AIService::getAsyncGemini();
     $asyncGemini->chatStreamAsync(
-        [['role' => 'system', 'content' => "你是一个书籍分析助手。根据以下从书中检索到的内容回答问题，使用中文：\n\n{$context}"], ['role' => 'user', 'content' => $question]],
-        function ($text, $isThought) use ($connection) { if (!$isThought && $text) sendSSE($connection, 'content', $text); },
-        function ($fullAnswer) use ($connection, $question, $queryEmbedding, $topK, $sources) {
+        [['role' => 'system', 'content' => $systemPrompt], ['role' => 'user', 'content' => $question]],
+        function ($text, $isThought) use ($connection) { 
+            if (!$isThought && $text) sendSSE($connection, 'content', $text); 
+        },
+        function ($fullAnswer) use ($connection, $question, $queryEmbedding, $topK) {
+            // 缓存结果
             $cacheKey = CacheService::makeKey('stream_ask', $question . ':' . $topK);
-            CacheService::set($cacheKey, ['sources' => $sources, 'answer' => $fullAnswer]);
+            CacheService::set($cacheKey, ['sources' => [['text' => 'AI 预训练知识', 'score' => 100]], 'answer' => $fullAnswer]);
             CacheService::addToSemanticIndex($cacheKey, $queryEmbedding, $question);
             sendSSE($connection, 'done', '');
             $connection->close();
         },
-        function ($error) use ($connection) { sendSSE($connection, 'error', $error); $connection->close(); },
-        ['enableSearch' => false]
+        function ($error) use ($connection) { 
+            sendSSE($connection, 'error', $error); 
+            $connection->close(); 
+        },
+        ['enableSearch' => true]  // 启用 Google Search 进行流式输出
     );
 }
 
