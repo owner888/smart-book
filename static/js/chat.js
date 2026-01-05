@@ -204,17 +204,17 @@ async function sendMessage() {
     chatMessages.appendChild(currentMessageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
-    // 构建请求（使用 Chat ID）
+    // 构建请求（使用 Chat ID，传递 search 开关状态）
     let url, body;
     if (assistant.action === 'ask') {
         url = `${API_BASE}/api/stream/ask`;
-        body = { question: message, chat_id: getCurrentState().chatId };
+        body = { question: message, chat_id: getCurrentState().chatId, search: webSearchEnabled };
     } else if (assistant.action === 'continue') {
         url = `${API_BASE}/api/stream/continue`;
-        body = { prompt: message };
+        body = { prompt: message, search: webSearchEnabled };
     } else {
         url = `${API_BASE}/api/stream/chat`;
-        body = { message: message, chat_id: getCurrentState().chatId };
+        body = { message: message, chat_id: getCurrentState().chatId, search: webSearchEnabled };
     }
     
     // 使用 fetch + SSE
@@ -512,13 +512,13 @@ function showTip(feature) {
     layer.msg(`🔧 ${feature} 功能开发中...`);
 }
 
-// 切换网页搜索
-let webSearchEnabled = false;
+// 切换网页搜索（默认开启）
+let webSearchEnabled = true;
 function toggleWebSearch() {
     webSearchEnabled = !webSearchEnabled;
     const btn = event.currentTarget;
     btn.classList.toggle('active', webSearchEnabled);
-    layer.msg(webSearchEnabled ? '🌐 网页搜索已开启' : '网页搜索已关闭');
+    layer.msg(webSearchEnabled ? '🌐 网页搜索已开启' : '🌐 网页搜索已关闭');
 }
 
 // 显示 AI 工具菜单

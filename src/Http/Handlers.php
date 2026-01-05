@@ -277,13 +277,14 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
     $body = json_decode($request->rawBody(), true) ?? [];
     $question = $body['question'] ?? '';
     $chatId = $body['chat_id'] ?? '';
+    $enableSearch = $body['search'] ?? true;  // 默认开启搜索
     
     if (empty($question)) return ['error' => 'Missing question'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     
     // 获取对话上下文（包含摘要 + 最近消息）
-    CacheService::getChatContext($chatId, function($context) use ($connection, $question, $chatId, $headers) {
+    CacheService::getChatContext($chatId, function($context) use ($connection, $question, $chatId, $headers, $enableSearch) {
         $connection->send(new Response(200, $headers, ''));
         
         $prompts = $GLOBALS['config']['prompts'];
@@ -302,7 +303,9 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
             ], JSON_UNESCAPED_UNICODE));
         }
         
-        sendSSE($connection, 'sources', json_encode([['text' => 'AI 预训练知识 + Google Search', 'score' => 100]], JSON_UNESCAPED_UNICODE));
+        // 根据搜索开关状态显示不同来源
+        $sourceText = $enableSearch ? 'AI 预训练知识 + Google Search' : 'AI 预训练知识（搜索已关闭）';
+        sendSSE($connection, 'sources', json_encode([['text' => $sourceText, 'score' => 100]], JSON_UNESCAPED_UNICODE));
         
         // 构建消息数组：系统提示 + 最近消息 + 当前问题
         $messages = [['role' => 'system', 'content' => $systemPrompt]];
@@ -340,7 +343,7 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
                 sendSSE($connection, 'error', $error); 
                 $connection->close(); 
             },
-            ['enableSearch' => true]  // 暂时禁用 MCP 工具
+            ['enableSearch' => $enableSearch]
         );
     });
     
@@ -352,13 +355,14 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
     $body = json_decode($request->rawBody(), true) ?? [];
     $message = $body['message'] ?? '';
     $chatId = $body['chat_id'] ?? '';
+    $enableSearch = $body['search'] ?? true;  // 默认开启搜索
     
     if (empty($message)) return ['error' => 'Missing message'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     
     // 获取对话上下文（包含摘要 + 最近消息）
-    CacheService::getChatContext($chatId, function($context) use ($connection, $message, $chatId, $headers) {
+    CacheService::getChatContext($chatId, function($context) use ($connection, $message, $chatId, $headers, $enableSearch) {
         $connection->send(new Response(200, $headers, ''));
         
         // 构建消息数组
@@ -406,7 +410,7 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
                 sendSSE($connection, 'error', $error); 
                 $connection->close(); 
             },
-            ['enableSearch' => false, 'enableTools' => true]  // 启用 MCP 工具
+            ['enableSearch' => $enableSearch, 'enableTools' => true]  // 启用 MCP 工具
         );
     });
     
