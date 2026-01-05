@@ -472,29 +472,59 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
             }
         }
         
-        // RAG 开启时：检索书籍内容
+        // RAG 开启时：检索书籍内容（优先 Redis，降级到文件）
         $ragContext = '';
         $ragSources = [];
         if ($ragEnabled && defined('DEFAULT_BOOK_CACHE') && file_exists(DEFAULT_BOOK_CACHE)) {
             try {
                 $embedder = new EmbeddingClient(GEMINI_API_KEY);
                 $queryEmbedding = $embedder->embedQuery($question);
-                $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
-                $results = $vectorStore->hybridSearch($question, $queryEmbedding, 5, 0.6);
                 
-                if (!empty($results)) {
-                    $chunkTemplate = $ragPrompts['chunk_template'] ?? "【Passage {index}】\n{text}\n";
-                    foreach ($results as $i => $result) {
-                        $ragContext .= str_replace(
-                            ['{index}', '{text}'],
-                            [$i + 1, $result['chunk']['text']],
-                            $chunkTemplate
-                        );
-                        $ragContext .= "(Relevance: " . round($result['score'] * 100, 1) . "%)\n\n";
-                        $ragSources[] = [
-                            'text' => mb_substr($result['chunk']['text'], 0, 200) . '...',
-                            'score' => round($result['score'] * 100, 1)
-                        ];
+                // 尝试使用 Redis 向量存储（异步）
+                $useRedis = CacheService::isConnected();
+                
+                if ($useRedis) {
+                    // Redis 8.0 向量搜索
+                    RedisVectorStore::search($queryEmbedding, 5, function($results) use (&$ragContext, &$ragSources, $ragPrompts, $question, $queryEmbedding) {
+                        if (!empty($results)) {
+                            $chunkTemplate = $ragPrompts['chunk_template'] ?? "【Passage {index}】\n{text}\n";
+                            foreach ($results as $i => $result) {
+                                $ragContext .= str_replace(
+                                    ['{index}', '{text}'],
+                                    [$i + 1, $result['chunk']['text']],
+                                    $chunkTemplate
+                                );
+                                $ragContext .= "(Relevance: " . round($result['score'] * 100, 1) . "%) [Redis]\n\n";
+                                $ragSources[] = [
+                                    'text' => mb_substr($result['chunk']['text'], 0, 200) . '...',
+                                    'score' => round($result['score'] * 100, 1),
+                                    'source' => 'redis'
+                                ];
+                            }
+                        }
+                    });
+                }
+                
+                // 降级到文件存储（或 Redis 没有结果时）
+                if (empty($ragContext)) {
+                    $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
+                    $results = $vectorStore->hybridSearch($question, $queryEmbedding, 5, 0.6);
+                    
+                    if (!empty($results)) {
+                        $chunkTemplate = $ragPrompts['chunk_template'] ?? "【Passage {index}】\n{text}\n";
+                        foreach ($results as $i => $result) {
+                            $ragContext .= str_replace(
+                                ['{index}', '{text}'],
+                                [$i + 1, $result['chunk']['text']],
+                                $chunkTemplate
+                            );
+                            $ragContext .= "(Relevance: " . round($result['score'] * 100, 1) . "%) [File]\n\n";
+                            $ragSources[] = [
+                                'text' => mb_substr($result['chunk']['text'], 0, 200) . '...',
+                                'score' => round($result['score'] * 100, 1),
+                                'source' => 'file'
+                            ];
+                        }
                     }
                 }
             } catch (Exception $e) {
