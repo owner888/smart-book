@@ -4,24 +4,83 @@
 
 // RAG 开关状态（默认关闭，使用 AI 预训练知识）
 let ragEnabled = false;
+// 关键词权重（0-1，0=纯向量，1=纯关键词，默认0.5=混合）
+let keywordWeight = 0.5;
 
-// 切换 RAG 开关
+// 切换 RAG 开关（关闭时显示设置，开启时直接关闭）
 function toggleRAG() {
-    ragEnabled = !ragEnabled;
-    const btn = document.getElementById('ragToggle');
+    if (ragEnabled) {
+        // 已开启，直接关闭
+        ragEnabled = false;
+        const btn = document.getElementById('ragToggle');
+        if (btn) {
+            btn.classList.remove('active');
+            btn.title = 'RAG 检索 (已关闭)';
+        }
+        layer.msg('🤖 RAG 检索已关闭 - 使用 AI 预训练知识');
+    } else {
+        // 未开启，显示设置面板让用户选择
+        showRAGSettings();
+    }
+}
+
+// 显示 RAG 设置面板
+function showRAGSettings() {
+    const weights = [
+        { value: 0, name: '纯向量搜索', desc: '使用语义相似度' },
+        { value: 0.3, name: '向量为主', desc: '70% 向量 + 30% 关键词' },
+        { value: 0.5, name: '均衡混合', desc: '50% 向量 + 50% 关键词' },
+        { value: 0.7, name: '关键词为主', desc: '30% 向量 + 70% 关键词' },
+        { value: 1, name: '纯关键词', desc: '使用关键词匹配' },
+    ];
     
+    const items = weights.map(w => {
+        const isSelected = w.value === keywordWeight;
+        const style = isSelected 
+            ? 'background: var(--accent-green); color: white;' 
+            : 'background: var(--bg-tertiary);';
+        return `
+            <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 8px; border-radius: 8px; cursor: pointer; ${style}" 
+                 onclick="ChatToolbar.setKeywordWeight(${w.value})">
+                <span style="flex: 1;">
+                    <div style="font-size: 14px; font-weight: 500;">${w.name}</div>
+                    <div style="font-size: 12px; opacity: 0.7;">${w.desc}</div>
+                </span>
+                ${isSelected ? '<span>✓</span>' : ''}
+            </div>
+        `;
+    }).join('');
+    
+    layui.layer.open({
+        type: 1,
+        title: '⚙️ RAG 搜索设置',
+        area: ['340px', 'auto'],
+        shadeClose: true,
+        content: `<div style="padding: 16px;">${items}</div>`
+    });
+}
+
+// 设置关键词权重并激活 RAG
+function setKeywordWeight(weight) {
+    keywordWeight = weight;
+    ragEnabled = true;  // 选择后自动激活 RAG
+    
+    const btn = document.getElementById('ragToggle');
     if (btn) {
-        btn.classList.toggle('active', ragEnabled);
-        btn.title = ragEnabled ? 'RAG 检索 (已开启)' : 'RAG 检索 (已关闭)';
+        btn.classList.add('active');
+        btn.title = 'RAG 检索 (已开启)';
     }
     
-    layer.msg(ragEnabled ? '📚 RAG 检索已开启 - 基于书籍内容回答' : '🤖 RAG 检索已关闭 - 使用 AI 预训练知识');
+    layer.closeAll();
+    const pct = Math.round(weight * 100);
+    layer.msg(`📚 RAG 已开启 - ${pct}% 关键词 + ${100 - pct}% 向量`);
 }
 
 // 获取 RAG 状态
 function getRAGConfig() {
     return {
-        enabled: ragEnabled
+        enabled: ragEnabled,
+        keywordWeight: keywordWeight
     };
 }
 
@@ -120,8 +179,12 @@ window.ChatToolbar = {
     toggleFullscreen,
     toggleRAG,
     getRAGConfig,
-    get ragEnabled() { return ragEnabled; }
+    showRAGSettings,
+    setKeywordWeight,
+    get ragEnabled() { return ragEnabled; },
+    get keywordWeight() { return keywordWeight; }
 };
 
 // 全局函数
 window.toggleRAG = toggleRAG;
+window.showRAGSettings = showRAGSettings;

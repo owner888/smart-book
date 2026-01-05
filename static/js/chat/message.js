@@ -58,6 +58,7 @@ async function sendMessage() {
             search: searchConfig.enabled, 
             engine: searchConfig.engine,
             rag: ragConfig.enabled,  // RAG 开关
+            keyword_weight: ragConfig.keywordWeight,  // 关键词权重
             model: modelId  // 模型
         };
     } else if (assistant.action === 'continue') {

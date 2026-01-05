@@ -415,13 +415,14 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
     $enableSearch = $body['search'] ?? true;
     $engine = $body['engine'] ?? 'google';
     $ragEnabled = $body['rag'] ?? true;
+    $keywordWeight = floatval($body['keyword_weight'] ?? 0.5);
     $model = $body['model'] ?? 'gemini-2.5-flash';
     
     if (empty($question)) return ['error' => 'Missing question'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     
-    CacheService::getChatContext($chatId, function($context) use ($connection, $question, $chatId, $headers, $enableSearch, $engine, $ragEnabled, $model) {
+    CacheService::getChatContext($chatId, function($context) use ($connection, $question, $chatId, $headers, $enableSearch, $engine, $ragEnabled, $keywordWeight, $model) {
         $connection->send(new Response(200, $headers, ''));
         
         $prompts = $GLOBALS['config']['prompts'];
@@ -501,7 +502,7 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
                 $chunkTemplate = $ragPrompts['chunk_template'] ?? "【Passage {index}】\n{text}\n";
                 
                 $vectorStore = new VectorStore(DEFAULT_BOOK_CACHE);
-                $results = $vectorStore->hybridSearch($question, $queryEmbedding, 5, 0.6);
+                $results = $vectorStore->hybridSearch($question, $queryEmbedding, 5, $keywordWeight);
                 
                 foreach ($results as $i => $result) {
                     $ragContext .= str_replace(['{index}', '{text}'], [$i + 1, $result['chunk']['text']], $chunkTemplate);
