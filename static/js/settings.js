@@ -350,3 +350,329 @@ function loadSettings() {
 
 // 页面加载时恢复设置
 loadSettings();
+
+// ===================================
+// MCP Servers 管理模块
+// ===================================
+
+const MCPSettings = {
+    servers: [],
+    currentServer: null,
+    
+    // 初始化
+    async init() {
+        await this.loadServers();
+        this.renderServerList();
+    },
+    
+    // 加载服务器列表
+    async loadServers() {
+        try {
+            const response = await fetch('/api/mcp/servers');
+            const data = await response.json();
+            this.servers = data.servers || [];
+        } catch (error) {
+            console.error('加载 MCP 服务器失败:', error);
+            // 使用默认配置
+            this.servers = [
+                {
+                    name: 'smart-book',
+                    type: 'stdio',
+                    command: 'php',
+                    args: ['/Users/kaka/Development/other/calibre/smart-book/mcp-server.php'],
+                    enabled: true,
+                    tools: ['search_book', 'get_book_info', 'list_books', 'select_book']
+                }
+            ];
+        }
+    },
+    
+    // 渲染服务器列表
+    renderServerList() {
+        const container = document.getElementById('mcpServerItems');
+        if (!container) return;
+        
+        if (this.servers.length === 0) {
+            container.innerHTML = `
+                <div style="padding: 40px 20px; text-align: center; color: var(--text-secondary);">
+                    <p>没有配置的 MCP 服务器</p>
+                    <p style="font-size: 12px; margin-top: 8px;">点击「Add」添加新服务器</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = this.servers.map((server, index) => `
+            <div class="mcp-server-item ${this.currentServer === index ? 'active' : ''}" 
+                 onclick="MCPSettings.selectServer(${index})">
+                <div class="mcp-server-icon">📦</div>
+                <div class="mcp-server-info">
+                    <div class="mcp-server-name">${server.name}</div>
+                    <div class="mcp-server-type">${server.type.toUpperCase()}</div>
+                </div>
+                <div class="mcp-server-toggle ${server.enabled ? 'active' : ''}" 
+                     onclick="MCPSettings.toggleServer(${index}, event)"></div>
+            </div>
+        `).join('');
+    },
+    
+    // 选择服务器
+    selectServer(index) {
+        this.currentServer = index;
+        this.renderServerList();
+        this.renderServerConfig(this.servers[index]);
+    },
+    
+    // 切换服务器启用状态
+    toggleServer(index, event) {
+        event.stopPropagation();
+        this.servers[index].enabled = !this.servers[index].enabled;
+        this.renderServerList();
+        this.saveServers();
+    },
+    
+    // 渲染服务器配置
+    renderServerConfig(server) {
+        const container = document.getElementById('mcpServerConfig');
+        if (!container || !server) return;
+        
+        container.innerHTML = `
+            <div class="mcp-config-header">
+                <div class="mcp-config-title">
+                    <h2>${server.name}</h2>
+                </div>
+                <div class="mcp-config-actions">
+                    <button class="mcp-delete-btn" onclick="MCPSettings.deleteServer()">删除</button>
+                    <button class="mcp-save-btn" onclick="MCPSettings.saveCurrentServer()">保存</button>
+                </div>
+            </div>
+            
+            <div class="mcp-config-form">
+                <div class="mcp-form-group">
+                    <label class="mcp-form-label required">Name</label>
+                    <input type="text" class="mcp-form-input" id="mcpServerName" value="${server.name}">
+                </div>
+                
+                <div class="mcp-form-group">
+                    <label class="mcp-form-label">Description</label>
+                    <input type="text" class="mcp-form-input" id="mcpServerDesc" 
+                           value="${server.description || ''}" placeholder="Description">
+                </div>
+                
+                <div class="mcp-form-group">
+                    <label class="mcp-form-label required">Type</label>
+                    <select class="mcp-form-select" id="mcpServerType">
+                        <option value="stdio" ${server.type === 'stdio' ? 'selected' : ''}>Standard Input/Output (stdio)</option>
+                        <option value="http" ${server.type === 'http' ? 'selected' : ''}>HTTP/SSE</option>
+                    </select>
+                </div>
+                
+                <div class="mcp-form-group">
+                    <label class="mcp-form-label required">Command</label>
+                    <input type="text" class="mcp-form-input" id="mcpServerCommand" 
+                           value="${server.command}" placeholder="php 或 node">
+                </div>
+                
+                <div class="mcp-form-group">
+                    <label class="mcp-form-label">Arguments</label>
+                    <textarea class="mcp-form-input mcp-form-textarea" id="mcpServerArgs" 
+                              placeholder="每行一个参数">${(server.args || []).join('\n')}</textarea>
+                    <div class="mcp-form-hint">每行一个参数</div>
+                </div>
+                
+                <div class="mcp-form-group">
+                    <label class="mcp-form-label">Environment Variables</label>
+                    <textarea class="mcp-form-input mcp-form-textarea" id="mcpServerEnv" 
+                              placeholder="KEY1=value1&#10;KEY2=value2">${this.envToString(server.env)}</textarea>
+                    <div class="mcp-form-hint">格式: KEY=value，每行一个</div>
+                </div>
+            </div>
+            
+            ${server.tools && server.tools.length > 0 ? `
+            <div class="mcp-tools-section">
+                <div class="mcp-tools-header">
+                    <h3>Tools (${server.tools.length})</h3>
+                </div>
+                ${server.tools.map(tool => `
+                    <div class="mcp-tool-item">
+                        <div class="mcp-tool-icon">🔧</div>
+                        <div class="mcp-tool-info">
+                            <div class="mcp-tool-name">${typeof tool === 'string' ? tool : tool.name}</div>
+                            <div class="mcp-tool-desc">${typeof tool === 'string' ? '' : (tool.description || '')}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            ` : ''}
+        `;
+    },
+    
+    // 环境变量对象转字符串
+    envToString(env) {
+        if (!env) return '';
+        return Object.entries(env).map(([k, v]) => `${k}=${v}`).join('\n');
+    },
+    
+    // 字符串转环境变量对象
+    stringToEnv(str) {
+        if (!str) return {};
+        const env = {};
+        str.split('\n').forEach(line => {
+            const [key, ...values] = line.split('=');
+            if (key && key.trim()) {
+                env[key.trim()] = values.join('=').trim();
+            }
+        });
+        return env;
+    },
+    
+    // 显示添加对话框
+    showAddDialog() {
+        layer.open({
+            type: 1,
+            title: '添加 MCP Server',
+            area: ['500px', '500px'],
+            content: `
+                <div style="padding: 20px;">
+                    <div class="mcp-form-group">
+                        <label class="mcp-form-label required">Name</label>
+                        <input type="text" class="mcp-form-input" id="newMcpName" placeholder="MCP Server">
+                    </div>
+                    
+                    <div class="mcp-form-group">
+                        <label class="mcp-form-label">Description</label>
+                        <input type="text" class="mcp-form-input" id="newMcpDesc" placeholder="Description">
+                    </div>
+                    
+                    <div class="mcp-form-group">
+                        <label class="mcp-form-label required">Type</label>
+                        <select class="mcp-form-select" id="newMcpType">
+                            <option value="stdio">Standard Input/Output (stdio)</option>
+                            <option value="http">HTTP/SSE</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mcp-form-group">
+                        <label class="mcp-form-label required">Command</label>
+                        <input type="text" class="mcp-form-input" id="newMcpCommand" placeholder="php 或 npx">
+                    </div>
+                    
+                    <div class="mcp-form-group">
+                        <label class="mcp-form-label">Arguments</label>
+                        <textarea class="mcp-form-input mcp-form-textarea" id="newMcpArgs" 
+                                  placeholder="每行一个参数"></textarea>
+                    </div>
+                    
+                    <div style="margin-top: 20px; text-align: right;">
+                        <button class="config-btn" onclick="layer.closeAll()">取消</button>
+                        <button class="config-btn primary" onclick="MCPSettings.addServer()" style="margin-left: 10px;">添加</button>
+                    </div>
+                </div>
+            `
+        });
+    },
+    
+    // 添加服务器
+    addServer() {
+        const name = document.getElementById('newMcpName').value.trim();
+        const command = document.getElementById('newMcpCommand').value.trim();
+        
+        if (!name || !command) {
+            layer.msg('请填写名称和命令');
+            return;
+        }
+        
+        const server = {
+            name: name,
+            description: document.getElementById('newMcpDesc').value.trim(),
+            type: document.getElementById('newMcpType').value,
+            command: command,
+            args: document.getElementById('newMcpArgs').value.split('\n').filter(a => a.trim()),
+            enabled: true,
+            tools: []
+        };
+        
+        this.servers.push(server);
+        this.saveServers();
+        this.renderServerList();
+        layer.closeAll();
+        layer.msg('添加成功');
+        
+        // 选中新添加的服务器
+        this.selectServer(this.servers.length - 1);
+    },
+    
+    // 保存当前服务器配置
+    saveCurrentServer() {
+        if (this.currentServer === null) return;
+        
+        const server = this.servers[this.currentServer];
+        server.name = document.getElementById('mcpServerName').value.trim();
+        server.description = document.getElementById('mcpServerDesc').value.trim();
+        server.type = document.getElementById('mcpServerType').value;
+        server.command = document.getElementById('mcpServerCommand').value.trim();
+        server.args = document.getElementById('mcpServerArgs').value.split('\n').filter(a => a.trim());
+        server.env = this.stringToEnv(document.getElementById('mcpServerEnv').value);
+        
+        this.saveServers();
+        this.renderServerList();
+        layer.msg('保存成功');
+    },
+    
+    // 删除服务器
+    deleteServer() {
+        if (this.currentServer === null) return;
+        
+        layer.confirm('确定要删除这个 MCP Server 吗？', {
+            btn: ['删除', '取消']
+        }, () => {
+            this.servers.splice(this.currentServer, 1);
+            this.currentServer = null;
+            this.saveServers();
+            this.renderServerList();
+            
+            // 清空配置面板
+            const container = document.getElementById('mcpServerConfig');
+            container.innerHTML = `
+                <div class="mcp-config-placeholder">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+                        <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+                        <line x1="6" y1="6" x2="6.01" y2="6"/>
+                        <line x1="6" y1="18" x2="6.01" y2="18"/>
+                    </svg>
+                    <p>选择一个 MCP Server 查看配置</p>
+                </div>
+            `;
+            
+            layer.closeAll();
+            layer.msg('已删除');
+        });
+    },
+    
+    // 保存到后端/localStorage
+    async saveServers() {
+        try {
+            await fetch('/api/mcp/servers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ servers: this.servers })
+            });
+        } catch (error) {
+            // 保存到 localStorage 作为备份
+            localStorage.setItem('mcp_servers', JSON.stringify(this.servers));
+        }
+    }
+};
+
+// MCP Servers 页面激活时初始化
+document.addEventListener('DOMContentLoaded', () => {
+    // 监听页面切换
+    document.querySelectorAll('.menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            if (item.dataset.page === 'mcp-servers') {
+                MCPSettings.init();
+            }
+        });
+    });
+});

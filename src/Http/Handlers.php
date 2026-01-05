@@ -82,6 +82,7 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             '/api/books' => handleGetBooks(),
             '/api/books/select' => handleSelectBook($request),
             '/api/books/index' => handleIndexBook($connection, $request),
+            '/api/mcp/servers' => $method === 'POST' ? handleSaveMCPServers($request) : handleGetMCPServers(),
             '/api/cache/stats' => handleCacheStats($connection),
             '/api/ask' => handleAskWithCache($connection, $request),
             '/api/chat' => handleChat($request),
@@ -1081,4 +1082,87 @@ function streamContinue(TcpConnection $connection, array $request): void
         ['enableSearch' => false]
     );
     $connection->send(json_encode(['type' => 'done']));
+}
+
+// ===================================
+// MCP Servers 管理
+// ===================================
+
+/**
+ * 获取 MCP 服务器列表
+ */
+function handleGetMCPServers(): array
+{
+    $configPath = dirname(__DIR__, 2) . '/config/mcp.json';
+    
+    if (!file_exists($configPath)) {
+        return ['servers' => []];
+    }
+    
+    $config = json_decode(file_get_contents($configPath), true) ?? [];
+    $servers = [];
+    
+    foreach ($config['mcpServers'] ?? [] as $name => $serverConfig) {
+        $servers[] = [
+            'name' => $name,
+            'description' => $serverConfig['description'] ?? '',
+            'type' => 'stdio',
+            'command' => $serverConfig['command'] ?? '',
+            'args' => $serverConfig['args'] ?? [],
+            'env' => $serverConfig['env'] ?? [],
+            'enabled' => !($serverConfig['disabled'] ?? false),
+            'tools' => array_keys($serverConfig['tools'] ?? []),
+        ];
+    }
+    
+    return ['servers' => $servers];
+}
+
+/**
+ * 保存 MCP 服务器配置
+ */
+function handleSaveMCPServers(Request $request): array
+{
+    $body = json_decode($request->rawBody(), true) ?? [];
+    $servers = $body['servers'] ?? [];
+    
+    $configPath = dirname(__DIR__, 2) . '/config/mcp.json';
+    
+    // 读取现有配置
+    $config = [];
+    if (file_exists($configPath)) {
+        $config = json_decode(file_get_contents($configPath), true) ?? [];
+    }
+    
+    // 转换为 MCP 配置格式
+    $mcpServers = [];
+    foreach ($servers as $server) {
+        $name = $server['name'] ?? 'unnamed';
+        $mcpServers[$name] = [
+            'command' => $server['command'] ?? '',
+            'args' => $server['args'] ?? [],
+            'disabled' => !($server['enabled'] ?? true),
+        ];
+        
+        if (!empty($server['description'])) {
+            $mcpServers[$name]['description'] = $server['description'];
+        }
+        if (!empty($server['env'])) {
+            $mcpServers[$name]['env'] = $server['env'];
+        }
+    }
+    
+    $config['mcpServers'] = $mcpServers;
+    
+    // 保存配置
+    $result = file_put_contents(
+        $configPath, 
+        json_encode($config, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
+    );
+    
+    if ($result === false) {
+        return ['success' => false, 'error' => 'Failed to save config'];
+    }
+    
+    return ['success' => true, 'message' => 'MCP servers saved'];
 }

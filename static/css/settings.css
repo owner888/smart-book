@@ -417,3 +417,331 @@
 @media screen and (max-width: 600px) {
     .provider-list { display: none; }
 }
+
+/* ===================================
+   MCP Servers 页面
+=================================== */
+.mcp-servers-container {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+.mcp-servers-list {
+    width: 300px;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+}
+
+.mcp-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.mcp-list-header h3 {
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.add-server-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: var(--accent-green);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.add-server-btn:hover {
+    background: #43a047;
+}
+
+.mcp-server-items {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.mcp-server-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 4px;
+}
+
+.mcp-server-item:hover {
+    background: var(--bg-hover);
+}
+
+.mcp-server-item.active {
+    background: var(--bg-tertiary);
+}
+
+.mcp-server-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: var(--bg-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+}
+
+.mcp-server-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.mcp-server-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mcp-server-type {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.mcp-server-toggle {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.mcp-server-toggle.active {
+    background: var(--accent-green);
+}
+
+.mcp-server-toggle::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: all 0.3s;
+}
+
+.mcp-server-toggle.active::after {
+    left: 22px;
+}
+
+/* MCP Server 配置面板 */
+.mcp-server-config {
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+}
+
+.mcp-config-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-secondary);
+}
+
+.mcp-config-placeholder svg {
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+.mcp-config-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.mcp-config-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.mcp-config-title h2 {
+    font-size: 18px;
+    font-weight: 500;
+    margin: 0;
+    padding: 0;
+}
+
+.mcp-config-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.mcp-config-actions button {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.mcp-delete-btn {
+    background: transparent;
+    border: 1px solid #f44336;
+    color: #f44336;
+}
+
+.mcp-delete-btn:hover {
+    background: rgba(244, 67, 54, 0.1);
+}
+
+.mcp-save-btn {
+    background: var(--accent-green);
+    border: none;
+    color: white;
+}
+
+.mcp-save-btn:hover {
+    background: #43a047;
+}
+
+.mcp-config-form {
+    max-width: 600px;
+}
+
+.mcp-form-group {
+    margin-bottom: 20px;
+}
+
+.mcp-form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.mcp-form-label.required::after {
+    content: ' *';
+    color: #f44336;
+}
+
+.mcp-form-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 14px;
+    outline: none;
+}
+
+.mcp-form-input:focus {
+    border-color: var(--accent-green);
+}
+
+.mcp-form-textarea {
+    min-height: 100px;
+    resize: vertical;
+    font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.mcp-form-hint {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 6px;
+}
+
+.mcp-form-select {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 14px;
+    outline: none;
+    cursor: pointer;
+}
+
+/* MCP Tools 列表 */
+.mcp-tools-section {
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-color);
+}
+
+.mcp-tools-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.mcp-tools-header h3 {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.mcp-tool-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+.mcp-tool-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: var(--bg-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.mcp-tool-info {
+    flex: 1;
+}
+
+.mcp-tool-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.mcp-tool-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    line-height: 1.4;
+}
