@@ -22,7 +22,7 @@ class StreamableHttpServer
 {
     private string $booksDir;
     private array $sessions = [];
-    private bool $debug = true; // 启用调试日志
+    private bool $debug = false; // 启用调试日志
     
     // 服务器信息
     private const SERVER_INFO = [
@@ -41,7 +41,7 @@ class StreamableHttpServer
         'Access-Control-Expose-Headers' => 'Mcp-Session-Id',
     ];
     
-    public function __construct(string $booksDir, bool $debug = true)
+    public function __construct(string $booksDir, bool $debug = false)
     {
         $this->booksDir = $booksDir;
         $this->debug = $debug;
