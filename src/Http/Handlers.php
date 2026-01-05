@@ -233,43 +233,12 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
 {
     $body = json_decode($request->rawBody(), true) ?? [];
     $question = $body['question'] ?? '';
-    $topK = $body['top_k'] ?? 8;
     
     if (empty($question)) return ['error' => 'Missing question'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
+    $connection->send(new Response(200, $headers, ''));
     
-    CacheService::getSemanticIndex(function($semanticIndex) use ($connection, $question, $topK, $headers) {
-        $connection->send(new Response(200, $headers, ''));
-        
-        $embedder = new EmbeddingClient(GEMINI_API_KEY);
-        $queryEmbedding = $embedder->embedQuery($question);
-        
-        $similar = CacheService::findSimilarCache($queryEmbedding, $semanticIndex, 0.96);
-        
-        if ($similar) {
-            CacheService::get($similar['key'], function($cached) use ($connection, $similar, $question, $queryEmbedding, $topK) {
-                if ($cached) {
-                    sendSSE($connection, 'sources', json_encode($cached['sources'], JSON_UNESCAPED_UNICODE));
-                    sendSSE($connection, 'cached', json_encode(['hit' => true, 'similarity' => round($similar['score'] * 100, 1)]));
-                    sendSSE($connection, 'content', $cached['answer']);
-                    sendSSE($connection, 'done', '');
-                    $connection->close();
-                    return;
-                }
-                handleStreamAskGenerate($connection, $question, $queryEmbedding, $topK);
-            });
-            return;
-        }
-        
-        handleStreamAskGenerate($connection, $question, $queryEmbedding, $topK);
-    });
-    
-    return null;
-}
-
-function handleStreamAskGenerate(TcpConnection $connection, string $question, array $queryEmbedding, int $topK): void
-{
     $prompts = $GLOBALS['config']['prompts'];
     $libraryPrompts = $prompts['library'];
     
@@ -277,7 +246,7 @@ function handleStreamAskGenerate(TcpConnection $connection, string $question, ar
     $bookInfo = $libraryPrompts['book_intro'] . str_replace(['{which}', '{title}', '{authors}'], ['', '《西游记》', '吴承恩'], $libraryPrompts['book_template']) . $libraryPrompts['separator'];
     $systemPrompt = $bookInfo . $libraryPrompts['markdown_instruction'] . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
     
-    // 发送来源信息（AI 预训练知识 + Google Search）
+    // 发送来源信息
     sendSSE($connection, 'sources', json_encode([['text' => 'AI 预训练知识 + Google Search', 'score' => 100]], JSON_UNESCAPED_UNICODE));
     
     // 使用异步流式调用，启用 Google Search
@@ -287,11 +256,7 @@ function handleStreamAskGenerate(TcpConnection $connection, string $question, ar
         function ($text, $isThought) use ($connection) { 
             if (!$isThought && $text) sendSSE($connection, 'content', $text); 
         },
-        function ($fullAnswer) use ($connection, $question, $queryEmbedding, $topK) {
-            // 缓存结果
-            $cacheKey = CacheService::makeKey('stream_ask', $question . ':' . $topK);
-            CacheService::set($cacheKey, ['sources' => [['text' => 'AI 预训练知识', 'score' => 100]], 'answer' => $fullAnswer]);
-            CacheService::addToSemanticIndex($cacheKey, $queryEmbedding, $question);
+        function ($fullAnswer) use ($connection) {
             sendSSE($connection, 'done', '');
             $connection->close();
         },
@@ -299,8 +264,10 @@ function handleStreamAskGenerate(TcpConnection $connection, string $question, ar
             sendSSE($connection, 'error', $error); 
             $connection->close(); 
         },
-        ['enableSearch' => true]  // 启用 Google Search 进行流式输出
+        ['enableSearch' => true]
     );
+    
+    return null;
 }
 
 function handleStreamChat(TcpConnection $connection, Request $request): ?array
