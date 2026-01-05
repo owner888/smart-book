@@ -75,7 +75,17 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             $filePath = dirname(__DIR__, 2) . $path;
             if (file_exists($filePath)) {
                 $ext = pathinfo($filePath, PATHINFO_EXTENSION);
-                $mimeTypes = ['css' => 'text/css', 'js' => 'application/javascript', 'png' => 'image/png', 'jpg' => 'image/jpeg', 'svg' => 'image/svg+xml'];
+                $mimeTypes = [
+                    'css' => 'text/css', 
+                    'js' => 'application/javascript', 
+                    'png' => 'image/png', 
+                    'jpg' => 'image/jpeg', 
+                    'svg' => 'image/svg+xml',
+                    'woff2' => 'font/woff2',
+                    'woff' => 'font/woff',
+                    'ttf' => 'font/ttf',
+                    'eot' => 'application/vnd.ms-fontobject',
+                ];
                 $connection->send(new Response(200, ['Content-Type' => $mimeTypes[$ext] ?? 'application/octet-stream'], file_get_contents($filePath)));
                 return;
             }
