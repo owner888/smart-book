@@ -640,14 +640,16 @@ function handleStreamContinue(TcpConnection $connection, Request $request): ?arr
     $userPrompt = $prompt ?: ($prompts['continue']['default_prompt'] ?? '');
     
     // RAG 搜索函数
+    $continuePrompts = $prompts['continue'];
     $doChat = function($ragContext, $ragSources) use (
-        $connection, $baseSystemPrompt, $userPrompt, $enableSearch, $engine, $model, $prompts, $ragEnabled
+        $connection, $baseSystemPrompt, $userPrompt, $enableSearch, $engine, $model, $prompts, $ragEnabled, $continuePrompts
     ) {
         $systemPrompt = $baseSystemPrompt;
         
         if ($ragEnabled && !empty($ragContext)) {
-            // 如果有 RAG 上下文，添加到系统提示词
-            $systemPrompt .= "\n\n【参考资料】\n以下是从书籍中检索到的相关内容，可以参考这些内容来续写：\n\n" . $ragContext;
+            // 使用配置文件中的 RAG 参考说明，明确告知 AI 不要复述
+            $ragInstruction = $continuePrompts['rag_instruction'] ?? '';
+            $systemPrompt .= str_replace('{context}', $ragContext, $ragInstruction);
             sendSSE($connection, 'sources', json_encode($ragSources, JSON_UNESCAPED_UNICODE));
         } else {
             // 发送知识来源信息
