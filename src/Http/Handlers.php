@@ -133,27 +133,94 @@ function handleWebSocketMessage(TcpConnection $connection, string $data): void
 // ===================================
 
 /**
- * 获取可用模型列表
+ * 获取可用模型列表（从 Gemini API 动态获取）
  */
 function handleGetModels(): array
 {
-    return [
-        'models' => [
-            // Gemini 系列
+    static $cache = null;
+    static $cacheTime = 0;
+    
+    // 缓存 5 分钟
+    if ($cache && (time() - $cacheTime) < 300) {
+        return $cache;
+    }
+    
+    $models = [];
+    $default = 'gemini-2.5-flash';
+    
+    // 调用 Gemini Models API
+    try {
+        $apiKey = GEMINI_API_KEY;
+        $url = "https://generativelanguage.googleapis.com/v1beta/models?key={$apiKey}";
+        
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'timeout' => 10,
+                'header' => "Content-Type: application/json\r\n"
+            ]
+        ]);
+        
+        $response = @file_get_contents($url, false, $context);
+        
+        if ($response) {
+            $data = json_decode($response, true);
+            
+            // 定价表（USD per million tokens）
+            $pricing = [
+                'gemini-2.5-pro' => ['input' => 2.5, 'output' => 15],
+                'gemini-2.5-flash' => ['input' => 0.3, 'output' => 2.5],
+                'gemini-2.5-flash-lite' => ['input' => 0.1, 'output' => 0.4],
+                'gemini-2.0-flash' => ['input' => 0, 'output' => 0],  // 免费
+                'gemini-1.5-pro' => ['input' => 3.5, 'output' => 10.5],
+                'gemini-1.5-flash' => ['input' => 0.075, 'output' => 0.3],
+            ];
+            
+            foreach ($data['models'] ?? [] as $model) {
+                $modelId = str_replace('models/', '', $model['name']);
+                
+                // 只显示 gemini 模型，排除 embedding/imagen/text-bison 等
+                if (!str_starts_with($modelId, 'gemini')) continue;
+                
+                // 排除 preview/exp 版本
+                if (str_contains($modelId, 'preview') || str_contains($modelId, 'exp')) continue;
+                
+                // 计算相对价格比率 (相对于 gemini-2.5-pro)
+                $basePrice = $pricing['gemini-2.5-pro']['output'];
+                $modelPrice = $pricing[$modelId]['output'] ?? 2.5;
+                $rate = $modelPrice == 0 ? '0x' : round($modelPrice / $basePrice, 2) . 'x';
+                
+                $models[] = [
+                    'id' => $modelId,
+                    'name' => $model['displayName'] ?? $modelId,
+                    'provider' => 'google',
+                    'rate' => $rate,
+                    'description' => $model['description'] ?? '',
+                    'context_length' => $model['inputTokenLimit'] ?? 0,
+                    'output_limit' => $model['outputTokenLimit'] ?? 0,
+                    'default' => $modelId === $default,
+                ];
+            }
+            
+            // 按名称排序
+            usort($models, fn($a, $b) => strcmp($a['name'], $b['name']));
+        }
+    } catch (Exception $e) {
+        // API 调用失败，使用默认列表
+    }
+    
+    // 如果 API 没返回数据，使用默认配置
+    if (empty($models)) {
+        $models = [
             ['id' => 'gemini-2.5-flash', 'name' => 'Gemini 2.5 Flash', 'provider' => 'google', 'rate' => '0.33x', 'default' => true],
             ['id' => 'gemini-2.5-pro', 'name' => 'Gemini 2.5 Pro', 'provider' => 'google', 'rate' => '1x'],
-            ['id' => 'gemini-2.0-flash', 'name' => 'Gemini 2.0 Flash', 'provider' => 'google', 'rate' => '0x'],
-            
-            // Claude 系列 (预留)
-            ['id' => 'claude-sonnet-4', 'name' => 'Claude Sonnet 4', 'provider' => 'anthropic', 'rate' => '1x', 'disabled' => true],
-            ['id' => 'claude-opus-4.5', 'name' => 'Claude Opus 4.5', 'provider' => 'anthropic', 'rate' => '3x', 'disabled' => true],
-            
-            // OpenAI 系列 (预留)
-            ['id' => 'gpt-4o', 'name' => 'GPT-4o', 'provider' => 'openai', 'rate' => '1x', 'disabled' => true],
-            ['id' => 'gpt-4o-mini', 'name' => 'GPT-4o mini', 'provider' => 'openai', 'rate' => '0.33x', 'disabled' => true],
-        ],
-        'default' => 'gemini-2.5-flash'
-    ];
+        ];
+    }
+    
+    $cache = ['models' => $models, 'default' => $default, 'source' => 'gemini_api'];
+    $cacheTime = time();
+    
+    return $cache;
 }
 
 /**
