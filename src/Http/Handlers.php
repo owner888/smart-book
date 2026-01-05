@@ -1169,261 +1169,38 @@ function handleSaveMCPServers(Request $request): array
 
 // ===================================
 // MCP Server 请求处理（端口 8089）
+// 使用 Streamable HTTP 协议（不使用 SSE）
 // ===================================
 
+// MCP Server 实例（延迟初始化）
+$mcpServer = null;
+
 /**
- * 处理 MCP 请求（HTTP/SSE 协议）
+ * 获取 MCP Server 实例
+ */
+function getMCPServer(): \SmartBook\MCP\StreamableHttpServer
+{
+    global $mcpServer;
+    
+    if ($mcpServer === null) {
+        $booksDir = dirname(__DIR__, 2) . '/books';
+        $mcpServer = new \SmartBook\MCP\StreamableHttpServer($booksDir);
+    }
+    
+    return $mcpServer;
+}
+
+/**
+ * 处理 MCP 请求（Streamable HTTP 协议）
+ * 
+ * 协议特点：
+ * - POST /mcp: JSON-RPC 请求端点
+ * - GET /mcp: 服务器信息
+ * - DELETE /mcp: 终止会话
+ * - 支持 Mcp-Session-Id header 进行会话管理
  */
 function handleMCPRequest(TcpConnection $connection, Request $request): void
 {
-    $path = $request->path();
-    $method = $request->method();
-    
-    $corsHeaders = [
-        'Access-Control-Allow-Origin' => '*',
-        'Access-Control-Allow-Methods' => 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers' => 'Content-Type',
-    ];
-    
-    if ($method === 'OPTIONS') {
-        $connection->send(new Response(200, $corsHeaders, ''));
-        return;
-    }
-    
-    $serverInfo = ['name' => 'smart-book', 'version' => '1.0.0'];
-    $capabilities = ['tools' => ['listChanged' => true]];
-    
-    // MCP 路由
-    if ($path === '/mcp' || $path === '/') {
-        $connection->send(new Response(200, 
-            array_merge($corsHeaders, ['Content-Type' => 'application/json']),
-            json_encode(['serverInfo' => $serverInfo, 'capabilities' => $capabilities], JSON_UNESCAPED_UNICODE)
-        ));
-        return;
-    }
-    
-    if ($path === '/mcp/sse' && $method === 'POST') {
-        $body = json_decode($request->rawBody(), true);
-        $result = processMCPJsonRpc($body);
-        $connection->send(new Response(200, 
-            array_merge($corsHeaders, ['Content-Type' => 'application/json']),
-            json_encode($result, JSON_UNESCAPED_UNICODE)
-        ));
-        return;
-    }
-    
-    if ($path === '/mcp/tools' && $method === 'GET') {
-        $connection->send(new Response(200,
-            array_merge($corsHeaders, ['Content-Type' => 'application/json']),
-            json_encode(['tools' => getMCPTools()], JSON_UNESCAPED_UNICODE)
-        ));
-        return;
-    }
-    
-    if ($path === '/mcp/tools/call' && $method === 'POST') {
-        $body = json_decode($request->rawBody(), true);
-        $result = callMCPTool($body['name'] ?? '', $body['arguments'] ?? []);
-        $connection->send(new Response(200,
-            array_merge($corsHeaders, ['Content-Type' => 'application/json']),
-            json_encode($result, JSON_UNESCAPED_UNICODE)
-        ));
-        return;
-    }
-    
-    $connection->send(new Response(404, $corsHeaders, json_encode(['error' => 'Not Found'])));
-}
-
-/**
- * 处理 MCP JSON-RPC 请求
- */
-function processMCPJsonRpc(array $request): array
-{
-    $method = $request['method'] ?? '';
-    $params = $request['params'] ?? [];
-    $id = $request['id'] ?? null;
-    
-    try {
-        $result = match ($method) {
-            'initialize' => [
-                'protocolVersion' => '2024-11-05',
-                'serverInfo' => ['name' => 'smart-book', 'version' => '1.0.0'],
-                'capabilities' => ['tools' => ['listChanged' => true]],
-            ],
-            'tools/list' => ['tools' => getMCPTools()],
-            'tools/call' => callMCPTool($params['name'] ?? '', $params['arguments'] ?? []),
-            default => throw new \Exception("Method not found: {$method}"),
-        };
-        
-        return ['jsonrpc' => '2.0', 'id' => $id, 'result' => $result];
-    } catch (\Exception $e) {
-        return ['jsonrpc' => '2.0', 'id' => $id, 'error' => ['code' => -32000, 'message' => $e->getMessage()]];
-    }
-}
-
-/**
- * 获取 MCP 工具列表
- */
-function getMCPTools(): array
-{
-    return [
-        [
-            'name' => 'search_book',
-            'description' => '在当前书籍中搜索相关内容（向量+关键词混合搜索）',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'query' => ['type' => 'string', 'description' => '搜索查询内容'],
-                    'top_k' => ['type' => 'integer', 'description' => '返回结果数量', 'default' => 5],
-                ],
-                'required' => ['query'],
-            ],
-        ],
-        [
-            'name' => 'get_book_info',
-            'description' => '获取当前书籍的基本信息',
-            'inputSchema' => ['type' => 'object', 'properties' => []],
-        ],
-        [
-            'name' => 'list_books',
-            'description' => '列出所有可用的书籍',
-            'inputSchema' => ['type' => 'object', 'properties' => []],
-        ],
-        [
-            'name' => 'select_book',
-            'description' => '选择要使用的书籍',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'book' => ['type' => 'string', 'description' => '书籍文件名'],
-                ],
-                'required' => ['book'],
-            ],
-        ],
-    ];
-}
-
-/**
- * 调用 MCP 工具
- */
-function callMCPTool(string $name, array $args): array
-{
-    $booksDir = dirname(__DIR__, 2) . '/books';
-    
-    $result = match ($name) {
-        'search_book' => mcpToolSearchBook($args, $booksDir),
-        'get_book_info' => mcpToolGetBookInfo($booksDir),
-        'list_books' => mcpToolListBooks($booksDir),
-        'select_book' => mcpToolSelectBook($args, $booksDir),
-        default => ['error' => "Unknown tool: {$name}"],
-    };
-    
-    return [
-        'content' => [
-            ['type' => 'text', 'text' => is_string($result) ? $result : json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)],
-        ],
-    ];
-}
-
-function mcpToolSearchBook(array $args, string $booksDir): array
-{
-    $query = $args['query'] ?? '';
-    $topK = $args['top_k'] ?? 5;
-    
-    if (empty($query)) throw new \Exception('Missing query parameter');
-    
-    $currentCache = getCurrentBookCache();
-    if (!$currentCache) throw new \Exception('No book index available');
-    
-    $embedder = new EmbeddingClient(GEMINI_API_KEY);
-    $queryEmbedding = $embedder->embedQuery($query);
-    
-    $vectorStore = new VectorStore($currentCache);
-    $results = $vectorStore->hybridSearch($query, $queryEmbedding, $topK, 0.5);
-    
-    $output = [];
-    foreach ($results as $i => $r) {
-        $output[] = ['index' => $i + 1, 'text' => $r['chunk']['text'], 'score' => round($r['score'] * 100, 1) . '%'];
-    }
-    
-    return ['query' => $query, 'results' => $output, 'book' => mcpGetBookTitle()];
-}
-
-function mcpToolGetBookInfo(string $booksDir): array
-{
-    $currentPath = getCurrentBookPath();
-    if (!$currentPath) return ['error' => 'No book selected'];
-    
-    $currentCache = getCurrentBookCache();
-    $info = ['file' => basename($currentPath), 'hasIndex' => $currentCache && file_exists($currentCache)];
-    
-    $ext = strtolower(pathinfo($currentPath, PATHINFO_EXTENSION));
-    if ($ext === 'epub') {
-        $metadata = \SmartBook\Parser\EpubParser::extractMetadata($currentPath);
-        $info['title'] = $metadata['title'] ?? null;
-        $info['authors'] = $metadata['authors'] ?? null;
-    } else {
-        $info['title'] = pathinfo($currentPath, PATHINFO_FILENAME);
-    }
-    
-    if ($info['hasIndex']) {
-        $indexData = json_decode(file_get_contents($currentCache), true);
-        $info['chunkCount'] = count($indexData['chunks'] ?? []);
-    }
-    
-    return $info;
-}
-
-function mcpToolListBooks(string $booksDir): array
-{
-    $books = [];
-    if (!is_dir($booksDir)) return ['books' => []];
-    
-    $currentPath = getCurrentBookPath();
-    foreach (scandir($booksDir) as $file) {
-        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-        if (!in_array($ext, ['epub', 'txt'])) continue;
-        
-        $baseName = pathinfo($file, PATHINFO_FILENAME);
-        $indexFile = $booksDir . '/' . $baseName . '_index.json';
-        $filePath = $booksDir . '/' . $file;
-        
-        $book = ['file' => $file, 'format' => strtoupper($ext), 'hasIndex' => file_exists($indexFile), 'isSelected' => $currentPath === $filePath];
-        
-        if ($ext === 'epub') {
-            try { $metadata = \SmartBook\Parser\EpubParser::extractMetadata($filePath); $book['title'] = $metadata['title'] ?? $baseName; } catch (\Exception $e) { $book['title'] = $baseName; }
-        } else {
-            $book['title'] = $baseName;
-        }
-        $books[] = $book;
-    }
-    
-    return ['books' => $books];
-}
-
-function mcpToolSelectBook(array $args, string $booksDir): array
-{
-    $bookFile = $args['book'] ?? '';
-    if (empty($bookFile)) throw new \Exception('Missing book parameter');
-    
-    $bookPath = $booksDir . '/' . $bookFile;
-    if (!file_exists($bookPath)) throw new \Exception("Book not found: {$bookFile}");
-    
-    $baseName = pathinfo($bookFile, PATHINFO_FILENAME);
-    $indexPath = $booksDir . '/' . $baseName . '_index.json';
-    
-    $GLOBALS['selected_book'] = ['path' => $bookPath, 'cache' => $indexPath, 'hasIndex' => file_exists($indexPath)];
-    
-    return ['success' => true, 'book' => $bookFile, 'title' => mcpGetBookTitle(), 'hasIndex' => file_exists($indexPath)];
-}
-
-function mcpGetBookTitle(): string
-{
-    $currentPath = getCurrentBookPath();
-    if (!$currentPath) return '未选择书籍';
-    
-    $ext = strtolower(pathinfo($currentPath, PATHINFO_EXTENSION));
-    if ($ext === 'epub') {
-        try { $metadata = \SmartBook\Parser\EpubParser::extractMetadata($currentPath); return $metadata['title'] ?? pathinfo($currentPath, PATHINFO_FILENAME); } catch (\Exception $e) {}
-    }
-    return pathinfo($currentPath, PATHINFO_FILENAME);
+    $server = getMCPServer();
+    $server->handleRequest($connection, $request);
 }

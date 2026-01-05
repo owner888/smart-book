@@ -69,7 +69,7 @@ $wsWorker->onMessage = function (TcpConnection $connection, $data) {
 $wsWorker->onClose = fn($conn) => null;
 
 // ===================================
-// MCP Server (HTTP/SSE 协议)
+// MCP Server (Streamable HTTP 协议)
 // ===================================
 
 $mcpWorker = new Worker('http://0.0.0.0:8089');
@@ -89,6 +89,8 @@ echo "   AI 书籍助手 Smart Book 服务\n";
 echo "=========================================\n";
 echo "🌐 Web UI:    http://localhost:8088\n";
 echo "🔌 MCP API:   http://localhost:8089/mcp\n";
+echo "   └─ Protocol: Streamable HTTP (not SSE)\n";
+echo "   └─ Methods: POST (JSON-RPC), GET, DELETE\n";
 echo "=========================================\n";
 
 Worker::runAll();

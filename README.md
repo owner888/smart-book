@@ -39,7 +39,8 @@ php server.php status         # 状态
 
 - Web 界面: http://localhost:8088
 - API: http://localhost:8088/api
-- WebSocket: ws://localhost:8089
+- WebSocket: ws://localhost:8081
+- MCP Server: http://localhost:8089/mcp
 
 ## 目录结构
 
@@ -104,11 +105,72 @@ smart-book/
 
 ### WebSocket API
 
-连接 `ws://localhost:8089`，发送 JSON：
+连接 `ws://localhost:8081`，发送 JSON：
 
 ```json
 {"action": "ask", "question": "孙悟空的师父是谁？"}
 {"action": "chat", "messages": [{"role": "user", "content": "你好"}]}
+```
+
+### MCP Server API (Streamable HTTP)
+
+MCP Server 运行在端口 8089，实现 [MCP 2024-11-05 Streamable HTTP Transport](https://spec.modelcontextprotocol.io/specification/basic/transports/) 协议。
+
+**端点：** `http://localhost:8089/mcp`
+
+| 方法 | 说明 |
+|------|------|
+| `GET` | 获取服务器信息和能力 |
+| `POST` | JSON-RPC 请求（支持批量） |
+| `DELETE` | 终止会话 |
+
+**会话管理：**
+- 服务器通过 `Mcp-Session-Id` HTTP Header 管理会话
+- `initialize` 请求会创建新会话并返回 Session ID
+- 后续请求应携带 Session ID 以保持状态
+
+**JSON-RPC 请求示例：**
+
+```bash
+# 1. 初始化会话
+curl -X POST http://localhost:8089/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"test","version":"1.0"}},"id":1}'
+
+# 2. 获取工具列表
+curl -X POST http://localhost:8089/mcp \
+  -H "Content-Type: application/json" \
+  -H "Mcp-Session-Id: <session_id>" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":2}'
+
+# 3. 调用工具 - 列出书籍
+curl -X POST http://localhost:8089/mcp \
+  -H "Content-Type: application/json" \
+  -H "Mcp-Session-Id: <session_id>" \
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"list_books","arguments":{}},"id":3}'
+
+# 4. 调用工具 - 搜索书籍
+curl -X POST http://localhost:8089/mcp \
+  -H "Content-Type: application/json" \
+  -H "Mcp-Session-Id: <session_id>" \
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"search_book","arguments":{"query":"孙悟空"}},"id":4}'
+```
+
+**可用工具：**
+
+| 工具名 | 说明 | 参数 |
+|--------|------|------|
+| `list_books` | 列出所有可用书籍 | 无 |
+| `get_book_info` | 获取当前书籍信息 | 无 |
+| `select_book` | 选择要使用的书籍 | `book`: 书籍文件名 |
+| `search_book` | 在书籍中搜索内容 | `query`: 搜索词, `top_k`: 结果数量(可选) |
+
+**stdio 模式：**
+
+也支持 stdio 协议，用于 Cline/Cherry Studio 等客户端：
+
+```bash
+php mcp-stdio.php
 ```
 
 ## 技术架构
