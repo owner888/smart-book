@@ -545,10 +545,14 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     
     // 获取对话上下文（包含摘要 + 最近消息）
-    CacheService::getChatContext($chatId, function($context) use ($connection, $message, $chatId, $headers, $enableSearch, $engine) {
+    CacheService::getChatContext($chatId, function($context) use ($connection, $message, $chatId, $headers, $enableSearch, $engine, $model) {
         $connection->send(new Response(200, $headers, ''));
         
         $prompts = $GLOBALS['config']['prompts'];
+        
+        // 发送知识来源信息
+        $sourceTexts = $prompts['source_texts'] ?? ['google' => 'AI 预训练知识 + Google Search', 'mcp' => 'AI 预训练知识 + MCP 工具', 'off' => 'AI 预训练知识（搜索已关闭）'];
+        sendSSE($connection, 'sources', json_encode([['text' => $sourceTexts[$engine] ?? $sourceTexts['off'], 'score' => 100]], JSON_UNESCAPED_UNICODE));
         
         // 通用聊天系统提示词
         $systemPrompt = $prompts['chat']['system'] ?? '你是一个友善、博学的 AI 助手，擅长回答各种问题并提供有价值的见解。请用中文回答。';
@@ -579,18 +583,29 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
             CacheService::addToChatHistory($chatId, ['role' => 'user', 'content' => $message]);
         }
         
-        $asyncGemini = AIService::getAsyncGemini();
+        $asyncGemini = AIService::getAsyncGemini($model);
         $asyncGemini->chatStreamAsync(
             $messages,
             function ($text, $isThought) use ($connection) { 
                 if ($text) sendSSE($connection, $isThought ? 'thinking' : 'content', $text); 
             },
-            function ($fullContent) use ($connection, $chatId, $context) { 
+            function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $chatId, $context, $model) { 
                 // 保存助手回复
                 if ($chatId) {
                     CacheService::addToChatHistory($chatId, ['role' => 'assistant', 'content' => $fullContent]);
                     // 检查是否需要进行上下文压缩
                     triggerSummarizationIfNeeded($chatId, $context);
+                }
+                // 发送 token 使用统计
+                if ($usageMetadata) {
+                    $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
+                    sendSSE($connection, 'usage', json_encode([
+                        'tokens' => $costInfo['tokens'], 
+                        'cost' => $costInfo['cost'], 
+                        'cost_formatted' => TokenCounter::formatCost($costInfo['cost']), 
+                        'currency' => $costInfo['currency'], 
+                        'model' => $usedModel ?? $model
+                    ], JSON_UNESCAPED_UNICODE));
                 }
                 sendSSE($connection, 'done', ''); 
                 $connection->close(); 
@@ -610,20 +625,42 @@ function handleStreamContinue(TcpConnection $connection, Request $request): ?arr
 {
     $body = json_decode($request->rawBody(), true) ?? [];
     $prompt = $body['prompt'] ?? '';
+    $enableSearch = $body['search'] ?? false;  // 续写默认关闭搜索
+    $engine = $body['engine'] ?? 'off';        // 默认关闭
+    $model = $body['model'] ?? 'gemini-2.5-flash';
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     $connection->send(new Response(200, $headers, ''));
     
-    $systemPrompt = $GLOBALS['config']['prompts']['continue']['system'] ?? '';
-    $userPrompt = $prompt ?: ($GLOBALS['config']['prompts']['continue']['default_prompt'] ?? '');
+    $prompts = $GLOBALS['config']['prompts'];
+    $systemPrompt = $prompts['continue']['system'] ?? '';
+    $userPrompt = $prompt ?: ($prompts['continue']['default_prompt'] ?? '');
     
-    $asyncGemini = AIService::getAsyncGemini();
+    // 发送知识来源信息
+    $sourceTexts = $prompts['source_texts'] ?? ['google' => 'AI 预训练知识 + Google Search', 'mcp' => 'AI 预训练知识 + MCP 工具', 'off' => 'AI 预训练知识（搜索已关闭）'];
+    sendSSE($connection, 'sources', json_encode([['text' => $sourceTexts[$engine] ?? $sourceTexts['off'], 'score' => 100]], JSON_UNESCAPED_UNICODE));
+    
+    $asyncGemini = AIService::getAsyncGemini($model);
     $asyncGemini->chatStreamAsync(
         [['role' => 'system', 'content' => $systemPrompt], ['role' => 'user', 'content' => $userPrompt]],
         function ($text, $isThought) use ($connection) { if (!$isThought && $text) sendSSE($connection, 'content', $text); },
-        function ($fullContent) use ($connection) { sendSSE($connection, 'done', ''); $connection->close(); },
+        function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $model) { 
+            // 发送 token 使用统计
+            if ($usageMetadata) {
+                $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
+                sendSSE($connection, 'usage', json_encode([
+                    'tokens' => $costInfo['tokens'], 
+                    'cost' => $costInfo['cost'], 
+                    'cost_formatted' => TokenCounter::formatCost($costInfo['cost']), 
+                    'currency' => $costInfo['currency'], 
+                    'model' => $usedModel ?? $model
+                ], JSON_UNESCAPED_UNICODE));
+            }
+            sendSSE($connection, 'done', ''); 
+            $connection->close(); 
+        },
         function ($error) use ($connection) { sendSSE($connection, 'error', $error); $connection->close(); },
-        ['enableSearch' => false]
+        ['enableSearch' => $enableSearch && $engine === 'google', 'enableTools' => $engine === 'mcp']
     );
     return null;
 }
