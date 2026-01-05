@@ -217,7 +217,16 @@ function handleVectorImport(TcpConnection $connection): ?array
 
 function sendSSE(TcpConnection $connection, string $event, string $data): void
 {
-    $connection->send("event: {$event}\ndata: {$data}\n\n");
+    // SSE 规范：data 字段中的换行符需要分成多行 data:
+    // 或者直接将换行符替换为 \n 字符串（前端会处理）
+    // 这里使用分行方式
+    $lines = explode("\n", $data);
+    $message = "event: {$event}\n";
+    foreach ($lines as $line) {
+        $message .= "data: {$line}\n";
+    }
+    $message .= "\n";
+    $connection->send($message);
 }
 
 function handleStreamAskAsync(TcpConnection $connection, Request $request): ?array
@@ -271,7 +280,7 @@ function handleStreamAskGenerate(TcpConnection $connection, string $question, ar
     $response = $gemini->chat([
         ['role' => 'system', 'content' => $systemPrompt],
         ['role' => 'user', 'content' => $question],
-    ], ['enableSearch' => false]);
+    ], ['enableSearch' => true]);  // 启用 Google Search
     
     $aiAnswer = '';
     foreach ($response['candidates'] ?? [] as $candidate) {
@@ -336,7 +345,7 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
         function ($text, $isThought) use ($connection) { if (!$isThought && $text) sendSSE($connection, 'content', $text); },
         function ($fullContent) use ($connection) { sendSSE($connection, 'done', ''); $connection->close(); },
         function ($error) use ($connection) { sendSSE($connection, 'error', $error); $connection->close(); },
-        ['enableSearch' => false]
+        ['enableSearch' => true]  // 通用聊天启用 Google Search
     );
     return null;
 }

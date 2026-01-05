@@ -206,11 +206,16 @@ async function sendMessage() {
             buffer = lines.pop() || '';
             
             let currentEvent = null;
+            let dataLines = [];
             for (const line of lines) {
                 if (line.startsWith('event: ')) {
                     currentEvent = line.slice(7);
+                    dataLines = [];
                 } else if (line.startsWith('data: ')) {
-                    const data = line.slice(6);
+                    dataLines.push(line.slice(6));
+                } else if (line === '' && currentEvent && dataLines.length > 0) {
+                    // 空行表示事件结束，合并所有 data 行
+                    const data = dataLines.join('\n');
                     
                     if (currentEvent === 'sources') {
                         try {
@@ -576,6 +581,14 @@ function initMobileSidebar() {
         if (swipeDistance < -minSwipeDistance && sidebar.classList.contains('open')) {
             closeSidebar();
         }
+    }
+}
+
+function toggleSidebar() {
+    if (sidebar.classList.contains('open')) {
+        closeSidebar();
+    } else {
+        openSidebar();
     }
 }
 
