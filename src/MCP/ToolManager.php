@@ -117,6 +117,10 @@ class ToolManager
             // 处理内置工具服务器
             if (($serverConfig['command'] ?? '') === 'php' && ($serverConfig['args'][0] ?? '') === 'builtin') {
                 foreach ($serverConfig['tools'] ?? [] as $toolName => $toolDef) {
+                    // 检查工具级别的 disabled 属性
+                    if ($toolDef['disabled'] ?? false) {
+                        continue;  // 跳过禁用的工具
+                    }
                     if (isset($builtinHandlers[$toolName])) {
                         $isAutoApprove = in_array($toolName, $autoApproveList);
                         self::register($toolName, $toolDef, $builtinHandlers[$toolName], $isAutoApprove);

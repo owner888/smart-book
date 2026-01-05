@@ -7,6 +7,7 @@
       "autoApprove": ["get_current_time"],
       "tools": {
         "get_current_time": {
+          "disabled": false,
           "description": "获取当前日期和时间",
           "parameters": {
             "type": "object",
@@ -19,6 +20,7 @@
           }
         },
         "calculator": {
+          "disabled": false,
           "description": "执行数学计算",
           "parameters": {
             "type": "object",
@@ -32,6 +34,7 @@
           }
         },
         "fetch_webpage": {
+          "disabled": true,
           "description": "抓取网页内容（返回纯文本）",
           "parameters": {
             "type": "object",
@@ -49,6 +52,7 @@
           }
         },
         "search_book": {
+          "disabled": false,
           "description": "在书籍中搜索相关内容（RAG）",
           "parameters": {
             "type": "object",
