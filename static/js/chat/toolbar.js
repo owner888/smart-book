@@ -2,8 +2,8 @@
  * 工具栏模块
  */
 
-// RAG 开关状态
-let ragEnabled = true;
+// RAG 开关状态（默认关闭，使用 AI 预训练知识）
+let ragEnabled = false;
 
 // 切换 RAG 开关
 function toggleRAG() {
