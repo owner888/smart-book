@@ -42,7 +42,18 @@ function restorePage() {
     const savedPage = localStorage.getItem('currentPage') || 'chat';
     const savedItem = document.querySelector(`.icon-nav-item[data-page="${savedPage}"]`);
     if (savedItem) {
-        savedItem.click();
+        // 只更新激活状态，不重复加载页面
+        document.querySelectorAll('.icon-nav-item').forEach(i => i.classList.remove('active'));
+        savedItem.classList.add('active');
+        
+        // 只有当保存的页面不是默认页面时才需要加载
+        if (savedPage !== 'chat') {
+            const frame = document.getElementById('mainFrame');
+            const url = pageMap[savedPage];
+            if (url) {
+                frame.src = url;
+            }
+        }
     }
 }
 
