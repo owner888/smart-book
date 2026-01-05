@@ -23,6 +23,7 @@ class StreamableHttpServer
     private string $booksDir;
     private array $sessions = [];
     private bool $debug = false; // 启用调试日志
+    private string $sessionsFile; // session 持久化文件路径
     
     // 服务器信息
     private const SERVER_INFO = [
@@ -45,6 +46,52 @@ class StreamableHttpServer
     {
         $this->booksDir = $booksDir;
         $this->debug = $debug;
+        
+        // 设置 session 持久化文件路径
+        $this->sessionsFile = $booksDir . '/.mcp_sessions.json';
+        
+        // 从文件加载 sessions
+        $this->loadSessions();
+    }
+    
+    /**
+     * 从文件加载 sessions
+     */
+    private function loadSessions(): void
+    {
+        if (file_exists($this->sessionsFile)) {
+            $data = file_get_contents($this->sessionsFile);
+            $sessions = json_decode($data, true);
+            
+            if (is_array($sessions)) {
+                // 过滤掉过期的 session（超过 24 小时）
+                $now = time();
+                foreach ($sessions as $id => $session) {
+                    $createdAt = $session['createdAt'] ?? 0;
+                    $lastAccessAt = $session['lastAccessAt'] ?? $createdAt;
+                    
+                    // 如果 session 在 24 小时内活跃过，保留它
+                    if (($now - $lastAccessAt) < 86400) {
+                        $this->sessions[$id] = $session;
+                    }
+                }
+                
+                $this->log('INFO', 'Loaded sessions from file', [
+                    'total' => count($sessions),
+                    'active' => count($this->sessions),
+                    'file' => $this->sessionsFile,
+                ]);
+            }
+        }
+    }
+    
+    /**
+     * 保存 sessions 到文件
+     */
+    private function saveSessions(): void
+    {
+        $data = json_encode($this->sessions, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        file_put_contents($this->sessionsFile, $data, LOCK_EX);
     }
     
     /**
@@ -130,6 +177,7 @@ class StreamableHttpServer
             $sessionId = $request->header('Mcp-Session-Id');
             if ($sessionId && isset($this->sessions[$sessionId])) {
                 unset($this->sessions[$sessionId]);
+                $this->saveSessions(); // 持久化
             }
             $connection->send(new Response(204, self::CORS_HEADERS, ''));
             return;
@@ -173,12 +221,28 @@ class StreamableHttpServer
         // 获取会话 ID
         $sessionId = $request->header('Mcp-Session-Id');
         
-        // 如果客户端发送了 session ID 但服务器不认识（可能是服务器重启了），
-        // 记录日志但继续处理，让客户端能够重新初始化
+        // 如果客户端发送了 session ID 但服务器不认识（可能是服务器重启后持久化文件被清理了），
+        // 自动为该 session ID 重建一个空会话，这样客户端不需要重新初始化
         if ($sessionId && !isset($this->sessions[$sessionId])) {
-            $this->log('INFO', 'Unknown session ID (server may have restarted), will create new session if needed', [
+            $this->log('INFO', 'Unknown session ID (session expired or server data lost), recreating session', [
                 'receivedSessionId' => $sessionId,
             ]);
+            // 重建会话
+            $this->sessions[$sessionId] = [
+                'clientInfo' => [],
+                'protocolVersion' => self::PROTOCOL_VERSION,
+                'capabilities' => [],
+                'createdAt' => time(),
+                'lastAccessAt' => time(),
+                'selectedBook' => null,
+                'restored' => true,  // 标记这是恢复的会话
+            ];
+            // 持久化新会话
+            $this->saveSessions();
+        } elseif ($sessionId && isset($this->sessions[$sessionId])) {
+            // 更新最后访问时间
+            $this->sessions[$sessionId]['lastAccessAt'] = time();
+            // 不频繁保存，只在关键操作时保存
         }
         
         // 打印请求日志
@@ -299,8 +363,12 @@ class StreamableHttpServer
             'protocolVersion' => $params['protocolVersion'] ?? self::PROTOCOL_VERSION,
             'capabilities' => $params['capabilities'] ?? [],
             'createdAt' => time(),
+            'lastAccessAt' => time(),
             'selectedBook' => null,
         ];
+        
+        // 持久化 session
+        $this->saveSessions();
         
         return [
             'protocolVersion' => self::PROTOCOL_VERSION,
@@ -515,6 +583,8 @@ class StreamableHttpServer
         // 更新会话中的选择
         if ($sessionId && isset($this->sessions[$sessionId])) {
             $this->sessions[$sessionId]['selectedBook'] = $selectedBook;
+            $this->sessions[$sessionId]['lastAccessAt'] = time();
+            $this->saveSessions(); // 持久化
         }
         
         // 同时更新全局选择（为了兼容其他功能）
