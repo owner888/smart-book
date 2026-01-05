@@ -77,7 +77,7 @@ function buildWelcomeMessage(assistant) {
                     <div class="thinking-header" onclick="this.parentElement.classList.toggle('collapsed')" style="background: rgba(33, 150, 243, 0.15);">
                         <span class="thinking-icon">📋</span>
                         <span>系统提示词</span>
-                        <span class="thinking-toggle">▶</span>
+                        <span class="thinking-toggle">▼</span>
                     </div>
                     <div class="thinking-content">${escapeHtml(assistant.fullSystemPrompt || '')}</div>
                 </div>
@@ -391,7 +391,7 @@ function finishStreamingMessage(isError = false) {
                 <div class="thinking-header" onclick="this.parentElement.classList.toggle('collapsed')" style="background: rgba(33, 150, 243, 0.15);">
                     <span class="thinking-icon">📋</span>
                     <span>系统提示词</span>
-                    <span class="thinking-toggle">▶</span>
+                    <span class="thinking-toggle">▼</span>
                 </div>
                 <div class="thinking-content">${escapeHtml(currentSystemPrompt)}</div>
             </div>
@@ -406,7 +406,7 @@ function finishStreamingMessage(isError = false) {
                 <div class="thinking-header" onclick="this.parentElement.classList.toggle('collapsed')">
                     <span class="thinking-icon">🧠</span>
                     <span>已完成思考</span>
-                    <span class="thinking-toggle">▶</span>
+                    <span class="thinking-toggle">▼</span>
                 </div>
                 <div class="thinking-content">${escapeHtml(currentThinking)}</div>
             </div>
