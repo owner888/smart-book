@@ -14,9 +14,21 @@ async function loadModels() {
         
         modelsList = data.models || [];
         
-        // 设置默认模型
-        const defaultId = data.default || 'gemini-2.5-flash';
-        currentModel = modelsList.find(m => m.id === defaultId) || modelsList.find(m => m.default) || modelsList[0];
+        // 优先从 localStorage 恢复上次选择的模型
+        const savedModelId = localStorage.getItem('selectedModel');
+        if (savedModelId) {
+            const savedModel = modelsList.find(m => m.id === savedModelId && !m.disabled);
+            if (savedModel) {
+                currentModel = savedModel;
+                console.log('📦 已恢复上次选择的模型:', savedModel.name);
+            }
+        }
+        
+        // 如果没有恢复到模型，使用默认模型
+        if (!currentModel) {
+            const defaultId = data.default || 'gemini-2.5-flash';
+            currentModel = modelsList.find(m => m.id === defaultId) || modelsList.find(m => m.default) || modelsList[0];
+        }
         
         // 更新 UI
         updateModelDisplay();
@@ -98,6 +110,9 @@ function selectModel(modelId) {
     if (!model || model.disabled) return;
     
     currentModel = model;
+    
+    // 保存到 localStorage 记住选择
+    localStorage.setItem('selectedModel', modelId);
     
     // 更新 UI
     updateModelDisplay();

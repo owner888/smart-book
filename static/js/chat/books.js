@@ -10,6 +10,17 @@ const ChatBooks = {
     // 初始化
     async init() {
         await this.loadBooks();
+        
+        // 从 localStorage 恢复上次选择的书籍
+        const savedBook = localStorage.getItem('selectedBook');
+        if (savedBook && this.books.length > 0) {
+            const bookExists = this.books.find(b => b.file === savedBook);
+            if (bookExists && (!this.currentBook || this.currentBook.file !== savedBook)) {
+                // 静默选择上次的书籍
+                await this.selectBookSilent(savedBook);
+            }
+        }
+        
         this.updateCurrentBookDisplay();
     },
     
@@ -119,6 +130,9 @@ const ChatBooks = {
                 this.currentBook = this.books.find(b => b.file === file);
                 this.updateCurrentBookDisplay();
                 
+                // 保存到 localStorage 记住选择
+                localStorage.setItem('selectedBook', file);
+                
                 layer.closeAll();
                 layer.msg(result.message);
                 
@@ -141,6 +155,27 @@ const ChatBooks = {
             }
         } catch (error) {
             layer.msg('选择书籍失败: ' + error.message, { icon: 2 });
+        }
+    },
+    
+    // 静默选择书籍（页面加载时恢复，不显示提示）
+    async selectBookSilent(file) {
+        try {
+            const response = await fetch(`${ChatConfig.API_BASE}/api/books/select`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ book: file })
+            });
+            const result = await response.json();
+            
+            if (result.success) {
+                // 更新本地状态
+                this.books.forEach(b => b.isSelected = (b.file === file));
+                this.currentBook = this.books.find(b => b.file === file);
+                console.log('📚 已恢复上次选择的书籍:', this.currentBook?.title);
+            }
+        } catch (error) {
+            console.error('恢复书籍选择失败:', error);
         }
     },
     
