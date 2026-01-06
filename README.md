@@ -114,7 +114,7 @@ smart-book/
 
 ### MCP Server API (Streamable HTTP)
 
-MCP Server 运行在端口 8089，实现 [MCP 2024-11-05 Streamable HTTP Transport](https://spec.modelcontextprotocol.io/specification/basic/transports/) 协议。
+MCP Server 运行在端口 8089，实现 [MCP 2025-11-25 Streamable HTTP Transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) 协议。
 
 **端点：** `http://localhost:8089/mcp`
 

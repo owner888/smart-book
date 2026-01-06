@@ -2,8 +2,8 @@
 /**
  * MCP Streamable HTTP Server
  * 
- * 实现 MCP 2024-11-05 Streamable HTTP Transport 协议
- * 参考: https://spec.modelcontextprotocol.io/specification/basic/transports/
+ * 实现 MCP 2025-11-25 Streamable HTTP Transport 协议
+ * 参考: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
  * 
  * 特点：
  * - 单一 POST 端点处理所有 JSON-RPC 请求
@@ -427,13 +427,40 @@ class StreamableHttpServer
     
     /**
      * 获取服务器能力
+     * 
+     * 根据 MCP 规范定义服务器支持的能力：
+     * - tools: 支持工具调用
+     * - resources: 支持资源读取
+     * - prompts: 支持提示词模板（未启用）
+     * - logging: 支持日志记录（未启用）
+     * - experimental: 实验性功能（未启用）
+     * 
+     * @see https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
+     * @see https://modelcontextprotocol.io/specification/2025-11-25/server/resources#capabilities
+     * @see https://modelcontextprotocol.io/specification/2025-11-25/server/tools
      */
     private function getCapabilities(): array
     {
         return [
-            'tools' => new \stdClass(),
-            'resources' => new \stdClass(),
-            // 'prompts' => ['listChanged' => false],
+            // 工具能力：支持调用服务器定义的工具
+            'tools' => [
+                'listChanged' => false,  // 工具列表不会动态变化
+            ],
+            
+            // 资源能力：支持读取服务器提供的资源
+            'resources' => [
+                'subscribe' => false,     // 不支持资源订阅
+                'listChanged' => false,   // 资源列表可能变化（选择不同书籍时）
+            ],
+            
+            // 以下能力暂未实现，保留注释供将来参考
+            // 'prompts' => [
+            //     'listChanged' => false,  // 提示词模板列表不变化
+            // ],
+            // 'logging' => new \stdClass(),  // 支持日志记录
+            // 'experimental' => [
+            //     'customFeature' => true,
+            // ],
         ];
     }
     
