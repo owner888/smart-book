@@ -115,8 +115,10 @@ class ToolManager
             
             $autoApproveList = $serverConfig['autoApprove'] ?? [];
             
+            $serverType = $serverConfig['type'] ?? '';
+            
             // 处理内置工具服务器
-            if (($serverConfig['command'] ?? '') === 'php' && ($serverConfig['args'][0] ?? '') === 'builtin') {
+            if ($serverType === 'builtin') {
                 foreach ($serverConfig['tools'] ?? [] as $toolName => $toolDef) {
                     // 检查工具级别的 disabled 属性
                     if ($toolDef['disabled'] ?? false) {
@@ -130,7 +132,7 @@ class ToolManager
                 }
             }
             // 处理外部 HTTP/HTTPS MCP 服务器
-            elseif (in_array($serverConfig['type'] ?? '', ['http', 'https', 'streamable-http']) && !empty($serverConfig['url'])) {
+            elseif (in_array($serverType, ['http', 'https', 'streamable-http']) && !empty($serverConfig['url'])) {
                 try {
                     $client = new McpClient($serverConfig['url'], [
                         'clientName' => 'smart-book',

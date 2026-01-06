@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "builtin-tools": {
-      "command": "php",
-      "args": ["builtin"],
+      "type": "builtin",
       "disabled": false,
       "autoApprove": ["get_current_time"],
       "tools": {
@@ -34,7 +33,7 @@
           }
         },
         "fetch_webpage": {
-          "disabled": true,
+          "disabled": false,
           "description": "抓取网页内容（返回纯文本）",
           "parameters": {
             "type": "object",
@@ -52,8 +51,8 @@
           }
         },
         "search_book": {
-          "disabled": true,
-          "description": "在书籍中搜索相关内容（RAG）- 内置版本",
+          "disabled": false,
+          "description": "在书籍中搜索相关内容",
           "parameters": {
             "type": "object",
             "properties": {
