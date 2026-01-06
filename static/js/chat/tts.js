@@ -7,6 +7,7 @@ const ChatTTS = {
     speaking: false,
     currentUtterance: null,
     currentButton: null,
+    currentMessageId: null,
     
     // 可用的语音列表
     voices: [],
@@ -50,17 +51,19 @@ const ChatTTS = {
     },
     
     // 朗读文本
-    speak(text, button) {
+    speak(text, button, messageId) {
         if (!('speechSynthesis' in window)) {
             layer.msg('⚠️ 浏览器不支持语音朗读', { icon: 0 });
             return;
         }
         
-        // 如果正在朗读，停止
+        // 如果正在朗读
         if (this.speaking) {
+            // 保存当前 messageId，因为 stop() 会清除它
+            const wasPlayingMessageId = this.currentMessageId;
             this.stop();
-            // 如果点击的是同一个按钮，只是停止
-            if (this.currentButton === button) {
+            // 如果点击的是同一条消息，只是停止，不重新播放
+            if (messageId && wasPlayingMessageId === messageId) {
                 return;
             }
         }
@@ -88,12 +91,14 @@ const ChatTTS = {
         utterance.onstart = () => {
             this.speaking = true;
             this.currentButton = button;
+            this.currentMessageId = messageId;
             this.updateButtonState(button, true);
         };
         
         utterance.onend = () => {
             this.speaking = false;
             this.currentButton = null;
+            this.currentMessageId = null;
             this.updateButtonState(button, false);
         };
         
@@ -101,6 +106,7 @@ const ChatTTS = {
             console.error('TTS 错误:', event.error);
             this.speaking = false;
             this.currentButton = null;
+            this.currentMessageId = null;
             this.updateButtonState(button, false);
             if (event.error !== 'interrupted') {
                 layer.msg('朗读出错: ' + event.error, { icon: 2 });
@@ -123,6 +129,7 @@ const ChatTTS = {
         }
         this.currentButton = null;
         this.currentUtterance = null;
+        this.currentMessageId = null;
     },
     
     // 暂停/继续

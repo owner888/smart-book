@@ -406,16 +406,15 @@ function speakMessage(button, text) {
         }
     }
     
-    // 调试信息
-    console.log('🔊 speakMessage called, text length:', text ? text.length : 0);
-    
     if (!text) {
         layer.msg('⚠️ 无法获取消息内容', { icon: 0 });
         return;
     }
     
     if (window.ChatTTS) {
-        ChatTTS.speak(text, button);
+        // 使用 messageId 来判断是否是同一条消息，而不是按钮引用
+        const messageId = button.getAttribute('data-message-id');
+        ChatTTS.speak(text, button, messageId);
     } else {
         layer.msg('⚠️ TTS 模块未加载', { icon: 0 });
     }
