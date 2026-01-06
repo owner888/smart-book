@@ -319,6 +319,9 @@ INSTRUCTIONS;
      * 根据 MCP Streamable HTTP 规范，SSE 流用于：
      * - 服务器主动推送通知（如进度、日志、资源变更）
      * - 长任务的结果推送
+     * 
+     * 重要：MCP SDK 的连接顺序是先 GET SSE 再 POST initialize
+     * 所以这里需要正确处理 session 绑定，以便 SSE 连接能与后续的 POST 请求关联
      */
     private function handleSSEConnection(TcpConnection $connection, Request $request): void
     {
@@ -327,16 +330,16 @@ INSTRUCTIONS;
         $userAgent = $request->header('User-Agent', 'unknown');
         $acceptHeader = $request->header('Accept', '');
         
-        $this->log('INFO', '🔌 [SSE] Connection request received', [
-            'client' => "{$clientIp}:{$clientPort}",
-            'userAgent' => $userAgent,
-            'accept' => $acceptHeader,
-        ]);
+        // SSE 连接始终打印日志（不受 debug 模式影响）
+        echo "\033[36m[" . date('Y-m-d H:i:s') . "] [SSE]\033[0m 🔌 Connection request received\n";
+        echo "  Client: {$clientIp}:{$clientPort}, UA: " . substr($userAgent, 0, 50) . "\n\n";
         
         $sessionId = $request->header('Mcp-Session-Id') ?? $request->get('session_id');
         $isNewSession = false;
         
         // 如果有现有会话，使用它；否则创建新会话
+        // 注意：MCP SDK 可能在 initialize 之前发送 GET SSE 请求
+        // 此时还没有 session，需要创建一个临时 session
         if (!$sessionId || !isset($this->sessions[$sessionId])) {
             $isNewSession = true;
             $oldSessionId = $sessionId;
@@ -348,20 +351,14 @@ INSTRUCTIONS;
                 'createdAt' => time(),
                 'lastAccessAt' => time(),
                 'selectedBook' => null,
+                'sseFirst' => true,  // 标记：SSE 先于 initialize 建立
             ];
             $this->saveSessions();
             
-            $this->log('INFO', '🆕 [SSE] Created new session', [
-                'newSessionId' => $sessionId,
-                'requestedSessionId' => $oldSessionId,
-                'reason' => $oldSessionId ? 'session_not_found' : 'no_session_provided',
-            ]);
+            echo "\033[33m[" . date('Y-m-d H:i:s') . "] [SSE]\033[0m 🆕 Created new session: " . substr($sessionId, 0, 12) . "...\n";
+            echo "  Note: SSE established before initialize - session will be reused\n\n";
         } else {
-            $this->log('INFO', '♻️ [SSE] Reusing existing session', [
-                'sessionId' => $sessionId,
-                'createdAt' => date('Y-m-d H:i:s', $this->sessions[$sessionId]['createdAt'] ?? 0),
-                'lastAccessAt' => date('Y-m-d H:i:s', $this->sessions[$sessionId]['lastAccessAt'] ?? 0),
-            ]);
+            echo "\033[32m[" . date('Y-m-d H:i:s') . "] [SSE]\033[0m ♻️ Reusing existing session: " . substr($sessionId, 0, 12) . "...\n\n";
         }
         
         $this->log('INFO', '🔗 [SSE] Establishing connection', ['sessionId' => $sessionId, 'isNewSession' => $isNewSession]);
@@ -715,21 +712,62 @@ INSTRUCTIONS;
     
     /**
      * 处理 initialize 请求
+     * 
+     * 重要：MCP SDK 可能在 initialize 之前先发送 GET SSE 请求
+     * 此时 SSE 连接已经创建了一个 session（标记为 sseFirst=true）
+     * 我们需要检查是否有这样的 session 可以复用
      */
     private function handleInitialize(array $params, ?string &$sessionId): array
     {
-        // 创建新会话
-        $sessionId = $this->createSession();
+        $clientName = $params['clientInfo']['name'] ?? 'unknown';
         
-        // 存储客户端信息
-        $this->sessions[$sessionId] = [
-            'clientInfo' => $params['clientInfo'] ?? [],
-            'protocolVersion' => $params['protocolVersion'] ?? self::PROTOCOL_VERSION,
-            'capabilities' => $params['capabilities'] ?? [],
-            'createdAt' => time(),
-            'lastAccessAt' => time(),
-            'selectedBook' => null,
-        ];
+        // 检查是否有 SSE 先建立的 session 可以复用
+        // 查找最近创建的、标记为 sseFirst=true 且有活跃 SSE 连接的 session
+        $reuseSession = null;
+        $reuseSessionId = null;
+        
+        foreach ($this->sessions as $id => $session) {
+            if (isset($session['sseFirst']) && $session['sseFirst'] === true) {
+                // 检查这个 session 是否有活跃的 SSE 连接
+                if ($this->hasSSEConnection($id)) {
+                    // 找到一个可复用的 session
+                    $reuseSession = $session;
+                    $reuseSessionId = $id;
+                    break;
+                }
+            }
+        }
+        
+        if ($reuseSessionId) {
+            // 复用 SSE 先建立的 session
+            $sessionId = $reuseSessionId;
+            
+            // 更新 session 信息
+            $this->sessions[$sessionId]['clientInfo'] = $params['clientInfo'] ?? [];
+            $this->sessions[$sessionId]['protocolVersion'] = $params['protocolVersion'] ?? self::PROTOCOL_VERSION;
+            $this->sessions[$sessionId]['capabilities'] = $params['capabilities'] ?? [];
+            $this->sessions[$sessionId]['lastAccessAt'] = time();
+            $this->sessions[$sessionId]['sseFirst'] = false;  // 清除标记
+            
+            echo "\033[32m[" . date('Y-m-d H:i:s') . "] [Initialize]\033[0m ♻️ Reusing SSE session: " . substr($sessionId, 0, 12) . "...\n";
+            echo "  Client: {$clientName}, SSE connection: active ✅\n\n";
+        } else {
+            // 创建新会话
+            $sessionId = $this->createSession();
+            
+            // 存储客户端信息
+            $this->sessions[$sessionId] = [
+                'clientInfo' => $params['clientInfo'] ?? [],
+                'protocolVersion' => $params['protocolVersion'] ?? self::PROTOCOL_VERSION,
+                'capabilities' => $params['capabilities'] ?? [],
+                'createdAt' => time(),
+                'lastAccessAt' => time(),
+                'selectedBook' => null,
+            ];
+            
+            echo "\033[33m[" . date('Y-m-d H:i:s') . "] [Initialize]\033[0m 🆕 Created new session: " . substr($sessionId, 0, 12) . "...\n";
+            echo "  Client: {$clientName}, SSE connection: none\n\n";
+        }
         
         // 持久化 session
         $this->saveSessions();
@@ -763,6 +801,7 @@ INSTRUCTIONS;
             'select_book' => $this->toolSelectBook($arguments, $session, $sessionId),
             'search_book' => $this->toolSearchBook($arguments, $session),
             'server_status' => $this->toolServerStatus(),
+            'test_long_task' => $this->toolTestLongTask($arguments, $sessionId),
             default => throw new \Exception("Unknown tool: {$toolName}"),
         };
         
@@ -904,6 +943,25 @@ INSTRUCTIONS;
                 'inputSchema' => [
                     'type' => 'object',
                     'properties' => new \stdClass(),
+                ],
+            ],
+            [
+                'name' => 'test_long_task',
+                'description' => 'Create a test long-running task to demonstrate SSE progress notifications. The task simulates work with progress updates.',
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'duration' => [
+                            'type' => 'integer',
+                            'description' => 'Duration in seconds (1-10, default: 3)',
+                            'default' => 3,
+                        ],
+                        'steps' => [
+                            'type' => 'integer',
+                            'description' => 'Number of progress steps (1-10, default: 5)',
+                            'default' => 5,
+                        ],
+                    ],
                 ],
             ],
         ];
@@ -1215,6 +1273,137 @@ INSTRUCTIONS;
         return [
             'content' => [
                 ['type' => 'text', 'text' => json_encode($status, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)],
+            ],
+        ];
+    }
+    
+    /**
+     * 工具：测试长任务（演示 SSE 进度推送）
+     * 
+     * 这个工具创建一个模拟的长任务，并通过 SSE 发送进度更新。
+     * 用于测试和演示 MCP 的任务管理和进度通知功能。
+     */
+    private function toolTestLongTask(array $args, ?string $sessionId): array
+    {
+        $duration = min(10, max(1, $args['duration'] ?? 3));  // 限制 1-10 秒
+        $steps = min(10, max(1, $args['steps'] ?? 5));        // 限制 1-10 步
+        
+        // 创建任务
+        $taskId = $this->createTask('test_long_task', [
+            'duration' => $duration,
+            'steps' => $steps,
+            'sessionId' => $sessionId,
+        ]);
+        
+        // 更新任务状态为运行中
+        $this->updateTask($taskId, 'running');
+        $this->saveTasks();
+        
+        // 检查是否有 SSE 连接
+        $hasSSE = $sessionId && $this->hasSSEConnection($sessionId);
+        
+        $this->log('INFO', '🚀 [Task] Starting long task', [
+            'taskId' => $taskId,
+            'duration' => $duration,
+            'steps' => $steps,
+            'hasSSE' => $hasSSE,
+            'sessionId' => $sessionId,
+        ]);
+        
+        // 计算每步的间隔时间（毫秒）
+        $intervalMs = ($duration * 1000) / $steps;
+        $progressToken = "task_{$taskId}";
+        
+        // 使用定时器异步执行任务
+        $currentStep = 0;
+        $server = $this; // 保存引用以在闭包中使用
+        
+        $timerId = Timer::add($intervalMs / 1000, function() use (
+            &$timerId, &$currentStep, $steps, $taskId, $sessionId, $progressToken, $hasSSE, $server
+        ) {
+            $currentStep++;
+            
+            $server->log('INFO', "📊 [Task] Progress update", [
+                'taskId' => $taskId,
+                'step' => $currentStep,
+                'total' => $steps,
+                'percent' => round(($currentStep / $steps) * 100),
+            ]);
+            
+            // 如果有 SSE 连接，发送进度通知
+            if ($hasSSE && $sessionId) {
+                $sent = $server->sendProgress(
+                    $sessionId,
+                    $progressToken,
+                    $currentStep,
+                    $steps,
+                    "Processing step {$currentStep}/{$steps}..."
+                );
+                
+                $server->log('DEBUG', "📤 [Task] SSE progress sent", [
+                    'sent' => $sent,
+                    'sessionId' => $sessionId,
+                ]);
+            }
+            
+            // 检查是否完成
+            if ($currentStep >= $steps) {
+                Timer::del($timerId);
+                
+                // 更新任务状态为完成
+                $result = [
+                    'content' => [
+                        [
+                            'type' => 'text',
+                            'text' => json_encode([
+                                'success' => true,
+                                'taskId' => $taskId,
+                                'message' => "Task completed successfully!",
+                                'totalSteps' => $steps,
+                                'duration' => "{$currentStep} steps completed",
+                            ], JSON_UNESCAPED_UNICODE),
+                        ],
+                    ],
+                ];
+                
+                $server->updateTask($taskId, 'completed', $result);
+                $server->saveTasks();
+                
+                $server->log('INFO', "✅ [Task] Task completed", [
+                    'taskId' => $taskId,
+                ]);
+                
+                // 发送完成通知（如果有 SSE）
+                if ($hasSSE && $sessionId) {
+                    $server->sendSSEMessage($sessionId, [
+                        'jsonrpc' => '2.0',
+                        'method' => 'notifications/message',
+                        'params' => [
+                            'level' => 'info',
+                            'data' => "Task {$taskId} completed!",
+                            'logger' => 'smart-book',
+                        ],
+                    ]);
+                }
+            }
+        });
+        
+        // 立即返回任务信息（任务在后台运行）
+        return [
+            'content' => [
+                [
+                    'type' => 'text',
+                    'text' => json_encode([
+                        'taskId' => $taskId,
+                        'status' => 'running',
+                        'message' => "Long task started. Duration: {$duration}s, Steps: {$steps}",
+                        'hasSSE' => $hasSSE,
+                        'progressToken' => $progressToken,
+                        'hint' => $hasSSE 
+                            ? 'Progress updates will be sent via SSE. Use tasks/get to check status.'
+                            : 'No SSE connection. Use tasks/get to poll task status, or establish SSE connection first.',
+                    ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
+                ],
             ],
         ];
     }
