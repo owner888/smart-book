@@ -911,20 +911,25 @@ class StreamableHttpServer
             throw new \Exception('Table of contents only available for EPUB books');
         }
         
-        // 尝试从索引文件获取章节信息
-        $toc = [];
-        if (file_exists($selectedBook['cache'])) {
-            $indexData = json_decode(file_get_contents($selectedBook['cache']), true);
-            if (isset($indexData['metadata']['chapters'])) {
-                $toc = $indexData['metadata']['chapters'];
-            } elseif (isset($indexData['chunks'])) {
-                // 从 chunks 中提取章节信息
-                $seenChapters = [];
-                foreach ($indexData['chunks'] as $chunk) {
-                    $chapter = $chunk['chapter'] ?? 'Unknown';
-                    if (!in_array($chapter, $seenChapters)) {
-                        $seenChapters[] = $chapter;
-                        $toc[] = ['title' => $chapter];
+        // 从 EPUB 文件直接提取目录
+        try {
+            $toc = \SmartBook\Parser\EpubParser::extractToc($selectedBook['path']);
+        } catch (\Exception $e) {
+            // 如果提取失败，尝试从索引文件获取章节信息
+            $toc = [];
+            if (file_exists($selectedBook['cache'])) {
+                $indexData = json_decode(file_get_contents($selectedBook['cache']), true);
+                if (isset($indexData['metadata']['chapters'])) {
+                    $toc = $indexData['metadata']['chapters'];
+                } elseif (isset($indexData['chunks'])) {
+                    // 从 chunks 中提取章节信息
+                    $seenChapters = [];
+                    foreach ($indexData['chunks'] as $chunk) {
+                        $chapter = $chunk['chapter'] ?? 'Unknown';
+                        if (!in_array($chapter, $seenChapters)) {
+                            $seenChapters[] = $chapter;
+                            $toc[] = ['title' => $chapter];
+                        }
                     }
                 }
             }
@@ -937,6 +942,7 @@ class StreamableHttpServer
                     'mimeType' => 'application/json',
                     'text' => json_encode([
                         'book' => $selectedBook['file'],
+                        'chapters' => count($toc),
                         'toc' => $toc,
                     ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
                 ],
