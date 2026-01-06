@@ -88,7 +88,6 @@ class GoogleTTSClient
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        // curl_close 在 PHP 8.0+ 中自动处理
         
         if ($error) {
             throw new \Exception("TTS 请求失败: {$error}");

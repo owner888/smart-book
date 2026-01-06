@@ -94,7 +94,6 @@ class GeminiContextCache
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
         
         if ($error) {
             return ['success' => false, 'error' => "CURL error: {$error}"];
@@ -181,7 +180,6 @@ class GeminiContextCache
         
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
         
         if ($httpCode !== 200) {
             return ['success' => false, 'error' => 'Failed to list caches'];
@@ -210,7 +208,6 @@ class GeminiContextCache
         
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
         
         if ($httpCode !== 200) {
             return null;
@@ -241,7 +238,6 @@ class GeminiContextCache
         
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
         
         if ($httpCode !== 200) {
             $result = json_decode($response, true);
@@ -267,7 +263,6 @@ class GeminiContextCache
         
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
         
         if ($httpCode !== 200 && $httpCode !== 204) {
             return ['success' => false, 'error' => 'Delete failed'];
