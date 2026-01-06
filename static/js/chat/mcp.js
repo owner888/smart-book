@@ -204,11 +204,12 @@ const ChatMCP = {
 };
 
 // 页面加载时初始化
-document.addEventListener('DOMContentLoaded', () => {
-    // 延迟初始化，确保其他模块已加载
-    setTimeout(() => {
-        ChatMCP.init().catch(err => {
-            console.warn('MCP 初始化失败:', err);
-        });
-    }, 500);
-});
+// 注意：JS MCP Client 已禁用，改用服务器端 PHP 实现
+// 这避免了客户端直接连接 MCP 服务器的复杂性
+// document.addEventListener('DOMContentLoaded', () => {
+//     setTimeout(() => {
+//         ChatMCP.init().catch(err => {
+//             console.warn('MCP 初始化失败:', err);
+//         });
+//     }, 500);
+// });
