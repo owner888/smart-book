@@ -477,10 +477,28 @@ class StreamableHttpServer
                 'listChanged' => false,  // 提示词模板列表不动态变化
             ],
             
-            // 以下能力暂未实现，保留注释供将来参考
-            // 'experimental' => [
-            //     'customFeature' => true,
-            // ],
+            // 实验性能力：描述非标准的实验性功能
+            // @see https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle#capability-negotiation
+            'experimental' => [
+                // 书籍 AI 分析功能
+                'bookAnalysis' => [
+                    'characterGraph' => true,      // 人物关系图谱
+                    'sentimentAnalysis' => true,   // 情感分析
+                    'topicExtraction' => true,     // 主题提取
+                ],
+                // 增强搜索功能
+                'enhancedSearch' => [
+                    'semanticSearch' => true,      // 语义搜索
+                    'fuzzyMatch' => true,          // 模糊匹配
+                    'contextWindow' => true,       // 上下文窗口
+                ],
+                // 会话功能
+                'sessionFeatures' => [
+                    'persistence' => true,         // 会话持久化
+                    'bookSelection' => true,       // 书籍选择记忆
+                    'searchHistory' => false,      // 搜索历史（未实现）
+                ],
+            ],
         ];
     }
     
