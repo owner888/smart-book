@@ -83,6 +83,7 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             '/api/books/select' => handleSelectBook($request),
             '/api/books/index' => handleIndexBook($connection, $request),
             '/api/mcp/servers' => $method === 'POST' ? handleSaveMCPServers($request) : handleGetMCPServers(),
+            '/api/mcp/status' => ['enabled' => true, 'url' => 'http://localhost:8089/mcp'],
             '/api/cache/stats' => handleCacheStats($connection),
             '/api/ask' => handleAskWithCache($connection, $request),
             '/api/chat' => handleChat($request),

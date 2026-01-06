@@ -90,7 +90,33 @@ const searchEngines = [
     { id: 'mcp', name: 'MCP 工具', icon: '🔧', free: true },
     { id: 'off', name: '关闭搜索', icon: '⊘', free: true },
 ];
-let currentSearchEngine = 'off';  // 默认关闭
+let currentSearchEngine = 'off';  // 初始值，会从后端获取
+
+// 从后端获取 MCP 状态并设置默认搜索引擎
+async function initSearchEngineFromMCP() {
+    try {
+        const response = await fetch('/api/mcp/status');
+        const status = await response.json();
+        
+        if (status.enabled) {
+            currentSearchEngine = 'mcp';
+            // 更新 UI
+            const btn = document.querySelector('.toolbar-icon[title*="搜索"]');
+            if (btn) {
+                btn.classList.add('active');
+                btn.title = '网页搜索 (MCP 工具)';
+            }
+            console.log('🔧 MCP 工具已默认启用');
+        }
+    } catch (err) {
+        console.warn('获取 MCP 状态失败:', err);
+    }
+}
+
+// 页面加载时初始化
+document.addEventListener('DOMContentLoaded', () => {
+    initSearchEngineFromMCP();
+});
 
 // 点击搜索按钮（关闭时显示选择，开启时直接关闭）
 function toggleWebSearch() {
