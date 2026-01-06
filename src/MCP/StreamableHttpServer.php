@@ -1351,6 +1351,7 @@ INSTRUCTIONS;
                 Timer::del($timerId);
                 
                 // 更新任务状态为完成
+                $completionTime = date('Y-m-d H:i:s');
                 $result = [
                     'content' => [
                         [
@@ -1361,6 +1362,7 @@ INSTRUCTIONS;
                                 'message' => "Task completed successfully!",
                                 'totalSteps' => $steps,
                                 'duration' => "{$currentStep} steps completed",
+                                'completedAt' => $completionTime,
                             ], JSON_UNESCAPED_UNICODE),
                         ],
                     ],
@@ -1369,21 +1371,25 @@ INSTRUCTIONS;
                 $server->updateTask($taskId, 'completed', $result);
                 $server->saveTasks();
                 
-                $server->log('INFO', "✅ [Task] Task completed", [
-                    'taskId' => $taskId,
-                ]);
+                // 打印完成日志（始终显示）
+                echo "\033[32m[{$completionTime}] [Task]\033[0m ✅ Task completed!\n";
+                echo "  TaskId: {$taskId}\n";
+                echo "  Steps: {$steps}, SSE: " . ($hasSSE ? 'yes' : 'no') . "\n\n";
                 
                 // 发送完成通知（如果有 SSE）
                 if ($hasSSE && $sessionId) {
-                    $server->sendSSEMessage($sessionId, [
+                    // 发送 notifications/message - Cline 会在 MCP 通知中显示
+                    $sent = $server->sendSSEMessage($sessionId, [
                         'jsonrpc' => '2.0',
                         'method' => 'notifications/message',
                         'params' => [
                             'level' => 'info',
-                            'data' => "Task {$taskId} completed!",
+                            'data' => "🎉 Task [{$taskId}] completed! All {$steps} steps finished at {$completionTime}",
                             'logger' => 'smart-book',
                         ],
                     ]);
+                    
+                    echo "\033[36m[{$completionTime}] [SSE]\033[0m 📤 Notification sent: " . ($sent ? 'success' : 'failed') . "\n\n";
                 }
             }
         });
