@@ -41,6 +41,11 @@ class StreamableHttpSSEServer
         $method = $request->method();
         $path = $request->path();
         
+        // 日志：记录所有请求
+        $this->log('REQUEST', "[SSE] {$method} {$path}", [
+            'headers' => $request->header(),
+        ]);
+        
         // CORS
         if ($method === 'OPTIONS') {
             $connection->send(new Response(204, self::CORS_HEADERS, ''));
@@ -53,8 +58,8 @@ class StreamableHttpSSEServer
             return;
         }
         
-        // POST /message: 发送 JSON-RPC 消息
-        if (($path === '/message' || $path === '/') && $method === 'POST') {
+        // POST /message: 发送 JSON-RPC 消息（支持多种路径）
+        if ($method === 'POST' && in_array($path, ['/message', '/', '/mcp'])) {
             $this->handleMessage($connection, $request);
             return;
         }
@@ -69,8 +74,33 @@ class StreamableHttpSSEServer
             return;
         }
         
-        // 404
-        $this->sendJson($connection, ['error' => 'Not Found'], 404);
+        // 404 - 记录详细日志
+        $this->log('WARN', "[SSE] 404 Not Found", [
+            'method' => $method,
+            'path' => $path,
+        ]);
+        $this->sendJson($connection, ['error' => 'Not Found', 'path' => $path], 404);
+    }
+    
+    /**
+     * 简单日志方法
+     */
+    private function log(string $type, string $message, array $data = []): void
+    {
+        $timestamp = date('Y-m-d H:i:s');
+        $color = match ($type) {
+            'ERROR' => "\033[31m",
+            'WARN' => "\033[33m",
+            'INFO' => "\033[36m",
+            'REQUEST' => "\033[34m",
+            default => "\033[0m",
+        };
+        $reset = "\033[0m";
+        
+        echo "{$color}[{$timestamp}] [{$type}]{$reset} {$message}\n";
+        if (!empty($data)) {
+            echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n";
+        }
     }
     
     /**
@@ -110,12 +140,20 @@ class StreamableHttpSSEServer
     {
         $sessionId = $request->get('session_id') ?? $request->header('Mcp-Session-Id');
         
+        $this->log('INFO', "[SSE] Processing message", [
+            'sessionId' => $sessionId,
+        ]);
+        
         // 获取 SSE 连接（用于发送通知）
         $sseConnection = $this->sseConnections[$sessionId] ?? null;
         
         // 解析请求
         $body = $request->rawBody();
         $data = json_decode($body, true);
+        
+        $this->log('INFO', "[SSE] Message body", [
+            'data' => $data,
+        ]);
         
         if ($data === null) {
             $this->sendJson($connection, [
@@ -126,8 +164,10 @@ class StreamableHttpSSEServer
             return;
         }
         
-        // 处理 JSON-RPC（复用 HTTP Server 的逻辑）
+        // 直接转发原始请求到 HTTP Server（已支持 /message 路径）
+        $this->log('INFO', "[SSE] Forwarding to HTTP Server");
         $this->httpServer->handleRequest($connection, $request);
+        $this->log('INFO', "[SSE] HTTP Server response sent");
     }
     
     /**

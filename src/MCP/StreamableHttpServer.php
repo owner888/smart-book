@@ -218,8 +218,8 @@ INSTRUCTIONS;
             return;
         }
         
-        // MCP Streamable HTTP 主端点
-        if ($path === '/mcp' || $path === '/') {
+        // MCP Streamable HTTP 主端点（支持多种路径）
+        if (in_array($path, ['/mcp', '/', '/message'])) {
             $this->handleMCPEndpoint($connection, $request);
             return;
         }
