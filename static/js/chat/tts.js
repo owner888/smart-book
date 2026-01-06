@@ -5,6 +5,7 @@
 const ChatTTS = {
     // 当前朗读状态
     speaking: false,
+    paused: false,  // 暂停状态
     currentAudio: null,
     currentButton: null,
     currentMessageId: null,
@@ -68,19 +69,23 @@ const ChatTTS = {
         }
     },
     
-    // 朗读文本
+    // 朗读文本（支持暂停/续播）
     async speak(text, button, messageId) {
-        // 保存当前状态
-        const wasPlayingMessageId = this.currentMessageId;
-        const wasOurSpeaking = this.speaking;
+        // 同一条消息的点击处理：暂停/续播
+        if (messageId && this.currentMessageId === messageId) {
+            if (this.paused) {
+                // 已暂停，继续播放
+                this.resume(button);
+                return;
+            } else if (this.speaking) {
+                // 正在播放，暂停
+                this.pause(button);
+                return;
+            }
+        }
         
         // 停止当前播放
         this.stop();
-        
-        // 如果点击的是同一条消息，只停止不播放
-        if (wasOurSpeaking && messageId && wasPlayingMessageId === messageId) {
-            return;
-        }
         
         // 清理 Markdown
         const cleanText = this.cleanMarkdown(text);
@@ -95,6 +100,32 @@ const ChatTTS = {
         } else {
             this.speakWithBrowser(cleanText, button, messageId);
         }
+    },
+    
+    // 暂停
+    pause(button) {
+        if (this.currentAudio) {
+            this.currentAudio.pause();
+        }
+        if ('speechSynthesis' in window) {
+            speechSynthesis.pause();
+        }
+        this.speaking = false;
+        this.paused = true;
+        this.updateButtonState(button, false, false, true);  // 暂停状态
+    },
+    
+    // 继续播放
+    resume(button) {
+        if (this.currentAudio) {
+            this.currentAudio.play();
+        }
+        if ('speechSynthesis' in window) {
+            speechSynthesis.resume();
+        }
+        this.speaking = true;
+        this.paused = false;
+        this.updateButtonState(button, true);  // 播放状态
     },
     
     // 使用云端 TTS
@@ -218,6 +249,7 @@ const ChatTTS = {
         }
         
         this.speaking = false;
+        this.paused = false;
         if (this.currentButton) {
             this.updateButtonState(this.currentButton, false);
         }
@@ -226,28 +258,39 @@ const ChatTTS = {
     },
     
     // 更新按钮状态
-    updateButtonState(button, isSpeaking, isLoading = false) {
+    updateButtonState(button, isSpeaking, isLoading = false, isPaused = false) {
         if (!button) return;
         
         if (isLoading) {
             button.classList.add('loading');
+            button.classList.remove('speaking', 'paused');
             button.title = '加载中...';
             button.innerHTML = `
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
                     <circle cx="12" cy="12" r="10" stroke-dasharray="30 70"/>
                 </svg>
             `;
-        } else if (isSpeaking) {
-            button.classList.remove('loading');
-            button.classList.add('speaking');
-            button.title = '停止朗读';
+        } else if (isPaused) {
+            button.classList.remove('loading', 'speaking');
+            button.classList.add('paused');
+            button.title = '继续播放';
             button.innerHTML = `
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                    <rect x="6" y="6" width="12" height="12" rx="2"/>
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+            `;
+        } else if (isSpeaking) {
+            button.classList.remove('loading', 'paused');
+            button.classList.add('speaking');
+            button.title = '暂停';
+            button.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="6" y="4" width="4" height="16" rx="1"/>
+                    <rect x="14" y="4" width="4" height="16" rx="1"/>
                 </svg>
             `;
         } else {
-            button.classList.remove('loading', 'speaking');
+            button.classList.remove('loading', 'speaking', 'paused');
             button.title = '朗读';
             button.innerHTML = `
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
