@@ -54,7 +54,7 @@ class StreamableHttpSSEServer
         }
         
         // POST /message: 发送 JSON-RPC 消息
-        if ($path === '/message' && $method === 'POST') {
+        if (($path === '/message' || $path === '/') && $method === 'POST') {
             $this->handleMessage($connection, $request);
             return;
         }
