@@ -320,6 +320,58 @@ class StreamableHttpSSEServer
                 ];
             }
             
+            // 处理 tools/call - 调用工具
+            if ($method === 'tools/call') {
+                $toolName = $params['name'] ?? '';
+                $arguments = $params['arguments'] ?? [];
+                
+                $result = match ($toolName) {
+                    'list_books' => $this->toolListBooks(),
+                    'get_book_info' => $this->toolGetBookInfo(),
+                    'select_book' => $this->toolSelectBook($arguments),
+                    'search_book' => $this->toolSearchBook($arguments),
+                    'server_status' => $this->toolServerStatus(),
+                    default => throw new \Exception("Unknown tool: {$toolName}"),
+                };
+                
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'result' => $result,
+                ];
+            }
+            
+            // 处理 resources/read
+            if ($method === 'resources/read') {
+                $uri = $params['uri'] ?? '';
+                
+                if ($uri === 'book://library/list') {
+                    $books = $this->getBooksList();
+                    return [
+                        'jsonrpc' => '2.0',
+                        'id' => $id,
+                        'result' => [
+                            'contents' => [[
+                                'uri' => $uri,
+                                'mimeType' => 'application/json',
+                                'text' => json_encode(['books' => $books], JSON_UNESCAPED_UNICODE),
+                            ]],
+                        ],
+                    ];
+                }
+                
+                throw new \Exception("Resource not found: {$uri}");
+            }
+            
+            // 处理 ping
+            if ($method === 'ping') {
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'result' => new \stdClass(),
+                ];
+            }
+            
             // 其他方法返回错误
             return [
                 'jsonrpc' => '2.0',
