@@ -84,19 +84,6 @@ $mcpWorker->onMessage = function (TcpConnection $connection, Request $request) {
 };
 
 // ===================================
-// MCP SSE Server (Server-Sent Events)
-// 支持实时通知：进度、资源变更等
-// ===================================
-
-$mcpSseWorker = new Worker('http://0.0.0.0:8090');
-$mcpSseWorker->count = 1;
-$mcpSseWorker->name = 'MCP-SSE-Server';
-
-$mcpSseWorker->onMessage = function (TcpConnection $connection, Request $request) {
-    handleMCPSSERequest($connection, $request);
-};
-
-// ===================================
 // 启动
 // ===================================
 
@@ -104,12 +91,9 @@ echo "=========================================\n";
 echo "   AI 书籍助手 Smart Book 服务\n";
 echo "=========================================\n";
 echo "🌐 Web UI:    http://localhost:8088\n";
-echo "🔌 MCP HTTP:  http://localhost:8089/mcp\n";
+echo "🔌 MCP:       http://localhost:8089/mcp\n";
 echo "   └─ Protocol: Streamable HTTP\n";
 echo "   └─ Methods: POST (JSON-RPC), GET, DELETE\n";
-echo "🔔 MCP SSE:   http://localhost:8090/sse\n";
-echo "   └─ Protocol: Server-Sent Events\n";
-echo "   └─ Endpoints: GET /sse, POST /message\n";
 echo "=========================================\n";
 
 Worker::runAll();
