@@ -358,6 +358,7 @@ loadSettings();
 const MCPSettings = {
     servers: [],
     currentServer: null,
+    mcpClients: {},  // 存储 MCP client 实例
     
     // 初始化
     async init() {
@@ -661,6 +662,82 @@ const MCPSettings = {
             // 保存到 localStorage 作为备份
             localStorage.setItem('mcp_servers', JSON.stringify(this.servers));
         }
+    },
+    
+    // 测试 MCP 连接
+    async testConnection(index) {
+        const server = this.servers[index];
+        if (!server || server.type !== 'http') {
+            layer.msg('只支持 HTTP 类型的连接测试');
+            return;
+        }
+        
+        const loadingIndex = layer.load(1, { shade: [0.3, '#000'] });
+        
+        try {
+            // 断开旧连接
+            if (this.mcpClients[server.name]) {
+                await this.mcpClients[server.name].disconnect();
+            }
+            
+            // 创建新连接
+            const client = new McpClient(server.url, {
+                clientName: 'smart-book-settings',
+                clientVersion: '1.0.0',
+                debug: true
+            });
+            
+            await client.connect();
+            this.mcpClients[server.name] = client;
+            
+            // 获取工具列表
+            const tools = await client.listTools();
+            server.tools = tools;
+            server.status = 'connected';
+            
+            layer.close(loadingIndex);
+            layer.msg(`✅ 连接成功，获取到 ${tools.length} 个工具`);
+            
+            // 刷新界面
+            this.renderServerList();
+            if (this.currentServer === index) {
+                this.renderServerConfig(server);
+            }
+            
+            // 保存工具信息
+            this.saveServers();
+            
+        } catch (error) {
+            layer.close(loadingIndex);
+            server.status = 'error';
+            server.error = error.message;
+            layer.msg(`❌ 连接失败: ${error.message}`, { icon: 2 });
+            console.error('MCP 连接失败:', error);
+        }
+    },
+    
+    // 断开 MCP 连接
+    async disconnectServer(index) {
+        const server = this.servers[index];
+        if (!server) return;
+        
+        if (this.mcpClients[server.name]) {
+            await this.mcpClients[server.name].disconnect();
+            delete this.mcpClients[server.name];
+        }
+        
+        server.status = 'disconnected';
+        this.renderServerList();
+        layer.msg('已断开连接');
+    },
+    
+    // 调用 MCP 工具
+    async callTool(serverName, toolName, args = {}) {
+        const client = this.mcpClients[serverName];
+        if (!client || !client.isConnected) {
+            throw new Error('服务器未连接');
+        }
+        return await client.callTool(toolName, args);
     }
 };
 

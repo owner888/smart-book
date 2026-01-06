@@ -12,6 +12,7 @@ class ToolManager
     private static array $handlers = [];
     private static array $autoApprove = [];
     private static string $configPath = '';
+    private static array $mcpClients = [];  // 外部 MCP 服务器客户端
     
     /**
      * 注册工具
@@ -128,12 +129,113 @@ class ToolManager
                     }
                 }
             }
-            // TODO: 支持外部 MCP 服务器（通过 stdio 协议）
+            // 处理外部 HTTP/HTTPS MCP 服务器
+            elseif (in_array($serverConfig['type'] ?? '', ['http', 'https', 'streamable-http']) && !empty($serverConfig['url'])) {
+                try {
+                    $client = new McpClient($serverConfig['url'], [
+                        'clientName' => 'smart-book',
+                        'clientVersion' => '1.0.0',
+                        'debug' => false,
+                    ]);
+                    
+                    $client->connect();
+                    $tools = $client->listTools();
+                    
+                    self::$mcpClients[$serverName] = $client;
+                    
+                    foreach ($tools as $tool) {
+                        $toolName = $tool['name'];
+                        $isAutoApprove = in_array($toolName, $autoApproveList);
+                        
+                        // 注册外部工具
+                        self::registerExternalTool($serverName, $tool, $isAutoApprove);
+                        $enabledTools[] = "{$serverName}:{$toolName}";
+                    }
+                    
+                    echo "🌐 MCP 服务器 '{$serverName}' 已连接，" . count($tools) . " 个工具\n";
+                } catch (\Exception $e) {
+                    echo "⚠️ MCP 服务器 '{$serverName}' 连接失败: " . $e->getMessage() . "\n";
+                }
+            }
         }
         
         if (!empty($enabledTools)) {
             echo "📦 MCP 工具已加载: " . implode(', ', $enabledTools) . "\n";
         }
+    }
+    
+    /**
+     * 注册外部 MCP 工具
+     */
+    private static function registerExternalTool(string $serverName, array $tool, bool $autoApprove): void
+    {
+        $toolName = $tool['name'];
+        $definition = [
+            'description' => $tool['description'] ?? '',
+            'parameters' => $tool['inputSchema'] ?? ['type' => 'object', 'properties' => new \stdClass()],
+        ];
+        
+        // 创建调用外部工具的处理器
+        $handler = function($args) use ($serverName, $toolName) {
+            return self::callExternalTool($serverName, $toolName, $args);
+        };
+        
+        self::register($toolName, $definition, $handler, $autoApprove);
+    }
+    
+    /**
+     * 调用外部 MCP 工具
+     */
+    private static function callExternalTool(string $serverName, string $toolName, array $args): array
+    {
+        if (!isset(self::$mcpClients[$serverName])) {
+            throw new \Exception("MCP server '{$serverName}' not connected");
+        }
+        
+        $client = self::$mcpClients[$serverName];
+        $result = $client->callTool($toolName, $args);
+        
+        // 解析结果
+        $content = $result['content'] ?? [];
+        if (!empty($content)) {
+            // 提取文本内容
+            $texts = [];
+            foreach ($content as $item) {
+                if (($item['type'] ?? '') === 'text') {
+                    $texts[] = $item['text'];
+                }
+            }
+            return ['result' => implode("\n", $texts)];
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * 获取 MCP 客户端
+     */
+    public static function getMcpClient(string $serverName): ?McpClient
+    {
+        return self::$mcpClients[$serverName] ?? null;
+    }
+    
+    /**
+     * 获取所有 MCP 客户端
+     */
+    public static function getAllMcpClients(): array
+    {
+        return self::$mcpClients;
+    }
+    
+    /**
+     * 断开所有 MCP 连接
+     */
+    public static function disconnectAll(): void
+    {
+        foreach (self::$mcpClients as $client) {
+            $client->disconnect();
+        }
+        self::$mcpClients = [];
     }
     
     /**
