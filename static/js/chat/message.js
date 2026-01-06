@@ -289,7 +289,33 @@ function finishStreamingMessage(isError = false) {
         `;
     }
     
-    contentDiv.innerHTML = systemPromptHtml + thinkingHtml + htmlContent + summaryHtml + sourcesHtml + usageHtml;
+    // 添加消息操作按钮
+    const messageContent = ChatState.currentContent;
+    const actionsHtml = `
+        <div class="message-actions">
+            <button class="action-btn" title="朗读" onclick="ChatMessage.speakMessage(this, \`${messageContent.replace(/`/g, '\\`').replace(/\\/g, '\\\\')}\`)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                </svg>
+            </button>
+            <button class="action-btn" title="复制" onclick="ChatMessage.copyMessage(\`${messageContent.replace(/`/g, '\\`').replace(/\\/g, '\\\\')}\`)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+            </button>
+            <button class="action-btn" title="重新生成" onclick="ChatMessage.regenerateMessage()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+            </button>
+        </div>
+    `;
+    
+    contentDiv.innerHTML = systemPromptHtml + thinkingHtml + htmlContent + summaryHtml + sourcesHtml + usageHtml + actionsHtml;
     
     if (!isError) {
         ChatState.getCurrentState().history.push({ role: 'assistant', content: ChatState.currentContent });
@@ -357,11 +383,64 @@ function clearChat() {
     });
 }
 
+// 朗读消息
+function speakMessage(button, text) {
+    if (window.ChatTTS) {
+        ChatTTS.speak(text, button);
+    } else {
+        layer.msg('⚠️ TTS 模块未加载', { icon: 0 });
+    }
+}
+
+// 复制消息
+function copyMessage(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        layer.msg('✅ 已复制到剪贴板');
+    }).catch(err => {
+        console.error('复制失败:', err);
+        layer.msg('复制失败', { icon: 2 });
+    });
+}
+
+// 重新生成消息
+function regenerateMessage() {
+    const state = ChatState.getCurrentState();
+    if (state.history.length < 2) {
+        layer.msg('没有可重新生成的消息', { icon: 0 });
+        return;
+    }
+    
+    // 移除最后一条助手消息
+    state.history.pop();
+    
+    // 获取最后一条用户消息
+    const lastUserMsg = state.history[state.history.length - 1];
+    if (lastUserMsg && lastUserMsg.role === 'user') {
+        // 移除用户消息（会在 sendMessage 中重新添加）
+        state.history.pop();
+        
+        // 移除 DOM 中的最后两条消息
+        const chatMessages = document.getElementById('chatMessages');
+        const messages = chatMessages.querySelectorAll('.message');
+        if (messages.length >= 2) {
+            messages[messages.length - 1].remove();
+            messages[messages.length - 2].remove();
+        }
+        
+        // 重新发送
+        document.getElementById('chatInput').value = lastUserMsg.content;
+        sendMessage();
+    }
+}
+
 // 导出
 window.ChatMessage = {
     sendMessage,
     addMessage,
     clearChat,
     updateStreamingMessage,
-    finishStreamingMessage
+    finishStreamingMessage,
+    speakMessage,
+    copyMessage,
+    regenerateMessage
 };
