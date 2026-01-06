@@ -372,6 +372,62 @@ class StreamableHttpSSEServer
                 ];
             }
             
+            // 处理 logging/setLevel
+            if ($method === 'logging/setLevel') {
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'result' => new \stdClass(),
+                ];
+            }
+            
+            // 处理 prompts/get
+            if ($method === 'prompts/get') {
+                $promptName = $params['name'] ?? '';
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'result' => [
+                        'description' => "Prompt: {$promptName}",
+                        'messages' => [
+                            ['role' => 'user', 'content' => ['type' => 'text', 'text' => "使用 {$promptName} 提示词"]],
+                        ],
+                    ],
+                ];
+            }
+            
+            // 处理 completion/complete
+            if ($method === 'completion/complete') {
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'result' => [
+                        'completion' => [
+                            'values' => [],
+                            'total' => 0,
+                            'hasMore' => false,
+                        ],
+                    ],
+                ];
+            }
+            
+            // 处理 tasks 相关方法
+            if ($method === 'tasks/list') {
+                return ['jsonrpc' => '2.0', 'id' => $id, 'result' => ['tasks' => []]];
+            }
+            if ($method === 'tasks/get' || $method === 'tasks/cancel' || $method === 'tasks/result') {
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'error' => ['code' => -32602, 'message' => 'Task not found'],
+                ];
+            }
+            
+            // 处理 notifications/cancelled
+            if ($method === 'notifications/cancelled') {
+                return []; // 通知不需要响应
+            }
+            
             // 其他方法返回错误
             return [
                 'jsonrpc' => '2.0',
@@ -452,5 +508,133 @@ class StreamableHttpSSEServer
             array_merge(self::CORS_HEADERS, ['Content-Type' => 'application/json']),
             json_encode($data, JSON_UNESCAPED_UNICODE)
         ));
+    }
+    
+    // ==================== 工具方法 ====================
+    
+    private function getBooksList(): array
+    {
+        $books = [];
+        if (is_dir($this->booksDir)) {
+            foreach (scandir($this->booksDir) as $file) {
+                $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+                if (in_array($ext, ['epub', 'txt'])) {
+                    $baseName = pathinfo($file, PATHINFO_FILENAME);
+                    $books[] = [
+                        'file' => $file,
+                        'title' => $baseName,
+                        'hasIndex' => file_exists($this->booksDir . '/' . $baseName . '_index.json'),
+                    ];
+                }
+            }
+        }
+        return $books;
+    }
+    
+    private function toolListBooks(): array
+    {
+        return [
+            'content' => [[
+                'type' => 'text',
+                'text' => json_encode(['books' => $this->getBooksList()], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
+            ]],
+        ];
+    }
+    
+    private function toolGetBookInfo(): array
+    {
+        $selectedBook = $GLOBALS['selected_book'] ?? null;
+        if (!$selectedBook) {
+            return ['content' => [['type' => 'text', 'text' => 'No book selected']]];
+        }
+        return [
+            'content' => [[
+                'type' => 'text',
+                'text' => json_encode([
+                    'file' => $selectedBook['file'],
+                    'hasIndex' => file_exists($selectedBook['cache'] ?? ''),
+                ], JSON_UNESCAPED_UNICODE),
+            ]],
+        ];
+    }
+    
+    private function toolSelectBook(array $args): array
+    {
+        $bookFile = $args['book'] ?? '';
+        if (empty($bookFile)) {
+            throw new \Exception('Missing book parameter');
+        }
+        
+        $bookPath = $this->booksDir . '/' . $bookFile;
+        if (!file_exists($bookPath)) {
+            throw new \Exception("Book not found: {$bookFile}");
+        }
+        
+        $baseName = pathinfo($bookFile, PATHINFO_FILENAME);
+        $GLOBALS['selected_book'] = [
+            'file' => $bookFile,
+            'path' => $bookPath,
+            'cache' => $this->booksDir . '/' . $baseName . '_index.json',
+        ];
+        
+        return [
+            'content' => [[
+                'type' => 'text',
+                'text' => json_encode(['success' => true, 'book' => $bookFile], JSON_UNESCAPED_UNICODE),
+            ]],
+        ];
+    }
+    
+    private function toolSearchBook(array $args): array
+    {
+        $query = $args['query'] ?? '';
+        if (empty($query)) {
+            throw new \Exception('Missing query parameter');
+        }
+        
+        $selectedBook = $GLOBALS['selected_book'] ?? null;
+        if (!$selectedBook || !file_exists($selectedBook['cache'])) {
+            throw new \Exception('No book index available');
+        }
+        
+        // 简化搜索（关键词匹配）
+        $indexData = json_decode(file_get_contents($selectedBook['cache']), true);
+        $results = [];
+        $chunks = $indexData['chunks'] ?? [];
+        
+        foreach ($chunks as $chunk) {
+            if (stripos($chunk['text'], $query) !== false) {
+                $results[] = [
+                    'text' => mb_substr($chunk['text'], 0, 200) . '...',
+                    'chapter' => $chunk['chapter'] ?? 'Unknown',
+                ];
+                if (count($results) >= 5) break;
+            }
+        }
+        
+        return [
+            'content' => [[
+                'type' => 'text',
+                'text' => json_encode([
+                    'query' => $query,
+                    'results' => $results,
+                ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
+            ]],
+        ];
+    }
+    
+    private function toolServerStatus(): array
+    {
+        return [
+            'content' => [[
+                'type' => 'text',
+                'text' => json_encode([
+                    'status' => 'healthy',
+                    'transport' => 'sse',
+                    'connections' => count($this->sseConnections),
+                    'books' => count($this->getBooksList()),
+                ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
+            ]],
+        ];
     }
 }
