@@ -364,13 +364,12 @@ INSTRUCTIONS;
         $this->log('INFO', '🔗 [SSE] Establishing connection', ['sessionId' => $sessionId, 'isNewSession' => $isNewSession]);
         
         // 发送 SSE 响应头 - 注意：需要直接发送 HTTP 头而不是使用 Response 对象
-        // 因为 Response 对象在 body 为空时可能不正确处理 Content-Type
-        // 关键：使用 Transfer-Encoding: chunked 来保持连接，否则客户端会认为响应结束
+        // SSE 流不使用 chunked encoding，而是依赖 Connection: keep-alive 保持连接
+        // 注意：不设置 Content-Length，这样客户端会等待更多数据直到连接关闭
         $httpHeader = "HTTP/1.1 200 OK\r\n";
         $httpHeader .= "Content-Type: text/event-stream\r\n";
-        $httpHeader .= "Cache-Control: no-cache\r\n";
+        $httpHeader .= "Cache-Control: no-cache, no-store, must-revalidate\r\n";
         $httpHeader .= "Connection: keep-alive\r\n";
-        $httpHeader .= "Transfer-Encoding: chunked\r\n";  // 关键：分块传输，让客户端知道响应是流式的
         $httpHeader .= "X-Accel-Buffering: no\r\n";      // 禁用 nginx 缓冲（如果有代理）
         $httpHeader .= "Access-Control-Allow-Origin: *\r\n";
         $httpHeader .= "Access-Control-Expose-Headers: Mcp-Session-Id\r\n";
@@ -394,13 +393,12 @@ INSTRUCTIONS;
             'activeConnections' => count($this->sseConnections),
         ]);
         
-        // 注意：Streamable HTTP 协议不需要发送 endpoint 事件
-        // endpoint 事件是 SSE 传输类型的规范，不是 Streamable HTTP
-        // Streamable HTTP 的 SSE 只用于接收服务器推送的 JSON-RPC 消息
+        // 立即发送连接确认事件
+        // Cline SDK 可能需要在 SSE 连接建立后收到一个事件才能继续
+        $this->sendSSEData($connection, ": connected\n\n");
         
-        // 立即发送心跳，让客户端知道连接是活跃的
-        // 使用 chunked 编码格式发送数据
-        $this->sendChunkedData($connection, ": heartbeat " . time() . "\n\n");
+        // 发送初始心跳
+        $this->sendSSEData($connection, ": heartbeat " . time() . "\n\n");
         
         $this->log('DEBUG', '💓 [SSE] Initial heartbeat sent', ['sessionId' => $sessionId]);
         
@@ -410,8 +408,8 @@ INSTRUCTIONS;
                 return;
             }
             try {
-                // 发送 SSE 心跳注释（chunked 格式）
-                $this->sendChunkedData($connection, ": heartbeat " . time() . "\n\n");
+                // 发送 SSE 心跳注释
+                $this->sendSSEData($connection, ": heartbeat " . time() . "\n\n");
                 $this->log('DEBUG', '💓 [SSE] Heartbeat sent', ['sessionId' => $sessionId, 'timestamp' => time()]);
             } catch (\Exception $e) {
                 $this->log('WARN', '⚠️ [SSE] Heartbeat failed', [
@@ -461,15 +459,12 @@ INSTRUCTIONS;
     }
     
     /**
-     * 发送 chunked 编码的数据
-     * HTTP chunked transfer encoding 格式：
-     * <size in hex>\r\n
-     * <data>\r\n
+     * 直接发送 SSE 数据（不使用 chunked encoding）
+     * SSE 流依赖 Connection: keep-alive 保持连接
      */
-    private function sendChunkedData(TcpConnection $connection, string $data): void
+    private function sendSSEData(TcpConnection $connection, string $data): void
     {
-        $size = dechex(strlen($data));
-        $connection->send("{$size}\r\n{$data}\r\n");
+        $connection->send($data);
     }
     
     /**
@@ -478,7 +473,7 @@ INSTRUCTIONS;
     private function sendSSEEvent(TcpConnection $connection, string $event, string $data): void
     {
         $message = "event: {$event}\ndata: {$data}\n\n";
-        $this->sendChunkedData($connection, $message);
+        $this->sendSSEData($connection, $message);
     }
     
     /**
