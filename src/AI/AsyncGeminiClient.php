@@ -334,7 +334,12 @@ class AsyncGeminiClient
             'generationConfig' => ['thinkingConfig' => ['includeThoughts' => $options['includeThoughts'] ?? true]],
         ];
         
-        if ($systemInstruction) $data['system_instruction'] = $systemInstruction;
+        // 如果使用 cachedContent，不需要 system_instruction（已在缓存中）
+        if (isset($options['cachedContent'])) {
+            $data['cachedContent'] = $options['cachedContent'];
+        } elseif ($systemInstruction) {
+            $data['system_instruction'] = $systemInstruction;
+        }
         
         // 添加工具（Google Search 和 MCP 工具可以同时使用）
         $tools = [];
