@@ -52,8 +52,8 @@
           }
         },
         "search_book": {
-          "disabled": false,
-          "description": "在书籍中搜索相关内容（RAG）",
+          "disabled": true,
+          "description": "在书籍中搜索相关内容（RAG）- 内置版本",
           "parameters": {
             "type": "object",
             "properties": {
@@ -71,35 +71,12 @@
         }
       }
     },
-    "fetch": {
-      "command": "npx",
-      "args": ["mcp-fetch-server"],
-      "env": {
-        "DEFAULT_LIMIT": "50000"
-      },
-      "disabled": true,
-      "autoApprove": []
-    },
-    "notion": {
-      "command": "npx",
-      "args": ["-y", "@notionhq/notion-mcp-server"],
-      "env": {
-        "NOTION_TOKEN": "your-notion-token-here"
-      },
-      "disabled": true,
-      "autoApprove": []
-    },
-    "figma": {
-      "command": "npx",
-      "args": ["-y", "figma-developer-mcp", "--figma-api-key=your-key", "--stdio"],
-      "disabled": true,
-      "autoApprove": []
-    },
-    "browser-tools": {
-      "command": "npx",
-      "args": ["-y", "@agentdeskai/browser-tools-mcp@latest"],
-      "disabled": true,
-      "autoApprove": []
+    "smart-book": {
+      "type": "http",
+      "url": "http://localhost:8089/mcp",
+      "disabled": false,
+      "autoApprove": ["search_book", "get_book_info", "list_books", "select_book"],
+      "description": "Smart Book MCP 服务器 - 提供书籍搜索和管理功能"
     }
   }
 }
