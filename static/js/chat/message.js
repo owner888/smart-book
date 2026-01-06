@@ -29,7 +29,10 @@ async function sendMessage() {
     ChatState.currentUsage = null;
     
     // 创建空的助手消息容器
-    const assistant = ChatAssistants.assistants[ChatState.currentAssistant];
+    const assistant = ChatAssistants.assistants[ChatState.currentAssistant] || {
+        color: '#4caf50',
+        avatar: '📚'
+    };
     ChatState.currentMessageDiv = document.createElement('div');
     ChatState.currentMessageDiv.className = 'message message-assistant';
     ChatState.currentMessageDiv.innerHTML = `
@@ -290,17 +293,27 @@ function finishStreamingMessage(isError = false) {
     }
     
     // 添加消息操作按钮
+    // 使用 data 属性存储消息内容，避免内联事件处理器的转义问题
+    const messageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     const messageContent = ChatState.currentContent;
+    
+    // 将消息内容存储到全局缓存中
+    if (!window.ChatMessageCache) {
+        window.ChatMessageCache = {};
+    }
+    window.ChatMessageCache[messageId] = messageContent;
+    
+    // 使用纯 data 属性方式，不在 onclick 中传递消息内容，完全避免转义问题
     const actionsHtml = `
         <div class="message-actions">
-            <button class="action-btn" title="朗读" onclick="ChatMessage.speakMessage(this, \`${messageContent.replace(/`/g, '\\`').replace(/\\/g, '\\\\')}\`)">
+            <button class="action-btn" title="朗读" data-message-id="${messageId}" onclick="ChatMessage.speakMessage(this)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
                     <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
                     <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
                 </svg>
             </button>
-            <button class="action-btn" title="复制" onclick="ChatMessage.copyMessage(\`${messageContent.replace(/`/g, '\\`').replace(/\\/g, '\\\\')}\`)">
+            <button class="action-btn" title="复制" data-message-id="${messageId}" onclick="ChatMessage.copyMessage(this)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -385,6 +398,22 @@ function clearChat() {
 
 // 朗读消息
 function speakMessage(button, text) {
+    // 如果 text 为空，尝试从 data 属性获取
+    if (!text) {
+        const messageId = button.getAttribute('data-message-id');
+        if (messageId && window.ChatMessageCache) {
+            text = window.ChatMessageCache[messageId];
+        }
+    }
+    
+    // 调试信息
+    console.log('🔊 speakMessage called, text length:', text ? text.length : 0);
+    
+    if (!text) {
+        layer.msg('⚠️ 无法获取消息内容', { icon: 0 });
+        return;
+    }
+    
     if (window.ChatTTS) {
         ChatTTS.speak(text, button);
     } else {
@@ -393,7 +422,22 @@ function speakMessage(button, text) {
 }
 
 // 复制消息
-function copyMessage(text) {
+function copyMessage(buttonOrText) {
+    let text = buttonOrText;
+    
+    // 如果传入的是按钮元素，从缓存中获取文本
+    if (buttonOrText && typeof buttonOrText === 'object' && buttonOrText.getAttribute) {
+        const messageId = buttonOrText.getAttribute('data-message-id');
+        if (messageId && window.ChatMessageCache) {
+            text = window.ChatMessageCache[messageId];
+        }
+    }
+    
+    if (!text) {
+        layer.msg('⚠️ 无法获取消息内容', { icon: 0 });
+        return;
+    }
+    
     navigator.clipboard.writeText(text).then(() => {
         layer.msg('✅ 已复制到剪贴板');
     }).catch(err => {
