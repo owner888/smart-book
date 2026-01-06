@@ -292,6 +292,21 @@ function finishStreamingMessage(isError = false) {
         `;
     }
     
+    // TTS 预估消耗（如果启用云端 TTS）
+    let ttsUsageHtml = '';
+    if (window.ChatTTS && ChatTTS.useCloudTTS && ChatState.currentContent) {
+        const ttsEstimate = ChatTTS.estimateCost(ChatState.currentContent);
+        if (ttsEstimate) {
+            ttsUsageHtml = `
+                <div class="usage-container tts-estimate">
+                    <span class="usage-item">🔊 ${ttsEstimate.voice}</span>
+                    <span class="usage-item">📝 ${ttsEstimate.charCount}</span>
+                    <span class="usage-item">💰 ${ttsEstimate.cost}</span>
+                </div>
+            `;
+        }
+    }
+    
     // 添加消息操作按钮
     // 使用 data 属性存储消息内容，避免内联事件处理器的转义问题
     const messageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
@@ -328,7 +343,7 @@ function finishStreamingMessage(isError = false) {
         </div>
     `;
     
-    contentDiv.innerHTML = systemPromptHtml + thinkingHtml + htmlContent + summaryHtml + sourcesHtml + usageHtml + actionsHtml;
+    contentDiv.innerHTML = systemPromptHtml + thinkingHtml + htmlContent + summaryHtml + sourcesHtml + usageHtml + ttsUsageHtml + actionsHtml;
     
     if (!isError) {
         ChatState.getCurrentState().history.push({ role: 'assistant', content: ChatState.currentContent });

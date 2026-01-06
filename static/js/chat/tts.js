@@ -357,7 +357,36 @@ const ChatTTS = {
         });
     },
     
-    // 显示消耗信息（使用 usage-container 样式）
+    // 预估 TTS 消耗（供消息渲染时使用）
+    estimateCost(text) {
+        if (!text) return null;
+        
+        // 清理 Markdown，获取纯文本
+        const cleanText = this.cleanMarkdown(text);
+        const charCount = cleanText.length;
+        
+        if (charCount === 0) return null;
+        
+        // 获取当前语音设置
+        const savedVoice = localStorage.getItem('ttsCloudVoice') || 'cmn-CN-Wavenet-D';
+        const shortVoice = savedVoice.replace(/^(cmn-CN|cmn-TW|en-US)-/, '');
+        
+        // 判断语音类型并计算费用
+        const isWavenet = savedVoice.includes('Wavenet');
+        const isNeural2 = savedVoice.includes('Neural2');
+        const pricePerMillion = (isWavenet || isNeural2) ? 16 : 4;
+        
+        const cost = (charCount / 1000000) * pricePerMillion;
+        const costFormatted = cost < 0.01 ? '<$0.01' : '$' + cost.toFixed(4);
+        
+        return {
+            voice: shortVoice,
+            charCount: charCount,
+            cost: costFormatted
+        };
+    },
+    
+    // 显示消耗信息（使用 usage-container 样式）- 播放后显示实际消耗
     showCostInfo(button, voice, charCount, costFormatted) {
         // 找到消息容器
         const messageEl = button.closest('.message');
