@@ -281,6 +281,19 @@ class StreamableHttpSSEServer
         try {
             // 处理 initialize 方法
             if ($method === 'initialize') {
+                // 保存客户端信息到会话
+                if (isset($this->sessions[$sessionId])) {
+                    $this->sessions[$sessionId]['clientInfo'] = $params['clientInfo'] ?? [];
+                    $this->sessions[$sessionId]['protocolVersion'] = $params['protocolVersion'] ?? '2025-03-26';
+                    $this->sessions[$sessionId]['lastAccessAt'] = time();
+                    $this->saveSessions();
+                    
+                    $this->log('INFO', "[SSE] Session initialized", [
+                        'sessionId' => $sessionId,
+                        'clientInfo' => $params['clientInfo'] ?? [],
+                    ]);
+                }
+                
                 $result = [
                     'protocolVersion' => '2025-03-26',
                     'serverInfo' => [
@@ -397,11 +410,14 @@ class StreamableHttpSSEServer
                 $toolName = $params['name'] ?? '';
                 $arguments = $params['arguments'] ?? [];
                 
+                // 获取会话数据
+                $session = $this->sessions[$sessionId] ?? null;
+                
                 $result = match ($toolName) {
                     'list_books' => $this->toolListBooks(),
-                    'get_book_info' => $this->toolGetBookInfo(),
-                    'select_book' => $this->toolSelectBook($arguments),
-                    'search_book' => $this->toolSearchBook($arguments),
+                    'get_book_info' => $this->toolGetBookInfo($session),
+                    'select_book' => $this->toolSelectBook($arguments, $sessionId),
+                    'search_book' => $this->toolSearchBook($arguments, $session),
                     'server_status' => $this->toolServerStatus(),
                     default => throw new \Exception("Unknown tool: {$toolName}"),
                 };
@@ -613,12 +629,20 @@ class StreamableHttpSSEServer
         ];
     }
     
-    private function toolGetBookInfo(): array
+    private function toolGetBookInfo(?array $session): array
     {
-        $selectedBook = $GLOBALS['selected_book'] ?? null;
+        // 优先使用会话中保存的书籍选择，然后是全局选择
+        $selectedBook = $session['selectedBook'] ?? $GLOBALS['selected_book'] ?? null;
+        
+        // 如果没有选择，尝试自动选择第一本有索引的书
         if (!$selectedBook) {
-            return ['content' => [['type' => 'text', 'text' => 'No book selected']]];
+            $selectedBook = $this->autoSelectBook();
         }
+        
+        if (!$selectedBook) {
+            return ['content' => [['type' => 'text', 'text' => 'No book selected and no indexed books found']]];
+        }
+        
         return [
             'content' => [[
                 'type' => 'text',
@@ -630,7 +654,7 @@ class StreamableHttpSSEServer
         ];
     }
     
-    private function toolSelectBook(array $args): array
+    private function toolSelectBook(array $args, string $sessionId): array
     {
         $bookFile = $args['book'] ?? '';
         if (empty($bookFile)) {
@@ -643,30 +667,56 @@ class StreamableHttpSSEServer
         }
         
         $baseName = pathinfo($bookFile, PATHINFO_FILENAME);
-        $GLOBALS['selected_book'] = [
+        $selectedBook = [
             'file' => $bookFile,
             'path' => $bookPath,
             'cache' => $this->booksDir . '/' . $baseName . '_index.json',
         ];
         
+        // 保存到会话数据（持久化）
+        if (isset($this->sessions[$sessionId])) {
+            $this->sessions[$sessionId]['selectedBook'] = $selectedBook;
+            $this->sessions[$sessionId]['lastAccessAt'] = time();
+            $this->saveSessions();
+            
+            $this->log('INFO', "[SSE] Book selected and saved to session", [
+                'sessionId' => $sessionId,
+                'book' => $bookFile,
+            ]);
+        }
+        
+        // 同时更新全局选择（兼容性）
+        $GLOBALS['selected_book'] = $selectedBook;
+        
         return [
             'content' => [[
                 'type' => 'text',
-                'text' => json_encode(['success' => true, 'book' => $bookFile], JSON_UNESCAPED_UNICODE),
+                'text' => json_encode([
+                    'success' => true,
+                    'book' => $bookFile,
+                    'hasIndex' => file_exists($selectedBook['cache']),
+                ], JSON_UNESCAPED_UNICODE),
             ]],
         ];
     }
     
-    private function toolSearchBook(array $args): array
+    private function toolSearchBook(array $args, ?array $session): array
     {
         $query = $args['query'] ?? '';
         if (empty($query)) {
             throw new \Exception('Missing query parameter');
         }
         
-        $selectedBook = $GLOBALS['selected_book'] ?? null;
+        // 优先使用会话中保存的书籍选择
+        $selectedBook = $session['selectedBook'] ?? $GLOBALS['selected_book'] ?? null;
+        
+        // 如果没有选择，尝试自动选择第一本有索引的书
+        if (!$selectedBook) {
+            $selectedBook = $this->autoSelectBook();
+        }
+        
         if (!$selectedBook || !file_exists($selectedBook['cache'])) {
-            throw new \Exception('No book index available');
+            throw new \Exception('No book index available. Please select a book with an index first.');
         }
         
         // 简化搜索（关键词匹配）
@@ -689,10 +739,49 @@ class StreamableHttpSSEServer
                 'type' => 'text',
                 'text' => json_encode([
                     'query' => $query,
+                    'book' => $selectedBook['file'],
                     'results' => $results,
                 ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
             ]],
         ];
+    }
+    
+    /**
+     * 自动选择第一本有索引的书籍
+     */
+    private function autoSelectBook(): ?array
+    {
+        // 首先检查全局选择
+        if (isset($GLOBALS['selected_book']['path']) && file_exists($GLOBALS['selected_book']['path'])) {
+            return $GLOBALS['selected_book'];
+        }
+        
+        if (!is_dir($this->booksDir)) {
+            return null;
+        }
+        
+        foreach (scandir($this->booksDir) as $file) {
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            if (!in_array($ext, ['epub', 'txt'])) continue;
+            
+            $baseName = pathinfo($file, PATHINFO_FILENAME);
+            $indexFile = $this->booksDir . '/' . $baseName . '_index.json';
+            
+            if (file_exists($indexFile)) {
+                $selectedBook = [
+                    'file' => $file,
+                    'path' => $this->booksDir . '/' . $file,
+                    'cache' => $indexFile,
+                ];
+                
+                // 设置为全局选择
+                $GLOBALS['selected_book'] = $selectedBook;
+                
+                return $selectedBook;
+            }
+        }
+        
+        return null;
     }
     
     private function toolServerStatus(): array
