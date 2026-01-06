@@ -185,11 +185,12 @@ INSTRUCTIONS;
         
         $timestamp = date('Y-m-d H:i:s');
         $color = match ($type) {
-            'REQUEST' => "\033[36m",   // 青色
-            'RESPONSE' => "\033[32m",  // 绿色
-            'ERROR' => "\033[31m",     // 红色
-            'INFO' => "\033[33m",      // 黄色
-            'WARN' => "\033[35m",      // 紫色
+            'ERROR' => "\033[31m",     // 红色 - 错误
+            'WARN' => "\033[33m",      // 黄色 - 警告
+            'INFO' => "\033[36m",      // 青色 - 信息
+            'REQUEST' => "\033[34m",   // 蓝色 - 请求
+            'RESPONSE' => "\033[32m",  // 绿色 - 响应
+            'DEBUG' => "\033[37m",     // 白色 - 调试
             default => "\033[0m",
         };
         $reset = "\033[0m";
