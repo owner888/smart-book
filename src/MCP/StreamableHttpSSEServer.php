@@ -311,6 +311,15 @@ class StreamableHttpSSEServer
                 ];
             }
             
+            // 处理 resources/templates/list
+            if ($method === 'resources/templates/list') {
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'result' => ['resourceTemplates' => []],
+                ];
+            }
+            
             // 其他方法返回错误
             return [
                 'jsonrpc' => '2.0',
