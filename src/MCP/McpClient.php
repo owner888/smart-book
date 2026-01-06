@@ -294,7 +294,7 @@ class McpClient
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
         $error = curl_error($ch);
-        curl_close($ch);
+        unset($ch);
         
         if ($error) {
             throw new \Exception("CURL error: {$error}");
@@ -372,7 +372,7 @@ class McpClient
         
         curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        unset($ch);
         
         // 405 表示服务器不支持客户端终止会话，这是允许的
         if ($httpCode !== 200 && $httpCode !== 405) {
