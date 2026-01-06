@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Client 测试</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 { color: #333; }
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section h2 {
+            margin-top: 0;
+            color: #444;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        button.success { background: #28a745; }
+        button.success:hover { background: #218838; }
+        input, select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        input[type="text"] { width: 300px; }
+        pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .status {
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .status.connected { background: #d4edda; color: #155724; }
+        .status.disconnected { background: #f8d7da; color: #721c24; }
+        .status.connecting { background: #fff3cd; color: #856404; }
+        .log-container {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .log-entry { margin: 2px 0; }
+        .log-entry.info { color: #6c9ef8; }
+        .log-entry.error { color: #f48771; }
+        .log-entry.success { color: #89d185; }
+        .log-entry.notification { color: #dcdcaa; }
+        .tool-card {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 5px 0;
+        }
+        .tool-card h4 { margin: 0 0 5px 0; color: #007bff; }
+        .tool-card p { margin: 5px 0; color: #666; font-size: 14px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🔌 MCP Client 测试</h1>
+    
+    <!-- 连接状态 -->
+    <div class="section">
+        <h2>连接管理</h2>
+        <div id="status" class="status disconnected">状态: 未连接</div>
+        <div>
+            <input type="text" id="serverUrl" placeholder="MCP 服务器 URL" value="http://localhost:8089/mcp">
+            <button onclick="connect()" id="connectBtn">连接</button>
+            <button onclick="disconnect()" id="disconnectBtn" class="danger" disabled>断开</button>
+            <button onclick="ping()" id="pingBtn" disabled>Ping</button>
+        </div>
+        <div style="margin-top: 10px;">
+            <label>
+                <input type="checkbox" id="debugMode" checked> 调试模式
+            </label>
+        </div>
+    </div>
+    
+    <!-- 服务器信息 -->
+    <div class="section">
+        <h2>服务器信息</h2>
+        <pre id="serverInfo">未连接</pre>
+    </div>
+    
+    <!-- 工具列表 -->
+    <div class="section">
+        <h2>工具 (Tools)</h2>
+        <button onclick="listTools()" id="listToolsBtn" disabled>刷新工具列表</button>
+        <div id="toolsList" class="grid"></div>
+    </div>
+    
+    <!-- 调用工具 -->
+    <div class="section">
+        <h2>调用工具</h2>
+        <div>
+            <select id="toolSelect">
+                <option value="">-- 选择工具 --</option>
+            </select>
+        </div>
+        <div id="toolParams"></div>
+        <button onclick="callTool()" id="callToolBtn" disabled>调用工具</button>
+        <h4>工具返回结果:</h4>
+        <pre id="toolResult">无</pre>
+    </div>
+    
+    <!-- 资源列表 -->
+    <div class="section">
+        <h2>资源 (Resources)</h2>
+        <button onclick="listResources()" id="listResourcesBtn" disabled>刷新资源列表</button>
+        <div id="resourcesList" class="grid"></div>
+    </div>
+    
+    <!-- 读取资源 -->
+    <div class="section">
+        <h2>读取资源</h2>
+        <div>
+            <input type="text" id="resourceUri" placeholder="资源 URI (如 book://library/list)">
+            <button onclick="readResource()" id="readResourceBtn" disabled>读取</button>
+        </div>
+        <h4>资源内容:</h4>
+        <pre id="resourceContent">无</pre>
+    </div>
+    
+    <!-- 提示词 -->
+    <div class="section">
+        <h2>提示词 (Prompts)</h2>
+        <button onclick="listPrompts()" id="listPromptsBtn" disabled>刷新提示词列表</button>
+        <div id="promptsList" class="grid"></div>
+    </div>
+    
+    <!-- 日志 -->
+    <div class="section">
+        <h2>调试日志</h2>
+        <button onclick="clearLogs()">清空日志</button>
+        <div id="logContainer" class="log-container"></div>
+    </div>
+    
+    <script src="/static/js/mcp-client.js"></script>
+    <script>
+        let client = null;
+        let tools = [];
+        
+        // 日志函数
+        function log(message, type = 'info') {
+            const container = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function clearLogs() {
+            document.getElementById('logContainer').innerHTML = '';
+        }
+        
+        function updateStatus(status, message) {
+            const el = document.getElementById('status');
+            el.className = `status ${status}`;
+            el.textContent = `状态: ${message}`;
+        }
+        
+        function setButtonsEnabled(connected) {
+            document.getElementById('connectBtn').disabled = connected;
+            document.getElementById('disconnectBtn').disabled = !connected;
+            document.getElementById('pingBtn').disabled = !connected;
+            document.getElementById('listToolsBtn').disabled = !connected;
+            document.getElementById('callToolBtn').disabled = !connected;
+            document.getElementById('listResourcesBtn').disabled = !connected;
+            document.getElementById('readResourceBtn').disabled = !connected;
+            document.getElementById('listPromptsBtn').disabled = !connected;
+        }
+        
+        // 连接
+        async function connect() {
+            const url = document.getElementById('serverUrl').value;
+            const debug = document.getElementById('debugMode').checked;
+            
+            updateStatus('connecting', '正在连接...');
+            log(`正在连接到 ${url}...`);
+            
+            try {
+                client = new McpClient(url, {
+                    clientName: 'mcp-test-client',
+                    clientVersion: '1.0.0',
+                    debug: debug,
+                });
+                
+                // 设置回调
+                client.onNotification = (data) => {
+                    log(`[通知] ${data.level}: ${data.message}`, 'notification');
+                };
+                
+                client.onProgress = (data) => {
+                    log(`[进度] ${data.token}: ${data.progress}/${data.total} - ${data.message}`, 'info');
+                };
+                
+                client.onDisconnect = () => {
+                    log('连接已断开', 'error');
+                    updateStatus('disconnected', '已断开');
+                    setButtonsEnabled(false);
+                };
+                
+                const result = await client.connect();
+                
+                updateStatus('connected', '已连接');
+                setButtonsEnabled(true);
+                log('连接成功!', 'success');
+                
+                // 显示服务器信息
+                document.getElementById('serverInfo').textContent = JSON.stringify({
+                    serverInfo: client.serverInfo,
+                    protocolVersion: client.protocolVersion,
+                    capabilities: client.capabilities,
+                }, null, 2);
+                
+                // 自动加载工具和资源
+                await listTools();
+                await listResources();
+                await listPrompts();
+                
+            } catch (error) {
+                updateStatus('disconnected', '连接失败');
+                log(`连接失败: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+        
+        // 断开连接
+        async function disconnect() {
+            if (client) {
+                await client.disconnect();
+                client = null;
+            }
+            updateStatus('disconnected', '已断开');
+            setButtonsEnabled(false);
+            log('已断开连接');
+            
+            document.getElementById('serverInfo').textContent = '未连接';
+            document.getElementById('toolsList').innerHTML = '';
+            document.getElementById('resourcesList').innerHTML = '';
+            document.getElementById('promptsList').innerHTML = '';
+        }
+        
+        // Ping
+        async function ping() {
+            try {
+                log('发送 ping...');
+                const result = await client.ping();
+                log('Pong! 服务器响应正常', 'success');
+            } catch (error) {
+                log(`Ping 失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 列出工具
+        async function listTools() {
+            try {
+                log('获取工具列表...');
+                tools = await client.listTools();
+                log(`获取到 ${tools.length} 个工具`, 'success');
+                
+                const container = document.getElementById('toolsList');
+                const select = document.getElementById('toolSelect');
+                
+                container.innerHTML = '';
+                select.innerHTML = '<option value="">-- 选择工具 --</option>';
+                
+                tools.forEach((tool, index) => {
+                    // 工具卡片
+                    const card = document.createElement('div');
+                    card.className = 'tool-card';
+                    card.innerHTML = `
+                        <h4>🔧 ${tool.name}</h4>
+                        <p>${tool.description || '无描述'}</p>
+                    `;
+                    container.appendChild(card);
+                    
+                    // 下拉选项
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = tool.name;
+                    select.appendChild(option);
+                });
+                
+            } catch (error) {
+                log(`获取工具列表失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 工具选择变化
+        document.getElementById('toolSelect').addEventListener('change', function() {
+            const index = this.value;
+            const paramsContainer = document.getElementById('toolParams');
+            
+            if (index === '') {
+                paramsContainer.innerHTML = '';
+                return;
+            }
+            
+            const tool = tools[index];
+            const schema = tool.inputSchema;
+            
+            if (!schema || !schema.properties) {
+                paramsContainer.innerHTML = '<p>此工具不需要参数</p>';
+                return;
+            }
+            
+            let html = '<h4>参数:</h4>';
+            for (const [name, prop] of Object.entries(schema.properties)) {
+                const required = schema.required?.includes(name) ? '*' : '';
+                const desc = prop.description || '';
+                const defaultVal = prop.default || '';
+                
+                html += `
+                    <div style="margin-bottom: 10px;">
+                        <label>${name}${required}:</label>
+                        <input type="text" id="param_${name}" placeholder="${desc}" value="${defaultVal}">
+                        <small style="color: #666;">${desc}</small>
+                    </div>
+                `;
+            }
+            
+            paramsContainer.innerHTML = html;
+        });
+        
+        // 调用工具
+        async function callTool() {
+            const index = document.getElementById('toolSelect').value;
+            if (index === '') {
+                log('请先选择一个工具', 'error');
+                return;
+            }
+            
+            const tool = tools[index];
+            const args = {};
+            
+            // 收集参数
+            if (tool.inputSchema?.properties) {
+                for (const name of Object.keys(tool.inputSchema.properties)) {
+                    const input = document.getElementById(`param_${name}`);
+                    if (input && input.value) {
+                        // 尝试解析为数字
+                        const val = input.value;
+                        args[name] = isNaN(val) ? val : Number(val);
+                    }
+                }
+            }
+            
+            try {
+                log(`调用工具 ${tool.name}，参数: ${JSON.stringify(args)}`);
+                const result = await client.callTool(tool.name, args);
+                
+                const parsed = parseToolContent(result);
+                document.getElementById('toolResult').textContent = 
+                    typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
+                
+                log(`工具 ${tool.name} 执行成功`, 'success');
+            } catch (error) {
+                document.getElementById('toolResult').textContent = `错误: ${error.message}`;
+                log(`工具调用失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 列出资源
+        async function listResources() {
+            try {
+                log('获取资源列表...');
+                const resources = await client.listResources();
+                log(`获取到 ${resources.length} 个资源`, 'success');
+                
+                const container = document.getElementById('resourcesList');
+                container.innerHTML = '';
+                
+                resources.forEach(resource => {
+                    const card = document.createElement('div');
+                    card.className = 'tool-card';
+                    card.innerHTML = `
+                        <h4>📄 ${resource.name}</h4>
+                        <p><strong>URI:</strong> ${resource.uri}</p>
+                        <p>${resource.description || '无描述'}</p>
+                        <button onclick="readResourceByUri('${resource.uri}')" style="margin-top: 5px;">读取</button>
+                    `;
+                    container.appendChild(card);
+                });
+                
+            } catch (error) {
+                log(`获取资源列表失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 读取资源
+        async function readResource() {
+            const uri = document.getElementById('resourceUri').value;
+            if (!uri) {
+                log('请输入资源 URI', 'error');
+                return;
+            }
+            await readResourceByUri(uri);
+        }
+        
+        async function readResourceByUri(uri) {
+            try {
+                log(`读取资源: ${uri}`);
+                const result = await client.readResource(uri);
+                
+                const parsed = parseResourceContent(result);
+                document.getElementById('resourceContent').textContent = 
+                    typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
+                
+                document.getElementById('resourceUri').value = uri;
+                log(`资源读取成功`, 'success');
+            } catch (error) {
+                document.getElementById('resourceContent').textContent = `错误: ${error.message}`;
+                log(`资源读取失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 列出提示词
+        async function listPrompts() {
+            try {
+                log('获取提示词列表...');
+                const prompts = await client.listPrompts();
+                log(`获取到 ${prompts.length} 个提示词`, 'success');
+                
+                const container = document.getElementById('promptsList');
+                container.innerHTML = '';
+                
+                prompts.forEach(prompt => {
+                    const card = document.createElement('div');
+                    card.className = 'tool-card';
+                    card.innerHTML = `
+                        <h4>💬 ${prompt.name}</h4>
+                        <p><strong>标题:</strong> ${prompt.title || prompt.name}</p>
+                        <p>${prompt.description || '无描述'}</p>
+                        ${prompt.arguments ? `<p><strong>参数:</strong> ${prompt.arguments.map(a => a.name).join(', ')}</p>` : ''}
+                    `;
+                    container.appendChild(card);
+                });
+                
+            } catch (error) {
+                log(`获取提示词列表失败: ${error.message}`, 'error');
+            }
+        }
+        
+        // 页面加载完成
+        log('MCP Client 测试页面已加载');
+        log('请点击"连接"按钮连接到 MCP 服务器');
+    </script>
+</body>
+</html>
