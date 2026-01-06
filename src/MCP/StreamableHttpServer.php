@@ -1278,10 +1278,17 @@ INSTRUCTIONS;
     }
     
     /**
-     * 工具：测试长任务（演示 SSE 进度推送）
+     * 工具：测试长任务（演示异步任务和 SSE 进度推送）
      * 
      * 这个工具创建一个模拟的长任务，并通过 SSE 发送进度更新。
      * 用于测试和演示 MCP 的任务管理和进度通知功能。
+     * 
+     * **异步执行模式**：
+     * 1. 工具立即返回任务 ID（不阻塞 Cline）
+     * 2. 任务在后台通过 Timer 异步执行
+     * 3. 进度通过 SSE notifications/message 推送
+     * 4. 用户可以通过 tasks/get 轮询任务状态
+     * 5. 任务完成后通过 tasks/result 获取结果
      */
     private function toolTestLongTask(array $args, ?string $sessionId): array
     {
@@ -1302,48 +1309,55 @@ INSTRUCTIONS;
         // 检查是否有 SSE 连接
         $hasSSE = $sessionId && $this->hasSSEConnection($sessionId);
         
-        $this->log('INFO', '🚀 [Task] Starting long task', [
-            'taskId' => $taskId,
-            'duration' => $duration,
-            'steps' => $steps,
-            'hasSSE' => $hasSSE,
-            'sessionId' => $sessionId,
-        ]);
+        $startTime = date('Y-m-d H:i:s');
         
-        // 计算每步的间隔时间（毫秒）
-        $intervalMs = ($duration * 1000) / $steps;
+        // 始终打印任务启动日志
+        echo "\033[33m[{$startTime}] [Task]\033[0m 🚀 Long task started (ASYNC)\n";
+        echo "  TaskId: {$taskId}\n";
+        echo "  Duration: {$duration}s, Steps: {$steps}\n";
+        echo "  SSE Connection: " . ($hasSSE ? "✅ yes (session: " . substr($sessionId, 0, 8) . "...)" : "❌ no") . "\n";
+        echo "  Mode: Background execution via Timer\n\n";
+        
+        // 计算每步的间隔时间（秒）
+        $intervalSec = $duration / $steps;
         $progressToken = "task_{$taskId}";
         
-        // 使用定时器异步执行任务
+        // 使用定时器异步执行任务（这是关键：任务不会阻塞主线程）
         $currentStep = 0;
-        $server = $this; // 保存引用以在闭包中使用
+        $server = $this;
         
-        $timerId = Timer::add($intervalMs / 1000, function() use (
-            &$timerId, &$currentStep, $steps, $taskId, $sessionId, $progressToken, $hasSSE, $server
+        // 发送初始通知（任务已启动）
+        if ($hasSSE && $sessionId) {
+            $this->sendNotification($sessionId, 'info', 
+                "📋 Task [{$taskId}] started: {$steps} steps, ~{$duration}s total"
+            );
+        }
+        
+        $timerId = Timer::add($intervalSec, function() use (
+            &$timerId, &$currentStep, $steps, $taskId, $sessionId, $progressToken, $hasSSE, $server, $duration
         ) {
             $currentStep++;
+            $percent = round(($currentStep / $steps) * 100);
             
-            $server->log('INFO', "📊 [Task] Progress update", [
-                'taskId' => $taskId,
-                'step' => $currentStep,
-                'total' => $steps,
-                'percent' => round(($currentStep / $steps) * 100),
-            ]);
+            // 打印进度日志
+            $now = date('Y-m-d H:i:s');
+            echo "\033[36m[{$now}] [Task]\033[0m 📊 Progress: {$currentStep}/{$steps} ({$percent}%)\n";
             
             // 如果有 SSE 连接，发送进度通知
             if ($hasSSE && $sessionId) {
-                $sent = $server->sendProgress(
+                // 方式1：发送 notifications/progress（标准 MCP 进度通知）
+                $server->sendProgress(
                     $sessionId,
                     $progressToken,
                     $currentStep,
                     $steps,
-                    "Processing step {$currentStep}/{$steps}..."
+                    "Step {$currentStep}/{$steps} ({$percent}%)"
                 );
                 
-                $server->log('DEBUG', "📤 [Task] SSE progress sent", [
-                    'sent' => $sent,
-                    'sessionId' => $sessionId,
-                ]);
+                // 方式2：发送 notifications/message（会显示在 Cline 的聊天中）
+                $server->sendNotification($sessionId, 'info',
+                    "⏳ [{$taskId}] Progress: {$currentStep}/{$steps} ({$percent}%)"
+                );
             }
             
             // 检查是否完成
@@ -1361,9 +1375,9 @@ INSTRUCTIONS;
                                 'taskId' => $taskId,
                                 'message' => "Task completed successfully!",
                                 'totalSteps' => $steps,
-                                'duration' => "{$currentStep} steps completed",
+                                'duration' => "{$duration} seconds",
                                 'completedAt' => $completionTime,
-                            ], JSON_UNESCAPED_UNICODE),
+                            ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
                         ],
                     ],
                 ];
@@ -1371,30 +1385,22 @@ INSTRUCTIONS;
                 $server->updateTask($taskId, 'completed', $result);
                 $server->saveTasks();
                 
-                // 打印完成日志（始终显示）
+                // 打印完成日志
                 echo "\033[32m[{$completionTime}] [Task]\033[0m ✅ Task completed!\n";
                 echo "  TaskId: {$taskId}\n";
-                echo "  Steps: {$steps}, SSE: " . ($hasSSE ? 'yes' : 'no') . "\n\n";
+                echo "  Total Steps: {$steps}\n\n";
                 
-                // 发送完成通知（如果有 SSE）
+                // 发送完成通知
                 if ($hasSSE && $sessionId) {
-                    // 发送 notifications/message - Cline 会在 MCP 通知中显示
-                    $sent = $server->sendSSEMessage($sessionId, [
-                        'jsonrpc' => '2.0',
-                        'method' => 'notifications/message',
-                        'params' => [
-                            'level' => 'info',
-                            'data' => "🎉 Task [{$taskId}] completed! All {$steps} steps finished at {$completionTime}",
-                            'logger' => 'smart-book',
-                        ],
-                    ]);
-                    
-                    echo "\033[36m[{$completionTime}] [SSE]\033[0m 📤 Notification sent: " . ($sent ? 'success' : 'failed') . "\n\n";
+                    $server->sendNotification($sessionId, 'info',
+                        "🎉 Task [{$taskId}] completed! All {$steps} steps finished."
+                    );
                 }
             }
         });
         
-        // 立即返回任务信息（任务在后台运行）
+        // 立即返回任务信息（任务在后台运行，不阻塞）
+        // 这是异步模式的关键：工具立即返回，Cline 可以继续其他操作
         return [
             'content' => [
                 [
@@ -1402,16 +1408,47 @@ INSTRUCTIONS;
                     'text' => json_encode([
                         'taskId' => $taskId,
                         'status' => 'running',
-                        'message' => "Long task started. Duration: {$duration}s, Steps: {$steps}",
+                        'message' => "✅ Async task started! The task is running in the background.",
+                        'duration' => "{$duration} seconds",
+                        'steps' => $steps,
                         'hasSSE' => $hasSSE,
                         'progressToken' => $progressToken,
-                        'hint' => $hasSSE 
-                            ? 'Progress updates will be sent via SSE. Use tasks/get to check status.'
-                            : 'No SSE connection. Use tasks/get to poll task status, or establish SSE connection first.',
+                        'instructions' => [
+                            'check_status' => "Use 'tasks/get' with id='{$taskId}' to check task status",
+                            'get_result' => "Use 'tasks/result' with id='{$taskId}' when status is 'completed'",
+                            'sse_updates' => $hasSSE 
+                                ? 'Progress notifications will appear in the chat automatically'
+                                : 'No SSE connection - please poll using tasks/get',
+                        ],
                     ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
                 ],
             ],
         ];
+    }
+    
+    /**
+     * 发送 MCP 通知消息（通过 SSE）
+     * 
+     * 这个方法发送 notifications/message，会显示在 Cline 的聊天界面中
+     * 
+     * @param string $sessionId 会话 ID
+     * @param string $level 日志级别 (debug, info, warning, error)
+     * @param string $message 消息内容
+     * @param string|null $logger 日志来源名称
+     * @return bool 是否发送成功
+     */
+    public function sendNotification(string $sessionId, string $level, string $message, ?string $logger = 'smart-book'): bool
+    {
+        return $this->sendSSEMessage($sessionId, [
+            'jsonrpc' => '2.0',
+            'method' => 'notifications/message',
+            'params' => [
+                'level' => $level,
+                'message' => $message,  // 使用 message 字段（Cline 期望的格式）
+                'data' => $message,     // 同时设置 data 字段（MCP 规范）
+                'logger' => $logger,
+            ],
+        ]);
     }
     
     /**
@@ -2032,6 +2069,7 @@ INSTRUCTIONS;
      */
     public function createTask(string $type, array $metadata = []): string
     {
+        $this->taskIdCounter = $this->taskIdCounter ?? 0;
         $taskId = 'task_' . (++$this->taskIdCounter) . '_' . bin2hex(random_bytes(4));
         
         $this->tasks[$taskId] = [
