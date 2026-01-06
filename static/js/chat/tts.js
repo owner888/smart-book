@@ -17,6 +17,9 @@ const ChatTTS = {
     init() {
         // 加载可用语音
         if ('speechSynthesis' in window) {
+            // 页面加载时先停止任何残留的语音
+            speechSynthesis.cancel();
+            
             // 语音列表可能异步加载
             speechSynthesis.onvoiceschanged = () => {
                 this.loadVoices();
@@ -57,15 +60,23 @@ const ChatTTS = {
             return;
         }
         
-        // 如果正在朗读
-        if (this.speaking) {
-            // 保存当前 messageId，因为 stop() 会清除它
-            const wasPlayingMessageId = this.currentMessageId;
-            this.stop();
-            // 如果点击的是同一条消息，只是停止，不重新播放
-            if (messageId && wasPlayingMessageId === messageId) {
-                return;
-            }
+        // 保存当前 messageId，因为 stop() 会清除它
+        const wasPlayingMessageId = this.currentMessageId;
+        const wasOurSpeaking = this.speaking;
+        
+        // 先停止任何正在播放的语音（包括残留的）
+        speechSynthesis.cancel();
+        this.speaking = false;
+        if (this.currentButton) {
+            this.updateButtonState(this.currentButton, false);
+        }
+        this.currentButton = null;
+        this.currentUtterance = null;
+        this.currentMessageId = null;
+        
+        // 如果之前是我们在播放，且点击的是同一条消息，只停止不重新播放
+        if (wasOurSpeaking && messageId && wasPlayingMessageId === messageId) {
+            return;
         }
         
         // 清理 Markdown 格式，只保留纯文本
