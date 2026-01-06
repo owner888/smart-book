@@ -25,6 +25,8 @@ class StreamableHttpServer
     private bool $debug = false; // 启用调试日志
     private string $sessionsFile; // session 持久化文件路径
     private string $logLevel = 'info'; // 当前日志级别
+    private array $tasks = []; // 任务存储
+    private int $taskIdCounter = 0; // 任务 ID 计数器
     
     // 日志级别优先级（RFC 5424）
     private const LOG_LEVELS = [
@@ -361,6 +363,10 @@ INSTRUCTIONS;
                 'prompts/list' => $this->handlePromptsList(),
                 'prompts/get' => $this->handlePromptsGet($params, $sessionId),
                 'completion/complete' => $this->handleCompletionComplete($params, $sessionId),
+                'tasks/list' => $this->handleTasksList(),
+                'tasks/get' => $this->handleTasksGet($params),
+                'tasks/cancel' => $this->handleTasksCancel($params),
+                'tasks/result' => $this->handleTasksResult($params),
                 default => throw new \Exception("Method not found: {$method}"),
             };
             
@@ -507,6 +513,13 @@ INSTRUCTIONS;
             // 自动完成能力：为 prompts 和 resources 的参数提供补全建议
             // @see https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/completion
             'completions' => new \stdClass(),
+            
+            // 任务能力：支持长时间运行的任务跟踪和轮询
+            // @see https://modelcontextprotocol.io/specification/2025-11-25/changelog (SEP-1686)
+            'tasks' => [
+                'list' => new \stdClass(),       // 支持列出任务
+                'cancel' => new \stdClass(),     // 支持取消任务
+            ],
             
             // 实验性能力：描述非标准的实验性功能
             // @see https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle#capability-negotiation
@@ -1423,6 +1436,135 @@ INSTRUCTIONS;
         // 目前资源没有参数需要补全
         return [];
     }
+    
+    // ==================== Tasks Methods ====================
+    
+    /**
+     * 处理 tasks/list - 列出所有任务
+     * @see https://modelcontextprotocol.io/specification/2025-11-25/schema (tasks/list)
+     */
+    private function handleTasksList(): array
+    {
+        $taskList = [];
+        foreach ($this->tasks as $id => $task) {
+            $taskList[] = [
+                'id' => $id,
+                'status' => $task['status'],
+                'metadata' => $task['metadata'] ?? null,
+                'createdAt' => date('c', $task['createdAt']),
+            ];
+        }
+        
+        return ['tasks' => $taskList];
+    }
+    
+    /**
+     * 处理 tasks/get - 获取任务详情
+     */
+    private function handleTasksGet(array $params): array
+    {
+        $taskId = $params['id'] ?? '';
+        
+        if (empty($taskId) || !isset($this->tasks[$taskId])) {
+            throw new \Exception("Task not found: {$taskId}");
+        }
+        
+        $task = $this->tasks[$taskId];
+        
+        return [
+            'task' => [
+                'id' => $taskId,
+                'status' => $task['status'],
+                'metadata' => $task['metadata'] ?? null,
+                'createdAt' => date('c', $task['createdAt']),
+                'updatedAt' => date('c', $task['updatedAt'] ?? $task['createdAt']),
+            ],
+        ];
+    }
+    
+    /**
+     * 处理 tasks/cancel - 取消任务
+     */
+    private function handleTasksCancel(array $params): array
+    {
+        $taskId = $params['id'] ?? '';
+        
+        if (empty($taskId) || !isset($this->tasks[$taskId])) {
+            throw new \Exception("Task not found: {$taskId}");
+        }
+        
+        // 只能取消 pending 或 running 状态的任务
+        $task = &$this->tasks[$taskId];
+        if ($task['status'] === 'completed' || $task['status'] === 'cancelled' || $task['status'] === 'failed') {
+            throw new \Exception("Cannot cancel task in status: {$task['status']}");
+        }
+        
+        $task['status'] = 'cancelled';
+        $task['updatedAt'] = time();
+        
+        return [
+            'task' => [
+                'id' => $taskId,
+                'status' => 'cancelled',
+            ],
+        ];
+    }
+    
+    /**
+     * 处理 tasks/result - 获取任务结果
+     */
+    private function handleTasksResult(array $params): array
+    {
+        $taskId = $params['id'] ?? '';
+        
+        if (empty($taskId) || !isset($this->tasks[$taskId])) {
+            throw new \Exception("Task not found: {$taskId}");
+        }
+        
+        $task = $this->tasks[$taskId];
+        
+        if ($task['status'] !== 'completed') {
+            throw new \Exception("Task not completed, current status: {$task['status']}");
+        }
+        
+        return [
+            'result' => $task['result'] ?? null,
+        ];
+    }
+    
+    /**
+     * 创建新任务（内部方法，可被工具调用）
+     */
+    public function createTask(string $type, array $metadata = []): string
+    {
+        $taskId = 'task_' . (++$this->taskIdCounter) . '_' . bin2hex(random_bytes(4));
+        
+        $this->tasks[$taskId] = [
+            'type' => $type,
+            'status' => 'pending', // pending, running, completed, failed, cancelled
+            'metadata' => $metadata,
+            'createdAt' => time(),
+            'result' => null,
+        ];
+        
+        return $taskId;
+    }
+    
+    /**
+     * 更新任务状态（内部方法）
+     */
+    public function updateTask(string $taskId, string $status, mixed $result = null): void
+    {
+        if (isset($this->tasks[$taskId])) {
+            $this->tasks[$taskId]['status'] = $status;
+            $this->tasks[$taskId]['updatedAt'] = time();
+            if ($result !== null) {
+                $this->tasks[$taskId]['result'] = $result;
+            }
+        }
+    }
+    
+    // ==================== End Tasks Methods ====================
     
     /**
      * 根据当前输入过滤补全建议（模糊匹配）
