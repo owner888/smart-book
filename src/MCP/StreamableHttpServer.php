@@ -27,6 +27,7 @@ class StreamableHttpServer
     private string $logLevel = 'info'; // 当前日志级别
     private array $tasks = []; // 任务存储
     private int $taskIdCounter = 0; // 任务 ID 计数器
+    private string $tasksFile; // 任务持久化文件路径
     
     // 日志级别优先级（RFC 5424）
     private const LOG_LEVELS = [
@@ -89,9 +90,11 @@ INSTRUCTIONS;
         
         // 设置 session 持久化文件路径
         $this->sessionsFile = $booksDir . '/.mcp_sessions.json';
+        $this->tasksFile = $booksDir . '/.mcp_tasks.json';
         
-        // 从文件加载 sessions
+        // 从文件加载 sessions 和 tasks
         $this->loadSessions();
+        $this->loadTasks();
     }
     
     /**
@@ -132,6 +135,41 @@ INSTRUCTIONS;
     {
         $data = json_encode($this->sessions, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
         file_put_contents($this->sessionsFile, $data, LOCK_EX);
+    }
+    
+    /**
+     * 从文件加载 tasks
+     */
+    private function loadTasks(): void
+    {
+        if (file_exists($this->tasksFile)) {
+            $data = json_decode(file_get_contents($this->tasksFile), true);
+            if (is_array($data)) {
+                $this->tasks = $data['tasks'] ?? [];
+                $this->taskIdCounter = $data['counter'] ?? 0;
+                // 过滤掉超过 1 小时的已完成/已取消/失败任务
+                $now = time();
+                foreach ($this->tasks as $id => $task) {
+                    $updatedAt = $task['updatedAt'] ?? $task['createdAt'] ?? 0;
+                    $status = $task['status'] ?? '';
+                    if (in_array($status, ['completed', 'cancelled', 'failed']) && ($now - $updatedAt) > 3600) {
+                        unset($this->tasks[$id]);
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * 保存 tasks 到文件
+     */
+    private function saveTasks(): void
+    {
+        $data = json_encode([
+            'tasks' => $this->tasks,
+            'counter' => $this->taskIdCounter,
+        ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        file_put_contents($this->tasksFile, $data, LOCK_EX);
     }
     
     /**
@@ -389,13 +427,19 @@ INSTRUCTIONS;
             return $response;
             
         } catch (\Throwable $e) {
-            // 记录详细错误日志（ERROR 类型总是输出）
-            $this->log('ERROR', "Exception in method '{$method}'", [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => array_slice($e->getTrace(), 0, 5), // 只保留前5层调用栈
-            ]);
+            // 将异常转换为标准 JSON-RPC 错误
+            $error = $this->exceptionToJsonRpcError($e, $method);
+            
+            // 只在调试模式或严重错误时输出详细日志
+            $isServerError = $error['code'] <= -32000;
+            if ($this->debug || $isServerError) {
+                $this->log('ERROR', "Exception in method '{$method}'", [
+                    'code' => $error['code'],
+                    'message' => $error['message'],
+                    'file' => basename($e->getFile()),
+                    'line' => $e->getLine(),
+                ]);
+            }
             
             if ($isNotification) {
                 return null;
@@ -404,14 +448,7 @@ INSTRUCTIONS;
             return [
                 'jsonrpc' => '2.0',
                 'id' => $id,
-                'error' => [
-                    'code' => -32000,
-                    'message' => $e->getMessage(),
-                    'data' => [
-                        'file' => basename($e->getFile()),
-                        'line' => $e->getLine(),
-                    ],
-                ],
+                'error' => $error,
             ];
         }
     }
@@ -849,9 +886,12 @@ INSTRUCTIONS;
     {
         $level = $params['level'] ?? 'info';
         
-        // 验证日志级别
+        // 验证日志级别，无效时默认使用 'info'
         if (!isset(self::LOG_LEVELS[$level])) {
-            throw new \InvalidArgumentException("Invalid log level: {$level}. Valid levels: " . implode(', ', array_keys(self::LOG_LEVELS)));
+            $this->log('WARN', "Invalid log level '{$level}', using 'info' instead", [
+                'validLevels' => array_keys(self::LOG_LEVELS),
+            ]);
+            $level = 'info';
         }
         
         // 保存到会话
@@ -1683,6 +1723,85 @@ INSTRUCTIONS;
                 'message' => $message,
             ],
         ], 200);
+    }
+    
+    /**
+     * 将异常转换为标准 JSON-RPC 错误
+     * 
+     * JSON-RPC 2.0 标准错误代码：
+     * -32700: Parse error (解析错误)
+     * -32600: Invalid Request (无效请求)
+     * -32601: Method not found (方法未找到)
+     * -32602: Invalid params (无效参数)
+     * -32603: Internal error (内部错误)
+     * -32000 to -32099: Server error (服务器错误，保留给实现定义)
+     */
+    private function exceptionToJsonRpcError(\Throwable $e, string $method): array
+    {
+        $message = $e->getMessage();
+        
+        // 根据异常消息判断错误类型
+        $code = match (true) {
+            // 方法未找到
+            str_contains($message, 'Method not found') => -32601,
+            str_contains($message, 'Unknown tool') => -32601,
+            str_contains($message, 'Prompt not found') => -32601,
+            
+            // 无效参数
+            str_contains($message, 'Missing') => -32602,
+            str_contains($message, 'Invalid') => -32602,
+            str_contains($message, 'not found') => -32602,
+            str_contains($message, 'No book') => -32602,
+            str_contains($message, 'Cannot cancel') => -32602,
+            str_contains($message, 'Task not') => -32602,
+            
+            // 根据异常类型判断
+            $e instanceof \InvalidArgumentException => -32602,
+            $e instanceof \TypeError => -32602,
+            $e instanceof \RuntimeException => -32000,
+            
+            // 默认为服务器错误
+            default => -32000,
+        };
+        
+        // 简化错误消息（移除敏感信息）
+        $friendlyMessage = match ($code) {
+            -32601 => $message,
+            -32602 => $message,
+            default => $this->debug ? $message : $this->simplifyErrorMessage($message),
+        };
+        
+        $error = [
+            'code' => $code,
+            'message' => $friendlyMessage,
+        ];
+        
+        // 仅在调试模式下添加详细信息
+        if ($this->debug) {
+            $error['data'] = [
+                'method' => $method,
+                'file' => basename($e->getFile()),
+                'line' => $e->getLine(),
+            ];
+        }
+        
+        return $error;
+    }
+    
+    /**
+     * 简化错误消息（隐藏敏感信息）
+     */
+    private function simplifyErrorMessage(string $message): string
+    {
+        // 移除文件路径
+        $message = preg_replace('/\/[^\s]+\.php/', '[file]', $message);
+        // 移除行号
+        $message = preg_replace('/on line \d+/', '', $message);
+        // 限制长度
+        if (mb_strlen($message) > 200) {
+            $message = mb_substr($message, 0, 200) . '...';
+        }
+        return trim($message);
     }
     
 }

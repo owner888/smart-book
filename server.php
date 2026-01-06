@@ -28,6 +28,9 @@ use SmartBook\AI\AsyncCurlManager;
 use SmartBook\Cache\CacheService;
 use SmartBook\MCP\ToolManager;
 
+// 注意: Workerman Task Worker 需要 5.x 版本
+// 当前使用文件持久化来存储任务状态，支持服务器重启后恢复
+
 // 启动前检查并自动创建书籍索引
 $indexer = new BookIndexer(__DIR__ . '/books', GEMINI_API_KEY);
 $indexer->checkAndIndexAll();
