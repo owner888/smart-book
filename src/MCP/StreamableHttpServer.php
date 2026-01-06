@@ -316,9 +316,9 @@ class StreamableHttpServer
                 'ping' => new \stdClass(), // 返回空对象
                 'tools/list' => ['tools' => $this->getTools()],
                 'tools/call' => $this->handleToolCall($params, $sessionId),
-                'resources/list' => ['resources' => []],
+                'resources/list' => $this->handleResourcesList($sessionId),
                 'resources/templates/list' => ['resourceTemplates' => []],
-                'resources/read' => throw new \Exception('Resource not found'),
+                'resources/read' => $this->handleResourcesRead($params, $sessionId),
                 'prompts/list' => ['prompts' => []],
                 'prompts/get' => throw new \Exception('Prompt not found'),
                 default => throw new \Exception("Method not found: {$method}"),
@@ -432,7 +432,7 @@ class StreamableHttpServer
     {
         return [
             'tools' => new \stdClass(),
-            // 'resources' => ['listChanged' => false],
+            'resources' => new \stdClass(),
             // 'prompts' => ['listChanged' => false],
         ];
     }
@@ -732,6 +732,214 @@ class StreamableHttpServer
         return [
             'content' => [
                 ['type' => 'text', 'text' => json_encode($status, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)],
+            ],
+        ];
+    }
+    
+    /**
+     * 处理 resources/list 请求
+     */
+    private function handleResourcesList(?string $sessionId): array
+    {
+        $resources = [];
+        $session = $sessionId ? ($this->sessions[$sessionId] ?? null) : null;
+        
+        // 1. 书籍列表资源
+        $resources[] = [
+            'uri' => 'book://library/list',
+            'name' => 'Book Library',
+            'description' => 'List of all available books in the library',
+            'mimeType' => 'application/json',
+        ];
+        
+        // 2. 当前书籍的资源（如果已选择）
+        $selectedBook = $session['selectedBook'] ?? $this->autoSelectBook();
+        if ($selectedBook) {
+            $bookName = pathinfo($selectedBook['file'], PATHINFO_FILENAME);
+            
+            // 书籍元数据
+            $resources[] = [
+                'uri' => 'book://current/metadata',
+                'name' => "Metadata: {$bookName}",
+                'description' => 'Metadata of the currently selected book',
+                'mimeType' => 'application/json',
+            ];
+            
+            // 书籍目录（如果是 EPUB）
+            $ext = strtolower(pathinfo($selectedBook['file'], PATHINFO_EXTENSION));
+            if ($ext === 'epub') {
+                $resources[] = [
+                    'uri' => 'book://current/toc',
+                    'name' => "Table of Contents: {$bookName}",
+                    'description' => 'Table of contents of the currently selected book',
+                    'mimeType' => 'application/json',
+                ];
+            }
+        }
+        
+        return ['resources' => $resources];
+    }
+    
+    /**
+     * 处理 resources/read 请求
+     */
+    private function handleResourcesRead(array $params, ?string $sessionId): array
+    {
+        $uri = $params['uri'] ?? '';
+        
+        if (empty($uri)) {
+            throw new \Exception('Missing uri parameter');
+        }
+        
+        $session = $sessionId ? ($this->sessions[$sessionId] ?? null) : null;
+        
+        // 解析 URI
+        if ($uri === 'book://library/list') {
+            return $this->resourceBookList();
+        }
+        
+        if ($uri === 'book://current/metadata') {
+            return $this->resourceCurrentMetadata($session);
+        }
+        
+        if ($uri === 'book://current/toc') {
+            return $this->resourceCurrentToc($session);
+        }
+        
+        throw new \Exception("Resource not found: {$uri}");
+    }
+    
+    /**
+     * 资源：书籍列表
+     */
+    private function resourceBookList(): array
+    {
+        $books = [];
+        
+        if (is_dir($this->booksDir)) {
+            foreach (scandir($this->booksDir) as $file) {
+                $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+                if (!in_array($ext, ['epub', 'txt'])) continue;
+                
+                $baseName = pathinfo($file, PATHINFO_FILENAME);
+                $indexFile = $this->booksDir . '/' . $baseName . '_index.json';
+                
+                $title = $baseName;
+                if ($ext === 'epub') {
+                    try {
+                        $metadata = \SmartBook\Parser\EpubParser::extractMetadata($this->booksDir . '/' . $file);
+                        $title = $metadata['title'] ?? $baseName;
+                    } catch (\Exception $e) {}
+                }
+                
+                $books[] = [
+                    'file' => $file,
+                    'title' => $title,
+                    'format' => strtoupper($ext),
+                    'hasIndex' => file_exists($indexFile),
+                ];
+            }
+        }
+        
+        return [
+            'contents' => [
+                [
+                    'uri' => 'book://library/list',
+                    'mimeType' => 'application/json',
+                    'text' => json_encode(['books' => $books], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
+                ],
+            ],
+        ];
+    }
+    
+    /**
+     * 资源：当前书籍元数据
+     */
+    private function resourceCurrentMetadata(?array $session): array
+    {
+        $selectedBook = $session['selectedBook'] ?? $this->autoSelectBook();
+        
+        if (!$selectedBook) {
+            throw new \Exception('No book selected');
+        }
+        
+        $metadata = [
+            'file' => $selectedBook['file'],
+            'hasIndex' => file_exists($selectedBook['cache']),
+        ];
+        
+        $ext = strtolower(pathinfo($selectedBook['file'], PATHINFO_EXTENSION));
+        if ($ext === 'epub') {
+            try {
+                $epubMeta = \SmartBook\Parser\EpubParser::extractMetadata($selectedBook['path']);
+                $metadata['title'] = $epubMeta['title'] ?? pathinfo($selectedBook['file'], PATHINFO_FILENAME);
+                $metadata['authors'] = $epubMeta['authors'] ?? '';
+                $metadata['language'] = $epubMeta['language'] ?? '';
+                $metadata['publisher'] = $epubMeta['publisher'] ?? '';
+                $metadata['description'] = $epubMeta['description'] ?? '';
+            } catch (\Exception $e) {
+                $metadata['title'] = pathinfo($selectedBook['file'], PATHINFO_FILENAME);
+            }
+        } else {
+            $metadata['title'] = pathinfo($selectedBook['file'], PATHINFO_FILENAME);
+        }
+        
+        return [
+            'contents' => [
+                [
+                    'uri' => 'book://current/metadata',
+                    'mimeType' => 'application/json',
+                    'text' => json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
+                ],
+            ],
+        ];
+    }
+    
+    /**
+     * 资源：当前书籍目录
+     */
+    private function resourceCurrentToc(?array $session): array
+    {
+        $selectedBook = $session['selectedBook'] ?? $this->autoSelectBook();
+        
+        if (!$selectedBook) {
+            throw new \Exception('No book selected');
+        }
+        
+        $ext = strtolower(pathinfo($selectedBook['file'], PATHINFO_EXTENSION));
+        if ($ext !== 'epub') {
+            throw new \Exception('Table of contents only available for EPUB books');
+        }
+        
+        // 尝试从索引文件获取章节信息
+        $toc = [];
+        if (file_exists($selectedBook['cache'])) {
+            $indexData = json_decode(file_get_contents($selectedBook['cache']), true);
+            if (isset($indexData['metadata']['chapters'])) {
+                $toc = $indexData['metadata']['chapters'];
+            } elseif (isset($indexData['chunks'])) {
+                // 从 chunks 中提取章节信息
+                $seenChapters = [];
+                foreach ($indexData['chunks'] as $chunk) {
+                    $chapter = $chunk['chapter'] ?? 'Unknown';
+                    if (!in_array($chapter, $seenChapters)) {
+                        $seenChapters[] = $chapter;
+                        $toc[] = ['title' => $chapter];
+                    }
+                }
+            }
+        }
+        
+        return [
+            'contents' => [
+                [
+                    'uri' => 'book://current/toc',
+                    'mimeType' => 'application/json',
+                    'text' => json_encode([
+                        'book' => $selectedBook['file'],
+                        'toc' => $toc,
+                    ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
+                ],
             ],
         ];
     }
