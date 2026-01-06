@@ -135,6 +135,10 @@ const ChatTTS = {
                 this.currentButton = null;
                 this.currentMessageId = null;
                 this.updateButtonState(button, false);
+                // 显示消耗信息
+                if (data.charCount !== undefined) {
+                    this.showCostInfo(button, data.voice || 'auto', data.charCount, data.costFormatted || '<$0.01');
+                }
             };
             
             audio.onerror = (e) => {
@@ -351,6 +355,60 @@ const ChatTTS = {
                 if (rate) localStorage.setItem('ttsRate', rate);
             }
         });
+    },
+    
+    // 显示消耗信息（使用 usage-container 样式）
+    showCostInfo(button, voice, charCount, costFormatted) {
+        // 找到消息容器
+        const messageEl = button.closest('.message');
+        if (!messageEl) return;
+        
+        // 移除旧的消耗信息
+        const oldCost = messageEl.querySelector('.tts-usage');
+        if (oldCost) oldCost.remove();
+        
+        // 简化语音名称（如 cmn-CN-Wavenet-D → Wavenet-D）
+        const shortVoice = voice.replace(/^(cmn-CN|cmn-TW|en-US)-/, '');
+        
+        // 创建消耗信息元素（使用 usage-container 样式）
+        const usageEl = document.createElement('div');
+        usageEl.className = 'tts-usage';
+        usageEl.innerHTML = `
+            <div class="usage-container">
+                <span class="usage-item">🔊 ${shortVoice}</span>
+                <span class="usage-item">📝 ${charCount}</span>
+                <span class="usage-item">💰 ${costFormatted}</span>
+            </div>
+        `;
+        
+        // 找到 usage-container 或 sources-section，插入到它后面
+        const existingUsage = messageEl.querySelector('.usage-container');
+        const sourcesSection = messageEl.querySelector('.sources-section');
+        
+        if (existingUsage && !existingUsage.closest('.tts-usage')) {
+            // 如果有模型统计行，插入到它后面
+            existingUsage.insertAdjacentElement('afterend', usageEl.firstElementChild);
+            // 直接插入内部的 usage-container，避免嵌套
+        } else if (sourcesSection) {
+            // 如果有检索来源区域，插入到它后面
+            sourcesSection.insertAdjacentElement('afterend', usageEl);
+        } else {
+            // 否则插入到消息内容后面
+            const contentEl = messageEl.querySelector('.message-content');
+            if (contentEl) {
+                contentEl.insertAdjacentElement('afterend', usageEl);
+            }
+        }
+        
+        // 5秒后淡出
+        const ttsUsage = messageEl.querySelector('.tts-usage');
+        if (ttsUsage) {
+            setTimeout(() => {
+                ttsUsage.style.transition = 'opacity 0.5s';
+                ttsUsage.style.opacity = '0';
+                setTimeout(() => ttsUsage.remove(), 500);
+            }, 5000);
+        }
     },
     
     // 试听

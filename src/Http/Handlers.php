@@ -1131,6 +1131,9 @@ function handleTTSSynthesize(TcpConnection $connection, Request $request): ?arra
             'format' => $result['format'],
             'voice' => $voice,
             'language' => $languageCode,
+            'charCount' => $result['charCount'] ?? 0,
+            'cost' => $result['cost'] ?? 0,
+            'costFormatted' => $result['costFormatted'] ?? '',
         ], JSON_UNESCAPED_UNICODE)));
         
         return null;

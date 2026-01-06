@@ -105,9 +105,21 @@ class GoogleTTSClient
             throw new \Exception('TTS 响应中没有音频内容');
         }
         
+        // 计算费用（美元）
+        $charCount = mb_strlen($text);
+        $isWavenet = str_contains($voiceId, 'Wavenet');
+        $isNeural2 = str_contains($voiceId, 'Neural2');
+        
+        // 价格：Wavenet/Neural2 = $16/百万字符，Standard = $4/百万字符
+        $pricePerMillion = ($isWavenet || $isNeural2) ? 16 : 4;
+        $cost = ($charCount / 1000000) * $pricePerMillion;
+        
         return [
             'audio' => $result['audioContent'],  // base64 编码的 MP3
             'format' => 'mp3',
+            'charCount' => $charCount,
+            'cost' => $cost,
+            'costFormatted' => $cost < 0.01 ? '<$0.01' : '$' . number_format($cost, 4),
         ];
     }
     
