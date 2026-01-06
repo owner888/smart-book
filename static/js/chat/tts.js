@@ -1,104 +1,181 @@
 /**
- * TTS 朗读模块 - 使用 Web Speech API
+ * TTS 朗读模块 - 支持 Google Cloud TTS 和浏览器 TTS
  */
 
 const ChatTTS = {
     // 当前朗读状态
     speaking: false,
-    currentUtterance: null,
+    currentAudio: null,
     currentButton: null,
     currentMessageId: null,
     
-    // 可用的语音列表
-    voices: [],
-    selectedVoice: null,
+    // 配置
+    useCloudTTS: false,  // 默认使用浏览器 TTS（云端 TTS 需要启用 Google Cloud Text-to-Speech API）
+    cloudVoices: null,
+    
+    // 浏览器 TTS 配置
+    browserVoices: [],
+    selectedBrowserVoice: null,
     
     // 初始化
     init() {
-        // 加载可用语音
+        // 页面加载时先停止任何残留的语音
         if ('speechSynthesis' in window) {
-            // 页面加载时先停止任何残留的语音
             speechSynthesis.cancel();
-            
-            // 语音列表可能异步加载
-            speechSynthesis.onvoiceschanged = () => {
-                this.loadVoices();
-            };
-            this.loadVoices();
-        } else {
-            console.warn('⚠️ 浏览器不支持 Web Speech API');
+        }
+        
+        // 加载浏览器语音（作为后备）
+        if ('speechSynthesis' in window) {
+            speechSynthesis.onvoiceschanged = () => this.loadBrowserVoices();
+            this.loadBrowserVoices();
+        }
+        
+        // 加载云端语音列表
+        this.loadCloudVoices();
+        
+        // 从 localStorage 恢复设置
+        this.useCloudTTS = localStorage.getItem('ttsUseCloud') !== 'false';
+        
+        console.log('🔊 TTS 模块已初始化');
+    },
+    
+    // 加载浏览器语音
+    loadBrowserVoices() {
+        this.browserVoices = speechSynthesis.getVoices();
+        const savedVoiceName = localStorage.getItem('ttsBrowserVoice');
+        if (savedVoiceName) {
+            this.selectedBrowserVoice = this.browserVoices.find(v => v.name === savedVoiceName);
+        }
+        if (!this.selectedBrowserVoice) {
+            this.selectedBrowserVoice = 
+                this.browserVoices.find(v => v.lang.includes('zh') && v.name.toLowerCase().includes('natural')) ||
+                this.browserVoices.find(v => v.lang.includes('zh')) ||
+                this.browserVoices[0];
         }
     },
     
-    // 加载可用语音
-    loadVoices() {
-        this.voices = speechSynthesis.getVoices();
-        
-        // 从 localStorage 恢复上次选择的语音
-        const savedVoiceName = localStorage.getItem('ttsVoice');
-        if (savedVoiceName) {
-            this.selectedVoice = this.voices.find(v => v.name === savedVoiceName);
+    // 加载云端语音列表
+    async loadCloudVoices() {
+        try {
+            const response = await fetch(`${ChatConfig.API_BASE}/api/tts/voices`);
+            const data = await response.json();
+            if (data.voices) {
+                this.cloudVoices = data.voices;
+                console.log('🔊 云端语音已加载');
+            }
+        } catch (e) {
+            console.warn('⚠️ 无法加载云端语音列表:', e.message);
         }
-        
-        // 默认选择中文语音，优先选择自然声音
-        if (!this.selectedVoice) {
-            // 优先级：中文自然声音 > 中文声音 > 英文自然声音 > 第一个
-            this.selectedVoice = 
-                this.voices.find(v => v.lang.includes('zh') && v.name.toLowerCase().includes('natural')) ||
-                this.voices.find(v => v.lang.includes('zh')) ||
-                this.voices.find(v => v.lang.includes('en') && v.name.toLowerCase().includes('natural')) ||
-                this.voices[0];
-        }
-        
-        console.log('🔊 TTS 语音已加载:', this.voices.length, '个');
     },
     
     // 朗读文本
-    speak(text, button, messageId) {
-        if (!('speechSynthesis' in window)) {
-            layer.msg('⚠️ 浏览器不支持语音朗读', { icon: 0 });
-            return;
-        }
-        
-        // 保存当前 messageId，因为 stop() 会清除它
+    async speak(text, button, messageId) {
+        // 保存当前状态
         const wasPlayingMessageId = this.currentMessageId;
         const wasOurSpeaking = this.speaking;
         
-        // 先停止任何正在播放的语音（包括残留的）
-        speechSynthesis.cancel();
-        this.speaking = false;
-        if (this.currentButton) {
-            this.updateButtonState(this.currentButton, false);
-        }
-        this.currentButton = null;
-        this.currentUtterance = null;
-        this.currentMessageId = null;
+        // 停止当前播放
+        this.stop();
         
-        // 如果之前是我们在播放，且点击的是同一条消息，只停止不重新播放
+        // 如果点击的是同一条消息，只停止不播放
         if (wasOurSpeaking && messageId && wasPlayingMessageId === messageId) {
             return;
         }
         
-        // 清理 Markdown 格式，只保留纯文本
+        // 清理 Markdown
         const cleanText = this.cleanMarkdown(text);
-        
         if (!cleanText.trim()) {
             layer.msg('没有可朗读的内容', { icon: 0 });
             return;
         }
         
-        // 创建语音实例
-        const utterance = new SpeechSynthesisUtterance(cleanText);
+        // 优先使用云端 TTS
+        if (this.useCloudTTS) {
+            await this.speakWithCloud(cleanText, button, messageId);
+        } else {
+            this.speakWithBrowser(cleanText, button, messageId);
+        }
+    },
+    
+    // 使用云端 TTS
+    async speakWithCloud(text, button, messageId) {
+        try {
+            this.updateButtonState(button, true, true);  // 加载中状态
+            
+            const voice = localStorage.getItem('ttsCloudVoice') || null;
+            const rate = parseFloat(localStorage.getItem('ttsRate') || '1.0');
+            
+            const response = await fetch(`${ChatConfig.API_BASE}/api/tts/synthesize`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, voice, rate }),
+            });
+            
+            const data = await response.json();
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            // 播放音频
+            const audioData = `data:audio/mp3;base64,${data.audio}`;
+            const audio = new Audio(audioData);
+            
+            audio.onplay = () => {
+                this.speaking = true;
+                this.currentAudio = audio;
+                this.currentButton = button;
+                this.currentMessageId = messageId;
+                this.updateButtonState(button, true);
+            };
+            
+            audio.onended = () => {
+                this.speaking = false;
+                this.currentAudio = null;
+                this.currentButton = null;
+                this.currentMessageId = null;
+                this.updateButtonState(button, false);
+            };
+            
+            audio.onerror = (e) => {
+                console.error('音频播放错误:', e);
+                this.speaking = false;
+                this.updateButtonState(button, false);
+                layer.msg('音频播放失败', { icon: 2 });
+            };
+            
+            audio.play();
+            
+        } catch (e) {
+            console.error('云端 TTS 错误:', e);
+            this.updateButtonState(button, false);
+            
+            // 如果云端失败，尝试使用浏览器 TTS
+            if ('speechSynthesis' in window) {
+                layer.msg('云端 TTS 失败，使用浏览器语音', { icon: 0 });
+                this.speakWithBrowser(text, button, messageId);
+            } else {
+                layer.msg('TTS 错误: ' + e.message, { icon: 2 });
+            }
+        }
+    },
+    
+    // 使用浏览器 TTS
+    speakWithBrowser(text, button, messageId) {
+        if (!('speechSynthesis' in window)) {
+            layer.msg('⚠️ 浏览器不支持语音朗读', { icon: 0 });
+            return;
+        }
         
-        // 设置语音参数
-        if (this.selectedVoice) {
-            utterance.voice = this.selectedVoice;
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        if (this.selectedBrowserVoice) {
+            utterance.voice = this.selectedBrowserVoice;
         }
         utterance.rate = parseFloat(localStorage.getItem('ttsRate') || '1.0');
         utterance.pitch = parseFloat(localStorage.getItem('ttsPitch') || '1.0');
         utterance.volume = parseFloat(localStorage.getItem('ttsVolume') || '1.0');
         
-        // 事件处理
         utterance.onstart = () => {
             this.speaking = true;
             this.currentButton = button;
@@ -114,7 +191,6 @@ const ChatTTS = {
         };
         
         utterance.onerror = (event) => {
-            console.error('TTS 错误:', event.error);
             this.speaking = false;
             this.currentButton = null;
             this.currentMessageId = null;
@@ -124,41 +200,45 @@ const ChatTTS = {
             }
         };
         
-        // 开始朗读
-        this.currentUtterance = utterance;
         speechSynthesis.speak(utterance);
     },
     
     // 停止朗读
     stop() {
+        // 停止云端音频
+        if (this.currentAudio) {
+            this.currentAudio.pause();
+            this.currentAudio.currentTime = 0;
+            this.currentAudio = null;
+        }
+        
+        // 停止浏览器 TTS
         if ('speechSynthesis' in window) {
             speechSynthesis.cancel();
         }
+        
         this.speaking = false;
         if (this.currentButton) {
             this.updateButtonState(this.currentButton, false);
         }
         this.currentButton = null;
-        this.currentUtterance = null;
         this.currentMessageId = null;
     },
     
-    // 暂停/继续
-    togglePause() {
-        if (!this.speaking) return;
-        
-        if (speechSynthesis.paused) {
-            speechSynthesis.resume();
-        } else {
-            speechSynthesis.pause();
-        }
-    },
-    
     // 更新按钮状态
-    updateButtonState(button, isSpeaking) {
+    updateButtonState(button, isSpeaking, isLoading = false) {
         if (!button) return;
         
-        if (isSpeaking) {
+        if (isLoading) {
+            button.classList.add('loading');
+            button.title = '加载中...';
+            button.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                    <circle cx="12" cy="12" r="10" stroke-dasharray="30 70"/>
+                </svg>
+            `;
+        } else if (isSpeaking) {
+            button.classList.remove('loading');
             button.classList.add('speaking');
             button.title = '停止朗读';
             button.innerHTML = `
@@ -167,7 +247,7 @@ const ChatTTS = {
                 </svg>
             `;
         } else {
-            button.classList.remove('speaking');
+            button.classList.remove('loading', 'speaking');
             button.title = '朗读';
             button.innerHTML = `
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -182,71 +262,56 @@ const ChatTTS = {
     // 清理 Markdown 格式
     cleanMarkdown(text) {
         return text
-            // 移除代码块
             .replace(/```[\s\S]*?```/g, '')
-            // 移除行内代码
             .replace(/`[^`]+`/g, '')
-            // 移除链接，保留文本
             .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-            // 移除图片
             .replace(/!\[.*?\]\(.*?\)/g, '')
-            // 移除加粗
             .replace(/\*\*([^*]+)\*\*/g, '$1')
-            // 移除斜体
             .replace(/\*([^*]+)\*/g, '$1')
             .replace(/_([^_]+)_/g, '$1')
-            // 移除标题标记
             .replace(/^#+\s+/gm, '')
-            // 移除列表标记
             .replace(/^[\s]*[-*+]\s+/gm, '')
             .replace(/^[\s]*\d+\.\s+/gm, '')
-            // 移除引用标记
             .replace(/^>\s+/gm, '')
-            // 移除分隔线
             .replace(/^[-*_]{3,}$/gm, '')
-            // 移除 HTML 标签
             .replace(/<[^>]+>/g, '')
-            // 规范化空白
             .replace(/\n{3,}/g, '\n\n')
             .trim();
     },
     
-    // 显示语音设置
+    // 显示设置
     showSettings() {
-        if (this.voices.length === 0) {
-            this.loadVoices();
-        }
-        
-        // 按语言分组
-        const zhVoices = this.voices.filter(v => v.lang.includes('zh'));
-        const enVoices = this.voices.filter(v => v.lang.includes('en'));
-        const otherVoices = this.voices.filter(v => !v.lang.includes('zh') && !v.lang.includes('en'));
-        
-        const buildVoiceOptions = (voices, label) => {
-            if (voices.length === 0) return '';
-            return `
-                <optgroup label="${label}">
-                    ${voices.map(v => `
-                        <option value="${v.name}" ${this.selectedVoice?.name === v.name ? 'selected' : ''}>
-                            ${v.name} (${v.lang})
-                        </option>
-                    `).join('')}
-                </optgroup>
-            `;
-        };
-        
         const currentRate = localStorage.getItem('ttsRate') || '1.0';
-        const currentPitch = localStorage.getItem('ttsPitch') || '1.0';
-        const currentVolume = localStorage.getItem('ttsVolume') || '1.0';
+        const useCloud = this.useCloudTTS;
+        
+        // 构建云端语音选项
+        let cloudVoiceOptions = '<option value="">自动选择</option>';
+        if (this.cloudVoices) {
+            for (const [lang, voices] of Object.entries(this.cloudVoices)) {
+                const langLabel = lang === 'zh-CN' ? '中文' : 'English';
+                cloudVoiceOptions += `<optgroup label="${langLabel}">`;
+                for (const [voiceId, info] of Object.entries(voices)) {
+                    const selected = localStorage.getItem('ttsCloudVoice') === voiceId ? 'selected' : '';
+                    cloudVoiceOptions += `<option value="${voiceId}" ${selected}>${info.name}</option>`;
+                }
+                cloudVoiceOptions += '</optgroup>';
+            }
+        }
         
         const content = `
             <div style="padding: 20px;">
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">🎙️ 语音</label>
-                    <select id="ttsVoiceSelect" style="width: 100%; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: inherit;">
-                        ${buildVoiceOptions(zhVoices, '中文')}
-                        ${buildVoiceOptions(enVoices, 'English')}
-                        ${buildVoiceOptions(otherVoices, '其他')}
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="ttsUseCloud" ${useCloud ? 'checked' : ''} style="width: 18px; height: 18px;">
+                        <span style="font-weight: 500;">🔊 使用 Google Cloud TTS（更自然）</span>
+                    </label>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">关闭后使用浏览器内置语音</div>
+                </div>
+                
+                <div id="cloudVoiceSection" style="margin-bottom: 16px; ${useCloud ? '' : 'display: none;'}">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">🎙️ 云端语音</label>
+                    <select id="ttsCloudVoiceSelect" style="width: 100%; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: inherit;">
+                        ${cloudVoiceOptions}
                     </select>
                 </div>
                 
@@ -254,18 +319,6 @@ const ChatTTS = {
                     <label style="display: block; margin-bottom: 8px; font-weight: 500;">⏩ 语速: <span id="rateValue">${currentRate}x</span></label>
                     <input type="range" id="ttsRateSlider" min="0.5" max="2" step="0.1" value="${currentRate}" 
                            style="width: 100%;" onchange="document.getElementById('rateValue').textContent = this.value + 'x'">
-                </div>
-                
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">🎵 音调: <span id="pitchValue">${currentPitch}</span></label>
-                    <input type="range" id="ttsPitchSlider" min="0.5" max="2" step="0.1" value="${currentPitch}"
-                           style="width: 100%;" onchange="document.getElementById('pitchValue').textContent = this.value">
-                </div>
-                
-                <div style="margin-bottom: 16px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">🔊 音量: <span id="volumeValue">${Math.round(currentVolume * 100)}%</span></label>
-                    <input type="range" id="ttsVolumeSlider" min="0" max="1" step="0.1" value="${currentVolume}"
-                           style="width: 100%;" onchange="document.getElementById('volumeValue').textContent = Math.round(this.value * 100) + '%'">
                 </div>
                 
                 <button onclick="ChatTTS.testVoice()" style="width: 100%; padding: 10px; background: var(--accent-green); border: none; border-radius: 6px; color: white; cursor: pointer;">
@@ -280,50 +333,72 @@ const ChatTTS = {
             area: ['360px', 'auto'],
             shadeClose: true,
             content: content,
+            success: () => {
+                document.getElementById('ttsUseCloud').onchange = (e) => {
+                    document.getElementById('cloudVoiceSection').style.display = e.target.checked ? '' : 'none';
+                };
+            },
             end: () => {
-                // 保存设置
-                const voice = document.getElementById('ttsVoiceSelect')?.value;
+                const useCloud = document.getElementById('ttsUseCloud')?.checked;
+                const cloudVoice = document.getElementById('ttsCloudVoiceSelect')?.value;
                 const rate = document.getElementById('ttsRateSlider')?.value;
-                const pitch = document.getElementById('ttsPitchSlider')?.value;
-                const volume = document.getElementById('ttsVolumeSlider')?.value;
                 
-                if (voice) {
-                    this.selectedVoice = this.voices.find(v => v.name === voice);
-                    localStorage.setItem('ttsVoice', voice);
+                if (useCloud !== undefined) {
+                    this.useCloudTTS = useCloud;
+                    localStorage.setItem('ttsUseCloud', useCloud);
                 }
+                if (cloudVoice) localStorage.setItem('ttsCloudVoice', cloudVoice);
                 if (rate) localStorage.setItem('ttsRate', rate);
-                if (pitch) localStorage.setItem('ttsPitch', pitch);
-                if (volume) localStorage.setItem('ttsVolume', volume);
             }
         });
     },
     
     // 试听
-    testVoice() {
-        const voiceName = document.getElementById('ttsVoiceSelect')?.value;
-        const rate = parseFloat(document.getElementById('ttsRateSlider')?.value || '1.0');
-        const pitch = parseFloat(document.getElementById('ttsPitchSlider')?.value || '1.0');
-        const volume = parseFloat(document.getElementById('ttsVolumeSlider')?.value || '1.0');
+    async testVoice() {
+        const useCloud = document.getElementById('ttsUseCloud')?.checked;
+        const testText = '你好，这是一段测试语音。Hello, this is a test.';
         
         this.stop();
         
-        const testText = '你好，这是一段测试语音。Hello, this is a test voice.';
-        const utterance = new SpeechSynthesisUtterance(testText);
-        
-        const voice = this.voices.find(v => v.name === voiceName);
-        if (voice) utterance.voice = voice;
-        utterance.rate = rate;
-        utterance.pitch = pitch;
-        utterance.volume = volume;
-        
-        speechSynthesis.speak(utterance);
+        if (useCloud) {
+            const voice = document.getElementById('ttsCloudVoiceSelect')?.value || null;
+            const rate = parseFloat(document.getElementById('ttsRateSlider')?.value || '1.0');
+            
+            try {
+                const response = await fetch(`${ChatConfig.API_BASE}/api/tts/synthesize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: testText, voice, rate }),
+                });
+                const data = await response.json();
+                if (data.audio) {
+                    const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
+                    audio.play();
+                } else {
+                    throw new Error(data.error || '未知错误');
+                }
+            } catch (e) {
+                layer.msg('试听失败: ' + e.message, { icon: 2 });
+            }
+        } else {
+            const utterance = new SpeechSynthesisUtterance(testText);
+            const rate = parseFloat(document.getElementById('ttsRateSlider')?.value || '1.0');
+            utterance.rate = rate;
+            speechSynthesis.speak(utterance);
+        }
     }
 };
 
-// 页面加载时初始化
-document.addEventListener('DOMContentLoaded', () => {
-    ChatTTS.init();
-});
+// 添加 CSS 动画
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .action-btn .spin { animation: spin 1s linear infinite; }
+`;
+document.head.appendChild(style);
+
+// 初始化
+document.addEventListener('DOMContentLoaded', () => ChatTTS.init());
 
 // 导出
 window.ChatTTS = ChatTTS;
