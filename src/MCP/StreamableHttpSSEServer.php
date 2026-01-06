@@ -18,6 +18,8 @@ class StreamableHttpSSEServer
 {
     private string $booksDir;
     private array $sseConnections = []; // session_id => connection
+    private array $sessions = []; // 会话数据存储 (持久化)
+    private string $sessionsFile; // 会话持久化文件路径
     private StreamableHttpServer $httpServer;
     
     private const CORS_HEADERS = [
@@ -30,7 +32,50 @@ class StreamableHttpSSEServer
     public function __construct(string $booksDir)
     {
         $this->booksDir = $booksDir;
+        $this->sessionsFile = $booksDir . '/.mcp_sse_sessions.json';
         $this->httpServer = new StreamableHttpServer($booksDir, true); // 启用调试日志
+        
+        // 从文件加载持久化的会话
+        $this->loadSessions();
+    }
+    
+    /**
+     * 从文件加载会话
+     */
+    private function loadSessions(): void
+    {
+        if (file_exists($this->sessionsFile)) {
+            $data = file_get_contents($this->sessionsFile);
+            $sessions = json_decode($data, true);
+            
+            if (is_array($sessions)) {
+                // 过滤掉过期的会话（超过 24 小时）
+                $now = time();
+                foreach ($sessions as $id => $session) {
+                    $lastAccessAt = $session['lastAccessAt'] ?? $session['createdAt'] ?? 0;
+                    
+                    // 如果会话在 24 小时内活跃过，保留它
+                    if (($now - $lastAccessAt) < 86400) {
+                        $this->sessions[$id] = $session;
+                    }
+                }
+                
+                $this->log('INFO', '[SSE] Loaded sessions from file', [
+                    'total' => count($sessions),
+                    'active' => count($this->sessions),
+                    'file' => $this->sessionsFile,
+                ]);
+            }
+        }
+    }
+    
+    /**
+     * 保存会话到文件
+     */
+    private function saveSessions(): void
+    {
+        $data = json_encode($this->sessions, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        file_put_contents($this->sessionsFile, $data, LOCK_EX);
     }
     
     /**
@@ -108,8 +153,34 @@ class StreamableHttpSSEServer
      */
     private function handleSSEConnection(TcpConnection $connection, Request $request): void
     {
-        // 生成 session ID
-        $sessionId = bin2hex(random_bytes(16));
+        // 检查是否有客户端传来的 session ID（用于会话恢复）
+        $existingSessionId = $request->header('Mcp-Session-Id') ?? $request->get('session_id');
+        
+        // 如果客户端提供了 session ID 且该会话存在于持久化存储中，则恢复会话
+        if ($existingSessionId && isset($this->sessions[$existingSessionId])) {
+            $sessionId = $existingSessionId;
+            $this->log('INFO', "[SSE] Restoring existing session", ['sessionId' => $sessionId]);
+            
+            // 更新最后访问时间
+            $this->sessions[$sessionId]['lastAccessAt'] = time();
+            $this->sessions[$sessionId]['restored'] = true;
+            $this->saveSessions();
+        } else {
+            // 生成新的 session ID
+            $sessionId = bin2hex(random_bytes(16));
+            
+            // 创建新会话并持久化
+            $this->sessions[$sessionId] = [
+                'createdAt' => time(),
+                'lastAccessAt' => time(),
+                'clientInfo' => [],
+                'selectedBook' => null,
+                'restored' => false,
+            ];
+            $this->saveSessions();
+            
+            $this->log('INFO', "[SSE] Created new session", ['sessionId' => $sessionId]);
+        }
         
         // SSE 响应头
         $headers = array_merge(self::CORS_HEADERS, [
@@ -121,15 +192,16 @@ class StreamableHttpSSEServer
         
         $connection->send(new Response(200, $headers, ''));
         
-        // 保存连接
+        // 保存连接（内存中，不持久化）
         $this->sseConnections[$sessionId] = $connection;
         
         // 发送 endpoint 事件（告诉客户端消息端点）
         $this->sendSSE($connection, 'endpoint', "/message?session_id={$sessionId}");
         
-        // 处理连接关闭
+        // 处理连接关闭 - 只删除内存中的连接，保留持久化的会话数据
         $connection->onClose = function() use ($sessionId) {
             unset($this->sseConnections[$sessionId]);
+            $this->log('INFO', "[SSE] Connection closed, session data preserved", ['sessionId' => $sessionId]);
         };
     }
     
