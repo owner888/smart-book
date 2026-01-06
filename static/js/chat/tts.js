@@ -135,10 +135,6 @@ const ChatTTS = {
                 this.currentButton = null;
                 this.currentMessageId = null;
                 this.updateButtonState(button, false);
-                // 显示消耗信息
-                if (data.charCount !== undefined) {
-                    this.showCostInfo(button, data.voice || 'auto', data.charCount, data.costFormatted || '<$0.01');
-                }
             };
             
             audio.onerror = (e) => {
