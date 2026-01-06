@@ -41,8 +41,33 @@ class StreamableHttpServer
     // 服务器信息
     private const SERVER_INFO = [
         'name' => 'smart-book',
+        'title' => 'Smart Book AI Server',
         'version' => '1.0.0',
+        'description' => 'An MCP server for intelligent book reading and analysis with RAG-based Q&A, semantic search, and content analysis',
+        'websiteUrl' => 'https://github.com/your-repo/smart-book',
     ];
+    
+    // 服务器使用说明（返回给客户端）
+    private const SERVER_INSTRUCTIONS = <<<'INSTRUCTIONS'
+Smart Book AI Server 使用指南：
+
+1. **列出书籍**: 使用 `list_books` 工具查看所有可用书籍
+2. **选择书籍**: 使用 `select_book` 工具选择要操作的书籍
+3. **搜索内容**: 使用 `search_book` 工具在书籍中搜索相关内容
+4. **获取信息**: 使用 `get_book_info` 工具获取当前书籍的详细信息
+
+**提示词模板**:
+- `book_qa`: 基于书籍内容回答问题
+- `book_summary`: 生成书籍或章节摘要
+- `character_analysis`: 分析书籍中的人物
+- `theme_analysis`: 分析书籍主题
+- `quote_finder`: 查找相关名句
+
+**资源**:
+- `book://library/list`: 书籍列表
+- `book://current/metadata`: 当前书籍元数据
+- `book://current/toc`: 当前书籍目录
+INSTRUCTIONS;
     
     // 支持的协议版本 (Cline 3.46.1 使用 2025-11-25)
     private const PROTOCOL_VERSION = '2025-03-26';
@@ -335,6 +360,7 @@ class StreamableHttpServer
                 'logging/setLevel' => $this->handleLoggingSetLevel($params, $sessionId),
                 'prompts/list' => $this->handlePromptsList(),
                 'prompts/get' => $this->handlePromptsGet($params, $sessionId),
+                'completion/complete' => $this->handleCompletionComplete($params, $sessionId),
                 default => throw new \Exception("Method not found: {$method}"),
             };
             
@@ -409,6 +435,7 @@ class StreamableHttpServer
             'protocolVersion' => self::PROTOCOL_VERSION,
             'serverInfo' => self::SERVER_INFO,
             'capabilities' => $this->getCapabilities(),
+            'instructions' => self::SERVER_INSTRUCTIONS,
         ];
     }
     
@@ -476,6 +503,10 @@ class StreamableHttpServer
             'prompts' => [
                 'listChanged' => false,  // 提示词模板列表不动态变化
             ],
+            
+            // 自动完成能力：为 prompts 和 resources 的参数提供补全建议
+            // @see https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/completion
+            'completions' => new \stdClass(),
             
             // 实验性能力：描述非标准的实验性功能
             // @see https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle#capability-negotiation
@@ -1279,6 +1310,133 @@ class StreamableHttpServer
                 ],
             ],
         ];
+    }
+    
+    /**
+     * 处理 completion/complete 请求
+     * 为 prompts 和 resources 的参数提供自动完成建议
+     * 
+     * @see https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/completion
+     */
+    private function handleCompletionComplete(array $params, ?string $sessionId): array
+    {
+        $ref = $params['ref'] ?? [];
+        $argument = $params['argument'] ?? [];
+        $context = $params['context'] ?? [];
+        
+        $refType = $ref['type'] ?? '';
+        $argName = $argument['name'] ?? '';
+        $argValue = $argument['value'] ?? '';
+        
+        $values = [];
+        $total = 0;
+        $hasMore = false;
+        
+        // 根据引用类型提供不同的补全建议
+        if ($refType === 'ref/prompt') {
+            $promptName = $ref['name'] ?? '';
+            $values = $this->getPromptArgumentCompletions($promptName, $argName, $argValue, $sessionId);
+        } elseif ($refType === 'ref/resource') {
+            $uri = $ref['uri'] ?? '';
+            $values = $this->getResourceArgumentCompletions($uri, $argName, $argValue, $sessionId);
+        }
+        
+        // 限制返回数量（最多 100 个）
+        $total = count($values);
+        if ($total > 100) {
+            $values = array_slice($values, 0, 100);
+            $hasMore = true;
+        }
+        
+        return [
+            'completion' => [
+                'values' => $values,
+                'total' => $total,
+                'hasMore' => $hasMore,
+            ],
+        ];
+    }
+    
+    /**
+     * 获取 prompt 参数的补全建议
+     */
+    private function getPromptArgumentCompletions(string $promptName, string $argName, string $argValue, ?string $sessionId): array
+    {
+        $session = $sessionId ? ($this->sessions[$sessionId] ?? null) : null;
+        $selectedBook = $session['selectedBook'] ?? $this->autoSelectBook();
+        
+        // 根据不同的 prompt 和参数提供补全
+        switch ($promptName) {
+            case 'book_qa':
+                if ($argName === 'question') {
+                    // 提供常见问题模板
+                    $templates = [
+                        '这本书的主要内容是什么？',
+                        '主人公是谁？有什么特点？',
+                        '故事发生在什么时代背景下？',
+                        '作者想表达什么主题？',
+                        '书中有哪些重要的人物关系？',
+                    ];
+                    return $this->filterCompletions($templates, $argValue);
+                }
+                break;
+                
+            case 'book_summary':
+                if ($argName === 'chapter' && $selectedBook) {
+                    // 从书籍目录获取章节列表
+                    $ext = strtolower(pathinfo($selectedBook['file'], PATHINFO_EXTENSION));
+                    if ($ext === 'epub') {
+                        try {
+                            $toc = \SmartBook\Parser\EpubParser::extractToc($selectedBook['path']);
+                            $chapters = array_column($toc, 'title');
+                            return $this->filterCompletions($chapters, $argValue);
+                        } catch (\Exception $e) {}
+                    }
+                }
+                break;
+                
+            case 'character_analysis':
+                if ($argName === 'character' && $selectedBook) {
+                    // 可以从索引中提取常见人名（这里提供一些通用建议）
+                    $commonCharacters = ['主人公', '主角', '反派', '配角'];
+                    return $this->filterCompletions($commonCharacters, $argValue);
+                }
+                break;
+                
+            case 'quote_finder':
+                if ($argName === 'topic') {
+                    // 提供常见主题建议
+                    $topics = ['爱情', '友情', '人生', '命运', '勇气', '智慧', '成长', '梦想', '自由', '正义'];
+                    return $this->filterCompletions($topics, $argValue);
+                }
+                break;
+        }
+        
+        return [];
+    }
+    
+    /**
+     * 获取 resource 参数的补全建议
+     */
+    private function getResourceArgumentCompletions(string $uri, string $argName, string $argValue, ?string $sessionId): array
+    {
+        // 目前资源没有参数需要补全
+        return [];
+    }
+    
+    /**
+     * 根据当前输入过滤补全建议（模糊匹配）
+     */
+    private function filterCompletions(array $values, string $input): array
+    {
+        if (empty($input)) {
+            return $values;
+        }
+        
+        $input = mb_strtolower($input);
+        return array_values(array_filter($values, function ($value) use ($input) {
+            return str_contains(mb_strtolower($value), $input);
+        }));
     }
     
     /**
