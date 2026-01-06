@@ -1285,8 +1285,8 @@ INSTRUCTIONS;
      */
     private function toolTestLongTask(array $args, ?string $sessionId): array
     {
-        $duration = min(10, max(1, $args['duration'] ?? 3));  // 限制 1-10 秒
-        $steps = min(10, max(1, $args['steps'] ?? 5));        // 限制 1-10 步
+        $duration = min(60, max(1, $args['duration'] ?? 3));  // 限制 1-60 秒
+        $steps = min(60, max(1, $args['steps'] ?? 5));        // 限制 1-60 步
         
         // 创建任务
         $taskId = $this->createTask('test_long_task', [
