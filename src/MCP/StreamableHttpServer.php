@@ -333,8 +333,8 @@ class StreamableHttpServer
                 'resources/templates/list' => ['resourceTemplates' => []],
                 'resources/read' => $this->handleResourcesRead($params, $sessionId),
                 'logging/setLevel' => $this->handleLoggingSetLevel($params, $sessionId),
-                'prompts/list' => ['prompts' => []],
-                'prompts/get' => throw new \Exception('Prompt not found'),
+                'prompts/list' => $this->handlePromptsList(),
+                'prompts/get' => $this->handlePromptsGet($params, $sessionId),
                 default => throw new \Exception("Method not found: {$method}"),
             };
             
@@ -471,10 +471,13 @@ class StreamableHttpServer
             // @see https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/logging
             'logging' => new \stdClass(),
             
+            // 提示词能力：支持提供预定义的提示词模板
+            // @see https://modelcontextprotocol.io/specification/2025-11-25/server/prompts
+            'prompts' => [
+                'listChanged' => false,  // 提示词模板列表不动态变化
+            ],
+            
             // 以下能力暂未实现，保留注释供将来参考
-            // 'prompts' => [
-            //     'listChanged' => false,  // 提示词模板列表不变化
-            // ],
             // 'experimental' => [
             //     'customFeature' => true,
             // ],
@@ -1063,6 +1066,198 @@ class StreamableHttpServer
                         'chapters' => count($toc),
                         'toc' => $toc,
                     ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
+                ],
+            ],
+        ];
+    }
+    
+    /**
+     * 处理 prompts/list 请求
+     * @see https://modelcontextprotocol.io/specification/2025-11-25/server/prompts
+     */
+    private function handlePromptsList(): array
+    {
+        return [
+            'prompts' => [
+                [
+                    'name' => 'book_qa',
+                    'title' => '书籍问答',
+                    'description' => '基于当前书籍内容回答问题，使用 RAG 检索相关段落',
+                    'arguments' => [
+                        [
+                            'name' => 'question',
+                            'description' => '要询问的问题',
+                            'required' => true,
+                        ],
+                    ],
+                ],
+                [
+                    'name' => 'book_summary',
+                    'title' => '内容摘要',
+                    'description' => '为当前书籍或指定章节生成摘要',
+                    'arguments' => [
+                        [
+                            'name' => 'chapter',
+                            'description' => '章节名称（可选，不填则摘要整本书）',
+                            'required' => false,
+                        ],
+                    ],
+                ],
+                [
+                    'name' => 'character_analysis',
+                    'title' => '人物分析',
+                    'description' => '分析书籍中的人物特点、关系和发展',
+                    'arguments' => [
+                        [
+                            'name' => 'character',
+                            'description' => '人物名称',
+                            'required' => true,
+                        ],
+                    ],
+                ],
+                [
+                    'name' => 'theme_analysis',
+                    'title' => '主题分析',
+                    'description' => '分析书籍的主题、思想和文学价值',
+                    'arguments' => [],
+                ],
+                [
+                    'name' => 'quote_finder',
+                    'title' => '名句查找',
+                    'description' => '在书籍中查找与主题相关的名句或经典段落',
+                    'arguments' => [
+                        [
+                            'name' => 'topic',
+                            'description' => '主题关键词',
+                            'required' => true,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+    
+    /**
+     * 处理 prompts/get 请求
+     * @see https://modelcontextprotocol.io/specification/2025-11-25/server/prompts
+     */
+    private function handlePromptsGet(array $params, ?string $sessionId): array
+    {
+        $name = $params['name'] ?? '';
+        $arguments = $params['arguments'] ?? [];
+        
+        if (empty($name)) {
+            throw new \Exception('Missing prompt name');
+        }
+        
+        // 获取当前书籍信息
+        $session = $sessionId ? ($this->sessions[$sessionId] ?? null) : null;
+        $selectedBook = $session['selectedBook'] ?? $this->autoSelectBook();
+        $bookName = $selectedBook ? pathinfo($selectedBook['file'], PATHINFO_FILENAME) : '未选择书籍';
+        
+        return match ($name) {
+            'book_qa' => $this->promptBookQA($arguments, $bookName),
+            'book_summary' => $this->promptBookSummary($arguments, $bookName),
+            'character_analysis' => $this->promptCharacterAnalysis($arguments, $bookName),
+            'theme_analysis' => $this->promptThemeAnalysis($bookName),
+            'quote_finder' => $this->promptQuoteFinder($arguments, $bookName),
+            default => throw new \Exception("Prompt not found: {$name}"),
+        };
+    }
+    
+    private function promptBookQA(array $args, string $bookName): array
+    {
+        $question = $args['question'] ?? '';
+        if (empty($question)) {
+            throw new \Exception('Missing required argument: question');
+        }
+        
+        return [
+            'description' => "基于《{$bookName}》回答问题",
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => [
+                        'type' => 'text',
+                        'text' => "请根据《{$bookName}》的内容回答以下问题：\n\n{$question}\n\n请先使用 search_book 工具搜索相关内容，然后基于搜索结果给出准确的回答。",
+                    ],
+                ],
+            ],
+        ];
+    }
+    
+    private function promptBookSummary(array $args, string $bookName): array
+    {
+        $chapter = $args['chapter'] ?? '';
+        $target = $chapter ? "《{$bookName}》中的「{$chapter}」章节" : "《{$bookName}》";
+        
+        return [
+            'description' => "生成{$target}的摘要",
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => [
+                        'type' => 'text',
+                        'text' => "请为{$target}生成一份内容摘要，包括：\n1. 主要情节概述\n2. 关键人物介绍\n3. 重要事件时间线\n4. 核心主题\n\n" . ($chapter ? "请先使用 search_book 工具搜索「{$chapter}」相关内容。" : "请先使用 get_book_info 获取书籍信息。"),
+                    ],
+                ],
+            ],
+        ];
+    }
+    
+    private function promptCharacterAnalysis(array $args, string $bookName): array
+    {
+        $character = $args['character'] ?? '';
+        if (empty($character)) {
+            throw new \Exception('Missing required argument: character');
+        }
+        
+        return [
+            'description' => "分析《{$bookName}》中的人物：{$character}",
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => [
+                        'type' => 'text',
+                        'text' => "请分析《{$bookName}》中「{$character}」这个人物，包括：\n1. 人物背景和身份\n2. 性格特点\n3. 主要经历和成长\n4. 与其他人物的关系\n5. 在故事中的作用\n\n请先使用 search_book 工具搜索「{$character}」相关内容。",
+                    ],
+                ],
+            ],
+        ];
+    }
+    
+    private function promptThemeAnalysis(string $bookName): array
+    {
+        return [
+            'description' => "分析《{$bookName}》的主题",
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => [
+                        'type' => 'text',
+                        'text' => "请分析《{$bookName}》的文学主题和思想内涵，包括：\n1. 核心主题\n2. 思想意义\n3. 文学价值\n4. 时代背景与现实意义\n\n请先使用 get_book_info 和 search_book 工具获取相关信息。",
+                    ],
+                ],
+            ],
+        ];
+    }
+    
+    private function promptQuoteFinder(array $args, string $bookName): array
+    {
+        $topic = $args['topic'] ?? '';
+        if (empty($topic)) {
+            throw new \Exception('Missing required argument: topic');
+        }
+        
+        return [
+            'description' => "在《{$bookName}》中查找关于「{$topic}」的名句",
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => [
+                        'type' => 'text',
+                        'text' => "请在《{$bookName}》中查找与「{$topic}」相关的名句或经典段落。\n\n请使用 search_book 工具搜索「{$topic}」，然后：\n1. 列出最相关的 3-5 个经典句子或段落\n2. 解释每句话的含义和出处\n3. 分析其文学价值",
+                    ],
                 ],
             ],
         ];
