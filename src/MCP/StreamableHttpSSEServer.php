@@ -13,14 +13,19 @@ namespace SmartBook\MCP;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
+use Workerman\Timer;
 
 class StreamableHttpSSEServer
 {
     private string $booksDir;
     private array $sseConnections = []; // session_id => connection
+    private array $sseTimers = []; // session_id => timer_id (心跳定时器)
     private array $sessions = []; // 会话数据存储 (持久化)
     private string $sessionsFile; // 会话持久化文件路径
     private StreamableHttpServer $httpServer;
+    
+    // 心跳间隔（秒）- 每 15 秒发送一次心跳
+    private const HEARTBEAT_INTERVAL = 15;
     
     private const CORS_HEADERS = [
         'Access-Control-Allow-Origin' => '*',
@@ -198,8 +203,34 @@ class StreamableHttpSSEServer
         // 发送 endpoint 事件（告诉客户端消息端点）
         $this->sendSSE($connection, 'endpoint', "/message?session_id={$sessionId}");
         
-        // 处理连接关闭 - 只删除内存中的连接，保留持久化的会话数据
+        // 启动心跳定时器 - 每隔 HEARTBEAT_INTERVAL 秒发送一次心跳
+        $timerId = Timer::add(self::HEARTBEAT_INTERVAL, function() use ($sessionId, $connection) {
+            // 检查连接是否仍然有效
+            if (!isset($this->sseConnections[$sessionId])) {
+                return;
+            }
+            
+            // 发送 SSE 心跳注释（: ping）
+            // SSE 规范中以冒号开头的行是注释，不会被解析为事件，但会保持连接活跃
+            $heartbeat = ": ping " . time() . "\n\n";
+            try {
+                $connection->send($heartbeat);
+            } catch (\Exception $e) {
+                $this->log('WARN', "[SSE] Heartbeat failed", ['sessionId' => $sessionId, 'error' => $e->getMessage()]);
+            }
+        });
+        
+        // 保存定时器 ID
+        $this->sseTimers[$sessionId] = $timerId;
+        
+        // 处理连接关闭 - 清理定时器和连接，保留持久化的会话数据
         $connection->onClose = function() use ($sessionId) {
+            // 停止心跳定时器
+            if (isset($this->sseTimers[$sessionId])) {
+                Timer::del($this->sseTimers[$sessionId]);
+                unset($this->sseTimers[$sessionId]);
+            }
+            
             unset($this->sseConnections[$sessionId]);
             $this->log('INFO', "[SSE] Connection closed, session data preserved", ['sessionId' => $sessionId]);
         };
