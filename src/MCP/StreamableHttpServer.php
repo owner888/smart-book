@@ -24,6 +24,19 @@ class StreamableHttpServer
     private array $sessions = [];
     private bool $debug = false; // 启用调试日志
     private string $sessionsFile; // session 持久化文件路径
+    private string $logLevel = 'info'; // 当前日志级别
+    
+    // 日志级别优先级（RFC 5424）
+    private const LOG_LEVELS = [
+        'debug' => 0,
+        'info' => 1,
+        'notice' => 2,
+        'warning' => 3,
+        'error' => 4,
+        'critical' => 5,
+        'alert' => 6,
+        'emergency' => 7,
+    ];
     
     // 服务器信息
     private const SERVER_INFO = [
@@ -319,6 +332,7 @@ class StreamableHttpServer
                 'resources/list' => $this->handleResourcesList($sessionId),
                 'resources/templates/list' => ['resourceTemplates' => []],
                 'resources/read' => $this->handleResourcesRead($params, $sessionId),
+                'logging/setLevel' => $this->handleLoggingSetLevel($params, $sessionId),
                 'prompts/list' => ['prompts' => []],
                 'prompts/get' => throw new \Exception('Prompt not found'),
                 default => throw new \Exception("Method not found: {$method}"),
@@ -453,11 +467,14 @@ class StreamableHttpServer
                 'listChanged' => false,   // 资源列表可能变化（选择不同书籍时）
             ],
             
+            // 日志能力：支持发送日志消息给客户端
+            // @see https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/logging
+            'logging' => new \stdClass(),
+            
             // 以下能力暂未实现，保留注释供将来参考
             // 'prompts' => [
             //     'listChanged' => false,  // 提示词模板列表不变化
             // ],
-            // 'logging' => new \stdClass(),  // 支持日志记录
             // 'experimental' => [
             //     'customFeature' => true,
             // ],
@@ -747,6 +764,80 @@ class StreamableHttpServer
     private function createSession(): string
     {
         return bin2hex(random_bytes(16));
+    }
+    
+    /**
+     * 处理 logging/setLevel 请求
+     * 
+     * 设置服务器向客户端发送日志的最低级别
+     * @see https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/logging
+     */
+    /**
+     * 处理 logging/setLevel 请求
+     * 
+     * 设置服务器向客户端发送日志的最低级别
+     * @see https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/logging
+     * 
+     * @return \stdClass 返回空对象表示成功
+     */
+    private function handleLoggingSetLevel(array $params, ?string $sessionId): \stdClass
+    {
+        $level = $params['level'] ?? 'info';
+        
+        // 验证日志级别
+        if (!isset(self::LOG_LEVELS[$level])) {
+            throw new \InvalidArgumentException("Invalid log level: {$level}. Valid levels: " . implode(', ', array_keys(self::LOG_LEVELS)));
+        }
+        
+        // 保存到会话
+        if ($sessionId && isset($this->sessions[$sessionId])) {
+            $this->sessions[$sessionId]['logLevel'] = $level;
+        }
+        
+        // 更新全局日志级别
+        $this->logLevel = $level;
+        
+        $this->log('INFO', "Log level set to: {$level}", ['sessionId' => $sessionId]);
+        
+        return new \stdClass(); // 返回空对象表示成功
+    }
+    
+    /**
+     * 创建 MCP 日志通知消息
+     * 
+     * 用于向客户端发送日志消息（通过 notifications/message）
+     * 注意：由于 HTTP 是无状态的，这主要用于在响应中附加日志
+     * 
+     * @param string $level 日志级别 (debug, info, notice, warning, error, critical, alert, emergency)
+     * @param string $logger 日志来源名称（可选）
+     * @param mixed $data 日志数据
+     * @return array|null 如果级别够高则返回通知消息，否则返回 null
+     */
+    public function createLogNotification(string $level, mixed $data, ?string $logger = null): ?array
+    {
+        // 检查日志级别是否足够
+        if (!isset(self::LOG_LEVELS[$level])) {
+            $level = 'info';
+        }
+        
+        if (self::LOG_LEVELS[$level] < self::LOG_LEVELS[$this->logLevel]) {
+            return null; // 级别不够，不发送
+        }
+        
+        $notification = [
+            'jsonrpc' => '2.0',
+            'method' => 'notifications/message',
+            'params' => [
+                'level' => $level,
+                'data' => $data,
+            ],
+        ];
+        
+        if ($logger !== null) {
+            $notification['params']['logger'] = $logger;
+        }
+        
+        return $notification;
     }
     
     /**
