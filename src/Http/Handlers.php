@@ -1205,3 +1205,43 @@ function handleMCPRequest(TcpConnection $connection, Request $request): void
     $server = getMCPServer();
     $server->handleRequest($connection, $request);
 }
+
+// ===================================
+// TCP 手动 HTTP 解析（支持 SSE 长连接）
+// ===================================
+
+/**
+ * 从原始 TCP 数据解析 HTTP 请求
+ * 
+ * 这允许我们使用 TCP 协议而不是 HTTP 协议来处理 MCP 端点，
+ * 从而支持 SSE 长连接（HTTP 协议会在响应后自动关闭连接）
+ * 
+ * @param string $data 原始 TCP 数据
+ * @param TcpConnection $connection TCP 连接
+ * @return Request|null 解析后的 HTTP 请求，解析失败返回 null
+ */
+function parseHttpRequest(string $data, TcpConnection $connection): ?Request
+{
+    // 检查数据是否完整（使用 Workerman 的 HTTP 协议检测）
+    $inputLength = \Workerman\Protocols\Http::input($data, $connection);
+    
+    if ($inputLength === 0) {
+        // 数据不完整，等待更多数据
+        return null;
+    }
+    
+    if ($inputLength < 0) {
+        // 解析错误，关闭连接
+        $connection->close("HTTP/1.1 400 Bad Request\r\n\r\n");
+        return null;
+    }
+    
+    // 解析 HTTP 请求
+    try {
+        $request = \Workerman\Protocols\Http::decode($data, $connection);
+        return $request;
+    } catch (\Exception $e) {
+        $connection->close("HTTP/1.1 400 Bad Request\r\n\r\nParse error: " . $e->getMessage());
+        return null;
+    }
+}

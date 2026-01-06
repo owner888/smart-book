@@ -259,11 +259,23 @@ INSTRUCTIONS;
     {
         $method = $request->method();
         
-        // GET 请求：根据 MCP Streamable HTTP 规范，如果服务器不需要 SSE 推送功能，
-        // 应返回 405 Method Not Allowed，告诉客户端只使用 POST 进行通信。
-        // 这可以避免客户端不断尝试建立 SSE 连接。
+        // GET 请求：建立 SSE 连接（如果客户端请求 text/event-stream）
+        // 根据 MCP Streamable HTTP 规范（2025-03-26）：
+        // - GET 请求用于服务器主动向客户端推送 JSON-RPC 消息（如进度通知、日志）
+        // - 如果服务器不支持 SSE 推送，应返回 405 Method Not Allowed
+        // - SSE 流用于发送 JSON-RPC 消息，不是 endpoint 事件（那是旧版本规范）
+        // 
+        // 注意：使用 TCP 协议代替 HTTP 协议，避免 Workerman 自动关闭连接
         if ($method === 'GET') {
-            $this->log('DEBUG', '[SSE] GET request received, returning 405 (SSE not required)');
+            $accept = $request->header('Accept', '');
+            
+            if (str_contains($accept, 'text/event-stream')) {
+                $this->log('DEBUG', '[SSE] GET request received, establishing SSE connection');
+                $this->handleSSEConnection($connection, $request);
+                return;
+            }
+            
+            // 客户端不接受 event-stream，返回 405
             $connection->send(new Response(405, array_merge(self::CORS_HEADERS, [
                 'Allow' => 'POST, DELETE, OPTIONS',
             ]), ''));
@@ -356,10 +368,13 @@ INSTRUCTIONS;
         
         // 发送 SSE 响应头 - 注意：需要直接发送 HTTP 头而不是使用 Response 对象
         // 因为 Response 对象在 body 为空时可能不正确处理 Content-Type
+        // 关键：使用 Transfer-Encoding: chunked 来保持连接，否则客户端会认为响应结束
         $httpHeader = "HTTP/1.1 200 OK\r\n";
         $httpHeader .= "Content-Type: text/event-stream\r\n";
         $httpHeader .= "Cache-Control: no-cache\r\n";
         $httpHeader .= "Connection: keep-alive\r\n";
+        $httpHeader .= "Transfer-Encoding: chunked\r\n";  // 关键：分块传输，让客户端知道响应是流式的
+        $httpHeader .= "X-Accel-Buffering: no\r\n";      // 禁用 nginx 缓冲（如果有代理）
         $httpHeader .= "Access-Control-Allow-Origin: *\r\n";
         $httpHeader .= "Access-Control-Expose-Headers: Mcp-Session-Id\r\n";
         $httpHeader .= "Mcp-Session-Id: {$sessionId}\r\n";
@@ -382,24 +397,24 @@ INSTRUCTIONS;
             'activeConnections' => count($this->sseConnections),
         ]);
         
-        // 发送 endpoint 事件（告诉客户端 POST 端点）
-        $endpoint = "/mcp?session_id={$sessionId}";
-        $this->sendSSEEvent($connection, 'endpoint', $endpoint);
+        // 注意：Streamable HTTP 协议不需要发送 endpoint 事件
+        // endpoint 事件是 SSE 传输类型的规范，不是 Streamable HTTP
+        // Streamable HTTP 的 SSE 只用于接收服务器推送的 JSON-RPC 消息
         
-        $this->log('INFO', '📨 [SSE] Sent endpoint event', [
-            'sessionId' => $sessionId,
-            'event' => 'endpoint',
-            'data' => $endpoint,
-        ]);
+        // 立即发送心跳，让客户端知道连接是活跃的
+        // 使用 chunked 编码格式发送数据
+        $this->sendChunkedData($connection, ": heartbeat " . time() . "\n\n");
         
-        // 启动心跳定时器
+        $this->log('DEBUG', '💓 [SSE] Initial heartbeat sent', ['sessionId' => $sessionId]);
+        
+        // 启动心跳定时器（更短的间隔以保持连接活跃）
         $timerId = Timer::add(self::HEARTBEAT_INTERVAL, function() use ($sessionId, $connection) {
             if (!isset($this->sseConnections[$sessionId])) {
                 return;
             }
             try {
-                // 发送 SSE 心跳注释
-                $connection->send(": heartbeat " . time() . "\n\n");
+                // 发送 SSE 心跳注释（chunked 格式）
+                $this->sendChunkedData($connection, ": heartbeat " . time() . "\n\n");
                 $this->log('DEBUG', '💓 [SSE] Heartbeat sent', ['sessionId' => $sessionId, 'timestamp' => time()]);
             } catch (\Exception $e) {
                 $this->log('WARN', '⚠️ [SSE] Heartbeat failed', [
@@ -449,12 +464,24 @@ INSTRUCTIONS;
     }
     
     /**
+     * 发送 chunked 编码的数据
+     * HTTP chunked transfer encoding 格式：
+     * <size in hex>\r\n
+     * <data>\r\n
+     */
+    private function sendChunkedData(TcpConnection $connection, string $data): void
+    {
+        $size = dechex(strlen($data));
+        $connection->send("{$size}\r\n{$data}\r\n");
+    }
+    
+    /**
      * 发送 SSE 事件
      */
     private function sendSSEEvent(TcpConnection $connection, string $event, string $data): void
     {
         $message = "event: {$event}\ndata: {$data}\n\n";
-        $connection->send($message);
+        $this->sendChunkedData($connection, $message);
     }
     
     /**

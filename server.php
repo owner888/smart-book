@@ -72,15 +72,22 @@ $wsWorker->onMessage = function (TcpConnection $connection, $data) {
 $wsWorker->onClose = fn($conn) => null;
 
 // ===================================
-// MCP Server (Streamable HTTP 协议)
+// MCP Server (Streamable HTTP 协议 + SSE 支持)
 // ===================================
 
-$mcpWorker = new Worker('http://0.0.0.0:8089');
+// 使用 TCP 协议以支持 SSE 长连接
+// HTTP 协议会在响应后自动关闭连接，不适合 SSE
+$mcpWorker = new Worker('tcp://0.0.0.0:8089');
 $mcpWorker->count = 1;
 $mcpWorker->name = 'MCP-Server';
 
-$mcpWorker->onMessage = function (TcpConnection $connection, Request $request) {
-    handleMCPRequest($connection, $request);
+// 手动处理 HTTP/SSE 请求
+$mcpWorker->onMessage = function (TcpConnection $connection, string $data) {
+    // 解析 HTTP 请求
+    $request = parseHttpRequest($data, $connection);
+    if ($request) {
+        handleMCPRequest($connection, $request);
+    }
 };
 
 // ===================================
