@@ -452,6 +452,14 @@ function copyMessage(buttonOrText) {
         return;
     }
     
+    // 过滤工具调用信息
+    text = text
+        .replace(/^>\s*🔧.*$/gm, '')
+        .replace(/^>\s*✅.*$/gm, '')
+        .replace(/^>\s*❌.*$/gm, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    
     navigator.clipboard.writeText(text).then(() => {
         layer.msg('✅ 已复制到剪贴板');
     }).catch(err => {
