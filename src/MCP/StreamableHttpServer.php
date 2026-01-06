@@ -2,14 +2,16 @@
 /**
  * MCP Streamable HTTP Server
  * 
- * 实现 MCP 2025-11-25 Streamable HTTP Transport 协议
- * 参考: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
+ * 实现 MCP 2025-03-26 Streamable HTTP Transport 协议
+ * 参考: https://modelcontextprotocol.io/specification/2025-03-26/basic/transports
  * 
  * 特点：
- * - 单一 POST 端点处理所有 JSON-RPC 请求
+ * - POST /mcp: JSON-RPC 请求端点
+ * - GET /mcp (Accept: text/event-stream): 建立 SSE 连接
+ * - DELETE /mcp: 终止会话
  * - 支持会话管理 (Mcp-Session-Id header)
  * - 支持批量请求
- * - 不使用 SSE，使用标准 HTTP 响应
+ * - SSE 用于服务器推送通知（进度、日志等）
  */
 
 namespace SmartBook\MCP;
@@ -17,6 +19,7 @@ namespace SmartBook\MCP;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
+use Workerman\Timer;
 
 class StreamableHttpServer
 {
@@ -28,6 +31,9 @@ class StreamableHttpServer
     private array $tasks = []; // 任务存储
     private int $taskIdCounter = 0; // 任务 ID 计数器
     private string $tasksFile; // 任务持久化文件路径
+    
+    // SSE 连接存储 (session_id => connection)
+    private array $sseConnections = [];
     
     // 日志级别优先级（RFC 5424）
     private const LOG_LEVELS = [
@@ -253,10 +259,11 @@ INSTRUCTIONS;
     {
         $method = $request->method();
         
-        // GET 请求：返回 405 表示不支持 SSE 流
-        // MCP SDK 会发送 GET 请求检查是否支持 SSE 流
-        // 返回 405 告诉 SDK 只支持 POST 请求的 JSON 响应
+        // GET 请求：根据 MCP Streamable HTTP 规范，如果服务器不需要 SSE 推送功能，
+        // 应返回 405 Method Not Allowed，告诉客户端只使用 POST 进行通信。
+        // 这可以避免客户端不断尝试建立 SSE 连接。
         if ($method === 'GET') {
+            $this->log('DEBUG', '[SSE] GET request received, returning 405 (SSE not required)');
             $connection->send(new Response(405, array_merge(self::CORS_HEADERS, [
                 'Allow' => 'POST, DELETE, OPTIONS',
             ]), ''));
@@ -285,6 +292,228 @@ INSTRUCTIONS;
             'error' => 'Method Not Allowed',
         ], 405);
     }
+    
+    // ==================== SSE Methods ====================
+    
+    // SSE 心跳定时器存储 (session_id => timer_id)
+    private array $sseTimers = [];
+    
+    // 心跳间隔（秒）
+    private const HEARTBEAT_INTERVAL = 15;
+    
+    /**
+     * 处理 SSE 连接请求（GET /mcp with Accept: text/event-stream）
+     * 
+     * 根据 MCP Streamable HTTP 规范，SSE 流用于：
+     * - 服务器主动推送通知（如进度、日志、资源变更）
+     * - 长任务的结果推送
+     */
+    private function handleSSEConnection(TcpConnection $connection, Request $request): void
+    {
+        $clientIp = $connection->getRemoteIp() ?? 'unknown';
+        $clientPort = $connection->getRemotePort() ?? 0;
+        $userAgent = $request->header('User-Agent', 'unknown');
+        $acceptHeader = $request->header('Accept', '');
+        
+        $this->log('INFO', '🔌 [SSE] Connection request received', [
+            'client' => "{$clientIp}:{$clientPort}",
+            'userAgent' => $userAgent,
+            'accept' => $acceptHeader,
+        ]);
+        
+        $sessionId = $request->header('Mcp-Session-Id') ?? $request->get('session_id');
+        $isNewSession = false;
+        
+        // 如果有现有会话，使用它；否则创建新会话
+        if (!$sessionId || !isset($this->sessions[$sessionId])) {
+            $isNewSession = true;
+            $oldSessionId = $sessionId;
+            $sessionId = $this->createSession();
+            $this->sessions[$sessionId] = [
+                'clientInfo' => [],
+                'protocolVersion' => self::PROTOCOL_VERSION,
+                'capabilities' => [],
+                'createdAt' => time(),
+                'lastAccessAt' => time(),
+                'selectedBook' => null,
+            ];
+            $this->saveSessions();
+            
+            $this->log('INFO', '🆕 [SSE] Created new session', [
+                'newSessionId' => $sessionId,
+                'requestedSessionId' => $oldSessionId,
+                'reason' => $oldSessionId ? 'session_not_found' : 'no_session_provided',
+            ]);
+        } else {
+            $this->log('INFO', '♻️ [SSE] Reusing existing session', [
+                'sessionId' => $sessionId,
+                'createdAt' => date('Y-m-d H:i:s', $this->sessions[$sessionId]['createdAt'] ?? 0),
+                'lastAccessAt' => date('Y-m-d H:i:s', $this->sessions[$sessionId]['lastAccessAt'] ?? 0),
+            ]);
+        }
+        
+        $this->log('INFO', '🔗 [SSE] Establishing connection', ['sessionId' => $sessionId, 'isNewSession' => $isNewSession]);
+        
+        // 发送 SSE 响应头 - 注意：需要直接发送 HTTP 头而不是使用 Response 对象
+        // 因为 Response 对象在 body 为空时可能不正确处理 Content-Type
+        $httpHeader = "HTTP/1.1 200 OK\r\n";
+        $httpHeader .= "Content-Type: text/event-stream\r\n";
+        $httpHeader .= "Cache-Control: no-cache\r\n";
+        $httpHeader .= "Connection: keep-alive\r\n";
+        $httpHeader .= "Access-Control-Allow-Origin: *\r\n";
+        $httpHeader .= "Access-Control-Expose-Headers: Mcp-Session-Id\r\n";
+        $httpHeader .= "Mcp-Session-Id: {$sessionId}\r\n";
+        $httpHeader .= "\r\n";
+        
+        $this->log('INFO', '📤 [SSE] Sending HTTP headers', [
+            'sessionId' => $sessionId,
+            'contentType' => 'text/event-stream',
+            'cacheControl' => 'no-cache',
+            'connection' => 'keep-alive',
+        ]);
+        
+        $connection->send($httpHeader);
+        
+        // 保存 SSE 连接
+        $this->sseConnections[$sessionId] = $connection;
+        
+        $this->log('INFO', '💾 [SSE] Connection saved', [
+            'sessionId' => $sessionId,
+            'activeConnections' => count($this->sseConnections),
+        ]);
+        
+        // 发送 endpoint 事件（告诉客户端 POST 端点）
+        $endpoint = "/mcp?session_id={$sessionId}";
+        $this->sendSSEEvent($connection, 'endpoint', $endpoint);
+        
+        $this->log('INFO', '📨 [SSE] Sent endpoint event', [
+            'sessionId' => $sessionId,
+            'event' => 'endpoint',
+            'data' => $endpoint,
+        ]);
+        
+        // 启动心跳定时器
+        $timerId = Timer::add(self::HEARTBEAT_INTERVAL, function() use ($sessionId, $connection) {
+            if (!isset($this->sseConnections[$sessionId])) {
+                return;
+            }
+            try {
+                // 发送 SSE 心跳注释
+                $connection->send(": heartbeat " . time() . "\n\n");
+                $this->log('DEBUG', '💓 [SSE] Heartbeat sent', ['sessionId' => $sessionId, 'timestamp' => time()]);
+            } catch (\Exception $e) {
+                $this->log('WARN', '⚠️ [SSE] Heartbeat failed', [
+                    'sessionId' => $sessionId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        });
+        $this->sseTimers[$sessionId] = $timerId;
+        
+        $this->log('INFO', '⏱️ [SSE] Heartbeat timer started', [
+            'sessionId' => $sessionId,
+            'timerId' => $timerId,
+            'interval' => self::HEARTBEAT_INTERVAL . 's',
+        ]);
+        
+        // 记录连接建立时间
+        $connectionStartTime = time();
+        
+        // 处理连接关闭
+        $connection->onClose = function() use ($sessionId, $clientIp, $clientPort, $connectionStartTime) {
+            $duration = time() - $connectionStartTime;
+            
+            // 停止心跳定时器
+            if (isset($this->sseTimers[$sessionId])) {
+                Timer::del($this->sseTimers[$sessionId]);
+                unset($this->sseTimers[$sessionId]);
+                $this->log('INFO', '⏹️ [SSE] Heartbeat timer stopped', ['sessionId' => $sessionId]);
+            }
+            
+            unset($this->sseConnections[$sessionId]);
+            
+            $this->log('INFO', '🔌 [SSE] Connection closed', [
+                'sessionId' => $sessionId,
+                'client' => "{$clientIp}:{$clientPort}",
+                'remainingConnections' => count($this->sseConnections),
+                'durationSeconds' => $duration,
+            ]);
+        };
+        
+        $this->log('INFO', '✅ [SSE] Connection fully established', [
+            'sessionId' => $sessionId,
+            'client' => "{$clientIp}:{$clientPort}",
+            'totalConnections' => count($this->sseConnections),
+            'heartbeatInterval' => self::HEARTBEAT_INTERVAL . 's',
+        ]);
+    }
+    
+    /**
+     * 发送 SSE 事件
+     */
+    private function sendSSEEvent(TcpConnection $connection, string $event, string $data): void
+    {
+        $message = "event: {$event}\ndata: {$data}\n\n";
+        $connection->send($message);
+    }
+    
+    /**
+     * 通过 SSE 发送 JSON-RPC 消息（用于向客户端推送）
+     */
+    public function sendSSEMessage(string $sessionId, array $message): bool
+    {
+        $connection = $this->sseConnections[$sessionId] ?? null;
+        if (!$connection) {
+            return false;
+        }
+        
+        $this->sendSSEEvent($connection, 'message', json_encode($message, JSON_UNESCAPED_UNICODE));
+        return true;
+    }
+    
+    /**
+     * 向所有 SSE 连接广播消息
+     */
+    public function broadcastSSE(string $event, array $data): void
+    {
+        $message = json_encode($data, JSON_UNESCAPED_UNICODE);
+        foreach ($this->sseConnections as $connection) {
+            $this->sendSSEEvent($connection, $event, $message);
+        }
+    }
+    
+    /**
+     * 发送进度通知
+     */
+    public function sendProgress(string $sessionId, string $progressToken, int $progress, ?int $total = null, ?string $message = null): bool
+    {
+        $params = [
+            'progressToken' => $progressToken,
+            'progress' => $progress,
+        ];
+        if ($total !== null) {
+            $params['total'] = $total;
+        }
+        if ($message !== null) {
+            $params['message'] = $message;
+        }
+        
+        return $this->sendSSEMessage($sessionId, [
+            'jsonrpc' => '2.0',
+            'method' => 'notifications/progress',
+            'params' => $params,
+        ]);
+    }
+    
+    /**
+     * 检查会话是否有活跃的 SSE 连接
+     */
+    public function hasSSEConnection(string $sessionId): bool
+    {
+        return isset($this->sseConnections[$sessionId]);
+    }
+    
+    // ==================== End SSE Methods ====================
     
     /**
      * 处理 JSON-RPC 请求

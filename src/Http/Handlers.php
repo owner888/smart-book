@@ -1184,7 +1184,8 @@ function getMCPServer(): \SmartBook\MCP\StreamableHttpServer
     
     if ($mcpServer === null) {
         $booksDir = dirname(__DIR__, 2) . '/books';
-        $mcpServer = new \SmartBook\MCP\StreamableHttpServer($booksDir);
+        // 开启 debug 模式，输出详细的 SSE 连接日志（设为 false 可关闭）
+        $mcpServer = new \SmartBook\MCP\StreamableHttpServer($booksDir, debug: true);
     }
     
     return $mcpServer;
