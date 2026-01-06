@@ -222,7 +222,7 @@ INSTRUCTIONS;
         
         // 处理 CORS 预检请求
         if ($method === 'OPTIONS') {
-            $connection->send(new Response(204, self::CORS_HEADERS, ''));
+            $connection->send((string) new Response(204, self::CORS_HEADERS, ''));
             return;
         }
         
@@ -276,7 +276,7 @@ INSTRUCTIONS;
             }
             
             // 客户端不接受 event-stream，返回 405
-            $connection->send(new Response(405, array_merge(self::CORS_HEADERS, [
+            $connection->send((string) new Response(405, array_merge(self::CORS_HEADERS, [
                 'Allow' => 'POST, DELETE, OPTIONS',
             ]), ''));
             return;
@@ -289,7 +289,7 @@ INSTRUCTIONS;
                 unset($this->sessions[$sessionId]);
                 $this->saveSessions(); // 持久化
             }
-            $connection->send(new Response(204, self::CORS_HEADERS, ''));
+            $connection->send((string) new Response(204, self::CORS_HEADERS, ''));
             return;
         }
         
@@ -613,7 +613,7 @@ INSTRUCTIONS;
             if (!empty($responses)) {
                 $this->sendJsonResponse($connection, $responses, 200, $sessionId);
             } else {
-                $connection->send(new Response(202, self::CORS_HEADERS, ''));
+                $connection->send((string) new Response(202, self::CORS_HEADERS, ''));
             }
         } else {
             // 单个请求 - 返回 JSON 对象
@@ -627,7 +627,7 @@ INSTRUCTIONS;
                 $this->sendJsonResponse($connection, $response, 200, $responseSessionId);
             } else {
                 // 通知消息，无需响应
-                $connection->send(new Response(202, array_merge(self::CORS_HEADERS, [
+                $connection->send((string) new Response(202, array_merge(self::CORS_HEADERS, [
                     'Mcp-Session-Id' => $sessionId ?? '',
                 ]), ''));
             }
@@ -1946,6 +1946,10 @@ INSTRUCTIONS;
     
     /**
      * 发送 JSON 响应
+     * 
+     * 注意：由于 MCP Server 使用 TCP 协议（而非 HTTP 协议），
+     * 需要将 Response 对象转换为字符串后再发送。
+     * TCP 协议的 send() 方法期望接收字符串，不会自动处理 Response 对象。
      */
     private function sendJsonResponse(TcpConnection $connection, mixed $data, int $statusCode = 200, ?string $sessionId = null): void
     {
@@ -1963,11 +1967,14 @@ INSTRUCTIONS;
             'data' => $data,
         ]);
         
-        $connection->send(new Response(
+        // 使用 (string) 将 Response 对象转换为 HTTP 响应字符串
+        // 因为 MCP Server 使用 TCP 协议，send() 需要字符串而非 Response 对象
+        $response = new Response(
             $statusCode,
             $headers,
             json_encode($data, JSON_UNESCAPED_UNICODE)
-        ));
+        );
+        $connection->send((string) $response);
     }
     
     /**
