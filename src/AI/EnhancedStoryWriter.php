@@ -191,28 +191,31 @@ class EnhancedStoryWriter
     {
         $styleSamples = $analysisData['styleSamples'] ?? [];
         $bookFile = $analysisData['bookFile'] ?? '未知书籍';
+        $tokenCount = $options['token_count'] ?? 0;
         
-        // 基础指令
-        $prompt = <<<PROMPT
-你是一位专业的小说续写大师。你的任务是续写《{$bookFile}》。
-
-## 核心要求
-
-1. **完全沉浸在原作世界观中** - 你已经阅读了整本书，对所有人物、情节、伏笔都了如指掌
-2. **保持原作文风** - 用词习惯、句式结构、叙事节奏都要与原作一致
-3. **情节连贯** - 续写内容必须与原作最后的情节自然衔接
-4. **人物性格一致** - 每个角色的言行举止都要符合其在原作中的性格设定
-
-## 原作风格参考
-
-以下是从原作中提取的几段示例，请仔细学习其文风特点：
-
-PROMPT;
-
-        // 添加风格样本
-        foreach ($styleSamples as $i => $sample) {
-            $num = $i + 1;
-            $prompt .= "\n### 样本 {$num}\n```\n{$sample}\n```\n";
+        // 从配置文件读取系统提示词模板
+        $prompts = $GLOBALS['config']['prompts'] ?? [];
+        $continuePrompts = $prompts['continue'] ?? [];
+        
+        // 基础指令（使用配置文件中的 system）
+        $basePrompt = $continuePrompts['system'] ?? '你是一位专业的小说续写大师。你的任务是续写{title}。';
+        
+        // 替换变量
+        $prompt = str_replace(
+            ['{title}', '{tokens}'],
+            ['《' . $bookFile . '》', number_format($tokenCount)],
+            $basePrompt
+        );
+        
+        // 如果有风格样本，添加参考部分
+        if (!empty($styleSamples)) {
+            $prompt .= "\n\n## 原作风格参考\n\n以下是从原作中提取的几段示例，请仔细学习其文风特点：\n";
+            
+            // 添加风格样本
+            foreach ($styleSamples as $i => $sample) {
+                $num = $i + 1;
+                $prompt .= "\n### 样本 {$num}\n```\n{$sample}\n```\n";
+            }
         }
         
         // 添加写作指南

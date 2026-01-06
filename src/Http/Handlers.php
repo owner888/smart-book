@@ -1514,24 +1514,10 @@ function handleStreamEnhancedContinue(TcpConnection $connection, Request $reques
         $writer = new EnhancedStoryWriter(GEMINI_API_KEY, $model);
         
         // 发送知识来源
+        $tokenCount = $bookCache['usageMetadata']['totalTokenCount'] ?? 0;
         sendSSE($connection, 'sources', json_encode([
-            ['text' => "Context Cache + Few-shot Prompting（增强版续写 - {$model}）", 'score' => 100]
+            ['text' => "Context Cache（{$tokenCount} tokens）+ Few-shot（{$model}）", 'score' => 100]
         ], JSON_UNESCAPED_UNICODE));
-        $systemPrompt = "你是一位专业的小说续写大师。你的任务是续写《{$bookFile}》。
-
-## 核心要求
-1. **完全沉浸在原作世界观中** - 你已经阅读了整本书（{$bookCache['usageMetadata']['totalTokenCount']} tokens），对所有人物、情节、伏笔都了如指掌
-2. **保持原作文风** - 用词习惯、句式结构、叙事节奏都要与原作一致
-3. **情节连贯** - 续写内容必须与原作最后的情节自然衔接
-4. **人物性格一致** - 每个角色的言行举止都要符合其在原作中的性格设定
-
-## 写作指南
-- 从原作结尾处自然过渡，不要重复原作内容
-- 保持与原作相同的叙事视角
-- 人物对话要符合其身份和性格
-- 不要使用现代网络用语";
-        
-        sendSSE($connection, 'system_prompt', $systemPrompt);
         
         $writer->continueStory(
             $bookFile,
@@ -1559,7 +1545,10 @@ function handleStreamEnhancedContinue(TcpConnection $connection, Request $reques
                 sendSSE($connection, 'error', $error);
                 $connection->close();
             },
-            ['custom_instructions' => $customInstructions]
+            [
+                'custom_instructions' => $customInstructions,
+                'token_count' => $tokenCount,
+            ]
         );
         
     } catch (Exception $e) {
