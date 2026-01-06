@@ -65,15 +65,22 @@ async function sendMessage() {
             model: modelId  // 模型
         };
     } else if (assistant.action === 'continue') {
-        url = `${ChatConfig.API_BASE}/api/stream/continue`;
+        // 使用增强版续写 API（Context Cache + Few-shot）
+        url = `${ChatConfig.API_BASE}/api/stream/enhanced-continue`;
+        const currentBook = ChatBooks.getCurrentBook();
+        console.log('📚 续写助手 - 当前书籍:', currentBook);
+        if (!currentBook) {
+            layer.msg('⚠️ 请先选择一本书籍', { icon: 0 });
+            ChatState.isLoading = false;
+            sendBtn.disabled = false;
+            return;
+        }
         body = { 
+            book: currentBook,
             prompt: message, 
-            search: searchConfig.enabled, 
-            engine: searchConfig.engine, 
-            rag: ragConfig.enabled,
-            keyword_weight: ragConfig.keywordWeight,
             model: modelId 
         };
+        console.log('📤 续写请求:', body);
     } else {
         url = `${ChatConfig.API_BASE}/api/stream/chat`;
         body = { message: message, chat_id: ChatState.getCurrentState().chatId, search: searchConfig.enabled, engine: searchConfig.engine, model: modelId };

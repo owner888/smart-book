@@ -240,6 +240,11 @@ const ChatBooks = {
         }
     },
     
+    // 获取当前选中的书籍文件名
+    getCurrentBook() {
+        return this.currentBook?.file || null;
+    },
+    
     // 处理索引进度
     handleIndexProgress(event, data) {
         const progressText = document.getElementById('indexProgressText');

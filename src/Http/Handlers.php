@@ -1472,8 +1472,8 @@ function handleStreamEnhancedContinue(TcpConnection $connection, Request $reques
     $body = json_decode($request->rawBody(), true) ?? [];
     $bookFile = $body['book'] ?? '';
     $prompt = $body['prompt'] ?? '';
-    $model = $body['model'] ?? 'gemini-2.5-flash';
     $customInstructions = $body['custom_instructions'] ?? '';
+    $requestedModel = $body['model'] ?? 'gemini-2.5-flash';
     
     if (empty($bookFile)) {
         return ['error' => 'Missing book parameter'];
@@ -1487,12 +1487,51 @@ function handleStreamEnhancedContinue(TcpConnection $connection, Request $reques
     $connection->send(new Response(200, $headers, ''));
     
     try {
+        // 首先查找书籍的缓存，获取缓存使用的模型
+        $cacheClient = new GeminiContextCache(GEMINI_API_KEY, $requestedModel);
+        $bookCache = $cacheClient->getBookCache($bookFile);
+        
+        if (!$bookCache) {
+            sendSSE($connection, 'error', "请先为书籍《{$bookFile}》创建 Context Cache");
+            $connection->close();
+            return null;
+        }
+        
+        // 检查模型是否匹配
+        $cacheModel = str_replace('models/', '', $bookCache['model'] ?? '');
+        if ($cacheModel !== $requestedModel) {
+            $errorMsg = "⚠️ 模型不匹配！\n\n" .
+                "• 当前选择: {$requestedModel}\n" .
+                "• 缓存要求: {$cacheModel}\n\n" .
+                "请切换到 {$cacheModel} 模型后重试。";
+            sendSSE($connection, 'error', $errorMsg);
+            $connection->close();
+            return null;
+        }
+        
+        $model = $cacheModel;  // 使用缓存对应的模型
+        
         $writer = new EnhancedStoryWriter(GEMINI_API_KEY, $model);
         
         // 发送知识来源
         sendSSE($connection, 'sources', json_encode([
-            ['text' => 'Context Cache + Few-shot Prompting（增强版续写）', 'score' => 100]
+            ['text' => "Context Cache + Few-shot Prompting（增强版续写 - {$model}）", 'score' => 100]
         ], JSON_UNESCAPED_UNICODE));
+        $systemPrompt = "你是一位专业的小说续写大师。你的任务是续写《{$bookFile}》。
+
+## 核心要求
+1. **完全沉浸在原作世界观中** - 你已经阅读了整本书（{$bookCache['usageMetadata']['totalTokenCount']} tokens），对所有人物、情节、伏笔都了如指掌
+2. **保持原作文风** - 用词习惯、句式结构、叙事节奏都要与原作一致
+3. **情节连贯** - 续写内容必须与原作最后的情节自然衔接
+4. **人物性格一致** - 每个角色的言行举止都要符合其在原作中的性格设定
+
+## 写作指南
+- 从原作结尾处自然过渡，不要重复原作内容
+- 保持与原作相同的叙事视角
+- 人物对话要符合其身份和性格
+- 不要使用现代网络用语";
+        
+        sendSSE($connection, 'system_prompt', $systemPrompt);
         
         $writer->continueStory(
             $bookFile,
