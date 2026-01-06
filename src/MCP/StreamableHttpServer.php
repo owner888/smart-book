@@ -393,10 +393,6 @@ INSTRUCTIONS;
             'activeConnections' => count($this->sseConnections),
         ]);
         
-        // 立即发送连接确认事件
-        // Cline SDK 可能需要在 SSE 连接建立后收到一个事件才能继续
-        $this->sendSSEData($connection, ": connected\n\n");
-        
         // 发送初始心跳
         $this->sendSSEData($connection, ": heartbeat " . time() . "\n\n");
         
