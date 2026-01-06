@@ -30,7 +30,7 @@ class StreamableHttpSSEServer
     public function __construct(string $booksDir)
     {
         $this->booksDir = $booksDir;
-        $this->httpServer = new StreamableHttpServer($booksDir);
+        $this->httpServer = new StreamableHttpServer($booksDir, true); // 启用调试日志
     }
     
     /**
@@ -135,6 +135,10 @@ class StreamableHttpSSEServer
     
     /**
      * 处理 JSON-RPC 消息
+     * 
+     * 根据 MCP SSE 规范：
+     * - POST /message 返回 HTTP 202 Accepted
+     * - 实际响应通过 SSE 流发送 (event: message)
      */
     private function handleMessage(TcpConnection $connection, Request $request): void
     {
@@ -144,8 +148,18 @@ class StreamableHttpSSEServer
             'sessionId' => $sessionId,
         ]);
         
-        // 获取 SSE 连接（用于发送通知）
+        // 获取 SSE 连接（用于发送响应）
         $sseConnection = $this->sseConnections[$sessionId] ?? null;
+        
+        if (!$sseConnection) {
+            $this->log('WARN', "[SSE] No SSE connection for session", ['sessionId' => $sessionId]);
+            $this->sendJson($connection, [
+                'jsonrpc' => '2.0',
+                'id' => null,
+                'error' => ['code' => -32600, 'message' => 'No active SSE connection'],
+            ], 400);
+            return;
+        }
         
         // 解析请求
         $body = $request->rawBody();
@@ -156,18 +170,161 @@ class StreamableHttpSSEServer
         ]);
         
         if ($data === null) {
-            $this->sendJson($connection, [
+            // 解析错误，直接通过 SSE 返回
+            $errorResponse = json_encode([
                 'jsonrpc' => '2.0',
                 'id' => null,
                 'error' => ['code' => -32700, 'message' => 'Parse error'],
-            ]);
+            ], JSON_UNESCAPED_UNICODE);
+            $this->sendSSE($sseConnection, 'message', $errorResponse);
+            $connection->send(new Response(202, self::CORS_HEADERS, ''));
             return;
         }
         
-        // 直接转发原始请求到 HTTP Server（已支持 /message 路径）
-        $this->log('INFO', "[SSE] Forwarding to HTTP Server");
-        $this->httpServer->handleRequest($connection, $request);
-        $this->log('INFO', "[SSE] HTTP Server response sent");
+        // 处理 JSON-RPC 请求
+        $response = $this->processJsonRpc($data, $sessionId);
+        
+        $this->log('INFO', "[SSE] Sending response via SSE", [
+            'response' => $response,
+        ]);
+        
+        // 通过 SSE 流发送响应
+        $this->sendSSE($sseConnection, 'message', json_encode($response, JSON_UNESCAPED_UNICODE));
+        
+        // 返回 HTTP 202 Accepted
+        $connection->send(new Response(202, self::CORS_HEADERS, ''));
+        
+        $this->log('INFO', "[SSE] Response sent successfully");
+    }
+    
+    /**
+     * 处理 JSON-RPC 请求
+     */
+    private function processJsonRpc(array $data, string $sessionId): array
+    {
+        $method = $data['method'] ?? '';
+        $params = $data['params'] ?? [];
+        $id = $data['id'] ?? null;
+        
+        try {
+            // 处理 initialize 方法
+            if ($method === 'initialize') {
+                $result = [
+                    'protocolVersion' => '2025-03-26',
+                    'serverInfo' => [
+                        'name' => 'smart-book',
+                        'title' => 'Smart Book AI Server',
+                        'version' => '1.0.0',
+                    ],
+                    'capabilities' => [
+                        'tools' => ['listChanged' => false],
+                        'resources' => ['subscribe' => false, 'listChanged' => false],
+                        'prompts' => ['listChanged' => false],
+                    ],
+                ];
+                
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'result' => $result,
+                ];
+            }
+            
+            // 处理 notifications/initialized
+            if ($method === 'notifications/initialized') {
+                return []; // 通知不需要响应
+            }
+            
+            // 处理 tools/list
+            if ($method === 'tools/list') {
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'result' => [
+                        'tools' => [
+                            [
+                                'name' => 'search_book',
+                                'description' => 'Search content in the current book',
+                                'inputSchema' => [
+                                    'type' => 'object',
+                                    'properties' => [
+                                        'query' => ['type' => 'string', 'description' => 'Search query'],
+                                    ],
+                                    'required' => ['query'],
+                                ],
+                            ],
+                            [
+                                'name' => 'get_book_info',
+                                'description' => 'Get information about the current book',
+                                'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()],
+                            ],
+                            [
+                                'name' => 'list_books',
+                                'description' => 'List all available books',
+                                'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()],
+                            ],
+                            [
+                                'name' => 'select_book',
+                                'description' => 'Select a book to use',
+                                'inputSchema' => [
+                                    'type' => 'object',
+                                    'properties' => [
+                                        'book' => ['type' => 'string', 'description' => 'Book filename'],
+                                    ],
+                                    'required' => ['book'],
+                                ],
+                            ],
+                            [
+                                'name' => 'server_status',
+                                'description' => 'Get MCP server status',
+                                'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()],
+                            ],
+                        ],
+                    ],
+                ];
+            }
+            
+            // 处理 resources/list
+            if ($method === 'resources/list') {
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'result' => [
+                        'resources' => [
+                            [
+                                'uri' => 'book://library/list',
+                                'name' => 'Book Library',
+                                'description' => 'List of all available books',
+                                'mimeType' => 'application/json',
+                            ],
+                        ],
+                    ],
+                ];
+            }
+            
+            // 处理 prompts/list
+            if ($method === 'prompts/list') {
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'result' => ['prompts' => []],
+                ];
+            }
+            
+            // 其他方法返回错误
+            return [
+                'jsonrpc' => '2.0',
+                'id' => $id,
+                'error' => ['code' => -32601, 'message' => "Method not found: {$method}"],
+            ];
+            
+        } catch (\Exception $e) {
+            return [
+                'jsonrpc' => '2.0',
+                'id' => $id,
+                'error' => ['code' => -32000, 'message' => $e->getMessage()],
+            ];
+        }
     }
     
     /**

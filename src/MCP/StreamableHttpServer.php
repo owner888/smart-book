@@ -212,6 +212,8 @@ INSTRUCTIONS;
         $method = $request->method();
         $path = $request->path();
         
+        $this->log('DEBUG', "HTTP Request: {$method} {$path}");
+        
         // 处理 CORS 预检请求
         if ($method === 'OPTIONS') {
             $connection->send(new Response(204, self::CORS_HEADERS, ''));
@@ -220,6 +222,7 @@ INSTRUCTIONS;
         
         // MCP Streamable HTTP 主端点（支持多种路径）
         if (in_array($path, ['/mcp', '/', '/message'])) {
+            $this->log('DEBUG', "Routing to MCP endpoint");
             $this->handleMCPEndpoint($connection, $request);
             return;
         }
