@@ -96,10 +96,12 @@ class StreamableHttpServer
     
     /**
      * 打印调试日志
+     * ERROR 类型的日志总是输出，其他类型只在 debug 模式下输出
      */
     private function log(string $type, string $message, mixed $data = null): void
     {
-        if (!$this->debug) {
+        // ERROR 类型总是输出，其他类型只在 debug 模式下输出
+        if (!$this->debug && $type !== 'ERROR') {
             return;
         }
         
@@ -109,6 +111,7 @@ class StreamableHttpServer
             'RESPONSE' => "\033[32m",  // 绿色
             'ERROR' => "\033[31m",     // 红色
             'INFO' => "\033[33m",      // 黄色
+            'WARN' => "\033[35m",      // 紫色
             default => "\033[0m",
         };
         $reset = "\033[0m";
@@ -145,6 +148,12 @@ class StreamableHttpServer
         // 兼容性：保留简单的 REST 风格端点
         if ($path === '/mcp/tools' && $method === 'GET') {
             $this->sendJsonResponse($connection, ['tools' => $this->getTools()]);
+            return;
+        }
+        
+        // 健康检查端点
+        if ($path === '/health' || $path === '/mcp/health') {
+            $this->sendJsonResponse($connection, $this->getHealthStatus());
             return;
         }
         
@@ -333,7 +342,15 @@ class StreamableHttpServer
             
             return $response;
             
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            // 记录详细错误日志（ERROR 类型总是输出）
+            $this->log('ERROR', "Exception in method '{$method}'", [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => array_slice($e->getTrace(), 0, 5), // 只保留前5层调用栈
+            ]);
+            
             if ($isNotification) {
                 return null;
             }
@@ -344,6 +361,10 @@ class StreamableHttpServer
                 'error' => [
                     'code' => -32000,
                     'message' => $e->getMessage(),
+                    'data' => [
+                        'file' => basename($e->getFile()),
+                        'line' => $e->getLine(),
+                    ],
                 ],
             ];
         }
@@ -397,6 +418,7 @@ class StreamableHttpServer
             'get_book_info' => $this->toolGetBookInfo($session),
             'select_book' => $this->toolSelectBook($arguments, $session, $sessionId),
             'search_book' => $this->toolSearchBook($arguments, $session),
+            'server_status' => $this->toolServerStatus(),
             default => throw new \Exception("Unknown tool: {$toolName}"),
         };
         
@@ -468,6 +490,14 @@ class StreamableHttpServer
                         ],
                     ],
                     'required' => ['book'],
+                ],
+            ],
+            [
+                'name' => 'server_status',
+                'description' => 'Get MCP server status including active sessions, available books, and health information',
+                'inputSchema' => [
+                    'type' => 'object',
+                    'properties' => new \stdClass(),
                 ],
             ],
         ];
@@ -690,6 +720,83 @@ class StreamableHttpServer
     private function createSession(): string
     {
         return bin2hex(random_bytes(16));
+    }
+    
+    /**
+     * 工具：获取服务器状态
+     */
+    private function toolServerStatus(): array
+    {
+        $status = $this->getHealthStatus();
+        
+        return [
+            'content' => [
+                ['type' => 'text', 'text' => json_encode($status, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)],
+            ],
+        ];
+    }
+    
+    /**
+     * 获取服务器健康状态
+     */
+    private function getHealthStatus(): array
+    {
+        $books = [];
+        $indexedBooks = 0;
+        
+        if (is_dir($this->booksDir)) {
+            foreach (scandir($this->booksDir) as $file) {
+                $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+                if (in_array($ext, ['epub', 'txt'])) {
+                    $baseName = pathinfo($file, PATHINFO_FILENAME);
+                    $hasIndex = file_exists($this->booksDir . '/' . $baseName . '_index.json');
+                    if ($hasIndex) {
+                        $indexedBooks++;
+                    }
+                    $books[] = $file;
+                }
+            }
+        }
+        
+        return [
+            'status' => 'healthy',
+            'server' => self::SERVER_INFO,
+            'protocol' => self::PROTOCOL_VERSION,
+            'timestamp' => date('Y-m-d H:i:s'),
+            'uptime' => $this->getUptime(),
+            'stats' => [
+                'activeSessions' => count($this->sessions),
+                'totalBooks' => count($books),
+                'indexedBooks' => $indexedBooks,
+            ],
+            'sessions' => array_map(function ($session, $id) {
+                return [
+                    'id' => substr($id, 0, 8) . '...',
+                    'client' => $session['clientInfo']['name'] ?? 'unknown',
+                    'selectedBook' => $session['selectedBook']['file'] ?? null,
+                    'lastAccess' => date('Y-m-d H:i:s', $session['lastAccessAt'] ?? 0),
+                    'restored' => $session['restored'] ?? false,
+                ];
+            }, $this->sessions, array_keys($this->sessions)),
+        ];
+    }
+    
+    /**
+     * 获取服务器运行时间
+     */
+    private function getUptime(): string
+    {
+        static $startTime = null;
+        if ($startTime === null) {
+            $startTime = time();
+        }
+        
+        $uptime = time() - $startTime;
+        $hours = floor($uptime / 3600);
+        $minutes = floor(($uptime % 3600) / 60);
+        $seconds = $uptime % 60;
+        
+        return sprintf('%02d:%02d:%02d', $hours, $minutes, $seconds);
     }
     
     /**
