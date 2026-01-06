@@ -13,6 +13,7 @@ use SmartBook\Cache\CacheService;
 use SmartBook\RAG\EmbeddingClient;
 use SmartBook\RAG\VectorStore;
 use SmartBook\AI\GeminiContextCache;
+use SmartBook\AI\EnhancedStoryWriter;
 
 // ===================================
 // HTTP 主入口
@@ -101,6 +102,10 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             '/api/context-cache/create-for-book' => handleContextCacheCreateForBook($request),
             '/api/context-cache/delete' => handleContextCacheDelete($request),
             '/api/context-cache/get' => handleContextCacheGet($request),
+            '/api/enhanced-writer/prepare' => handleEnhancedWriterPrepare($request),
+            '/api/enhanced-writer/status' => handleEnhancedWriterStatus($request),
+            '/api/stream/enhanced-continue' => handleStreamEnhancedContinue($connection, $request),
+            '/api/stream/analyze-characters' => handleStreamAnalyzeCharacters($connection, $request),
             default => ['error' => 'Not Found', 'path' => $path],
         };
         
@@ -1391,6 +1396,197 @@ function handleContextCacheGet(Request $request): array
     } catch (Exception $e) {
         return ['success' => false, 'error' => $e->getMessage()];
     }
+}
+
+// ===================================
+// 增强版续写（Context Cache + Few-shot）
+// ===================================
+
+/**
+ * 为书籍准备续写环境（创建缓存 + 提取风格样本）
+ */
+function handleEnhancedWriterPrepare(Request $request): array
+{
+    $body = json_decode($request->rawBody(), true) ?? [];
+    $bookFile = $body['book'] ?? '';
+    $model = $body['model'] ?? 'gemini-2.5-flash';
+    
+    if (empty($bookFile)) {
+        return ['success' => false, 'error' => 'Missing book parameter'];
+    }
+    
+    $booksDir = dirname(__DIR__, 2) . '/books';
+    $bookPath = $booksDir . '/' . $bookFile;
+    
+    if (!file_exists($bookPath)) {
+        return ['success' => false, 'error' => 'Book not found: ' . $bookFile];
+    }
+    
+    try {
+        // 提取书籍内容
+        $ext = strtolower(pathinfo($bookFile, PATHINFO_EXTENSION));
+        if ($ext === 'epub') {
+            $content = \SmartBook\Parser\EpubParser::extractText($bookPath);
+        } else {
+            $content = file_get_contents($bookPath);
+        }
+        
+        if (empty($content)) {
+            return ['success' => false, 'error' => 'Failed to extract book content'];
+        }
+        
+        // 使用增强版续写服务
+        $writer = new EnhancedStoryWriter(GEMINI_API_KEY, $model);
+        return $writer->prepareForBook($bookFile, $content);
+        
+    } catch (Exception $e) {
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
+
+/**
+ * 获取书籍的续写状态
+ */
+function handleEnhancedWriterStatus(Request $request): array
+{
+    $body = json_decode($request->rawBody(), true) ?? [];
+    $bookFile = $body['book'] ?? '';
+    
+    if (empty($bookFile)) {
+        return ['success' => false, 'error' => 'Missing book parameter'];
+    }
+    
+    try {
+        $writer = new EnhancedStoryWriter(GEMINI_API_KEY);
+        return $writer->getWriterStatus($bookFile);
+    } catch (Exception $e) {
+        return ['success' => false, 'error' => $e->getMessage()];
+    }
+}
+
+/**
+ * 增强版续写（使用 Context Cache + Few-shot）
+ */
+function handleStreamEnhancedContinue(TcpConnection $connection, Request $request): ?array
+{
+    $body = json_decode($request->rawBody(), true) ?? [];
+    $bookFile = $body['book'] ?? '';
+    $prompt = $body['prompt'] ?? '';
+    $model = $body['model'] ?? 'gemini-2.5-flash';
+    $customInstructions = $body['custom_instructions'] ?? '';
+    
+    if (empty($bookFile)) {
+        return ['error' => 'Missing book parameter'];
+    }
+    
+    if (empty($prompt)) {
+        return ['error' => 'Missing prompt'];
+    }
+    
+    $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
+    $connection->send(new Response(200, $headers, ''));
+    
+    try {
+        $writer = new EnhancedStoryWriter(GEMINI_API_KEY, $model);
+        
+        // 发送知识来源
+        sendSSE($connection, 'sources', json_encode([
+            ['text' => 'Context Cache + Few-shot Prompting（增强版续写）', 'score' => 100]
+        ], JSON_UNESCAPED_UNICODE));
+        
+        $writer->continueStory(
+            $bookFile,
+            $prompt,
+            function ($text, $isThought) use ($connection) {
+                if ($text && !$isThought) {
+                    sendSSE($connection, 'content', $text);
+                }
+            },
+            function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $model) {
+                if ($usageMetadata) {
+                    $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
+                    sendSSE($connection, 'usage', json_encode([
+                        'tokens' => $costInfo['tokens'],
+                        'cost' => $costInfo['cost'],
+                        'cost_formatted' => TokenCounter::formatCost($costInfo['cost']),
+                        'currency' => $costInfo['currency'],
+                        'model' => $usedModel ?? $model
+                    ], JSON_UNESCAPED_UNICODE));
+                }
+                sendSSE($connection, 'done', '');
+                $connection->close();
+            },
+            function ($error) use ($connection) {
+                sendSSE($connection, 'error', $error);
+                $connection->close();
+            },
+            ['custom_instructions' => $customInstructions]
+        );
+        
+    } catch (Exception $e) {
+        sendSSE($connection, 'error', $e->getMessage());
+        $connection->close();
+    }
+    
+    return null;
+}
+
+/**
+ * 分析书籍人物
+ */
+function handleStreamAnalyzeCharacters(TcpConnection $connection, Request $request): ?array
+{
+    $body = json_decode($request->rawBody(), true) ?? [];
+    $bookFile = $body['book'] ?? '';
+    $model = $body['model'] ?? 'gemini-2.5-flash';
+    
+    if (empty($bookFile)) {
+        return ['error' => 'Missing book parameter'];
+    }
+    
+    $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
+    $connection->send(new Response(200, $headers, ''));
+    
+    try {
+        $writer = new EnhancedStoryWriter(GEMINI_API_KEY, $model);
+        
+        sendSSE($connection, 'sources', json_encode([
+            ['text' => '使用 Context Cache 分析人物', 'score' => 100]
+        ], JSON_UNESCAPED_UNICODE));
+        
+        $writer->analyzeCharacters(
+            $bookFile,
+            function ($text, $isThought) use ($connection) {
+                if ($text && !$isThought) {
+                    sendSSE($connection, 'content', $text);
+                }
+            },
+            function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $model) {
+                if ($usageMetadata) {
+                    $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
+                    sendSSE($connection, 'usage', json_encode([
+                        'tokens' => $costInfo['tokens'],
+                        'cost' => $costInfo['cost'],
+                        'cost_formatted' => TokenCounter::formatCost($costInfo['cost']),
+                        'currency' => $costInfo['currency'],
+                        'model' => $usedModel ?? $model
+                    ], JSON_UNESCAPED_UNICODE));
+                }
+                sendSSE($connection, 'done', '');
+                $connection->close();
+            },
+            function ($error) use ($connection) {
+                sendSSE($connection, 'error', $error);
+                $connection->close();
+            }
+        );
+        
+    } catch (Exception $e) {
+        sendSSE($connection, 'error', $e->getMessage());
+        $connection->close();
+    }
+    
+    return null;
 }
 
 // ===================================

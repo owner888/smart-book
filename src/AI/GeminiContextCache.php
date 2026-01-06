@@ -316,30 +316,50 @@ class GeminiContextCache
     
     /**
      * 获取书籍关联的缓存
+     * 
+     * 直接从 Gemini API 查询，通过 displayName 匹配书籍
      */
     public function getBookCache(string $bookFile): ?array
     {
-        $redis = CacheService::getRedis();
-        if (!$redis) {
+        $displayName = "book:{$bookFile}";
+        
+        // 从 Gemini API 获取缓存列表
+        $list = $this->listCaches();
+        if (!$list['success']) {
             return null;
         }
         
-        $cacheName = $redis->get("gemini:book_cache:{$bookFile}");
-        if (!$cacheName) {
+        // 按 displayName 查找（返回最新的一个）
+        $found = null;
+        foreach ($list['caches'] as $cache) {
+            if (($cache['displayName'] ?? '') === $displayName) {
+                // 检查是否过期
+                $expireTime = $cache['expireTime'] ?? null;
+                if ($expireTime) {
+                    $expireTimestamp = strtotime($expireTime);
+                    if ($expireTimestamp > time()) {
+                        // 返回最新的有效缓存
+                        if (!$found || strtotime($cache['createTime']) > strtotime($found['createTime'])) {
+                            $found = $cache;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (!$found) {
             return null;
         }
         
-        $cacheKey = "gemini:cache:{$cacheName}";
-        $data = $redis->get($cacheKey);
-        
-        if (!$data) {
-            return null;
-        }
-        
-        $info = json_decode($data, true);
-        $info['name'] = $cacheName;
-        
-        return $info;
+        // 返回标准化的缓存信息
+        return [
+            'name' => $found['name'],
+            'displayName' => $found['displayName'],
+            'model' => $found['model'],
+            'expireAt' => strtotime($found['expireTime']),
+            'expireTime' => $found['expireTime'],
+            'usageMetadata' => $found['usageMetadata'] ?? null,
+        ];
     }
     
     /**
