@@ -43,19 +43,40 @@ class AsyncCurlManager
     {
         if (self::$multiHandle === null || empty(self::$handles)) return;
         
+        // 非阻塞执行 - 只处理当前可用的数据，不阻塞事件循环
         curl_multi_exec(self::$multiHandle, $running);
-        if ($running > 0) curl_multi_select(self::$multiHandle, 0);
         
+        // 收集所有已完成的请求（先收集，后处理，避免在处理过程中修改数组）
+        $completedHandles = [];
         while ($info = curl_multi_info_read(self::$multiHandle)) {
             $ch = $info['handle'];
             foreach (self::$handles as $requestId => $handle) {
                 if ($handle['ch'] === $ch) {
-                    $handle['onComplete']($info['result'] === CURLE_OK, curl_error($ch));
-                    curl_multi_remove_handle(self::$multiHandle, $ch);
-                    unset(self::$handles[$requestId]);
+                    $completedHandles[] = [
+                        'requestId' => $requestId,
+                        'ch' => $ch,
+                        'handle' => $handle,
+                        'success' => $info['result'] === CURLE_OK,
+                        'error' => curl_error($ch),
+                    ];
                     break;
                 }
             }
+        }
+        
+        // 处理已完成的请求（先移除，再回调）
+        foreach ($completedHandles as $completed) {
+            // 先从 handles 数组和 multi handle 中移除
+            curl_multi_remove_handle(self::$multiHandle, $completed['ch']);
+            unset(self::$handles[$completed['requestId']]);
+            
+            // 调用完成回调（回调中可能会添加新请求，但不会影响当前处理）
+            $completed['handle']['onComplete']($completed['success'], $completed['error']);
+        }
+        
+        // 如果还有活跃请求，使用非阻塞的 select
+        if ($running > 0) {
+            curl_multi_select(self::$multiHandle, 0);
         }
     }
     

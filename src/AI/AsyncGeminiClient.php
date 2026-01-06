@@ -51,14 +51,27 @@ class AsyncGeminiClient
         
         $onData = function($rawData) use (&$fullContent, &$buffer, &$functionCalls, &$usageMetadata, $onChunk, $onToolCall, $onUsage) {
             $buffer .= $rawData;
+            
             while (($pos = strpos($buffer, "\n")) !== false) {
                 $line = trim(substr($buffer, 0, $pos));
                 $buffer = substr($buffer, $pos + 1);
                 
                 if (empty($line) || !str_starts_with($line, 'data: ')) continue;
                 
-                $chunk = json_decode(substr($line, 6), true);
-                if (!$chunk || !isset($chunk['candidates'])) continue;
+                $jsonStr = substr($line, 6);
+                $chunk = json_decode($jsonStr, true);
+                
+                if ($chunk === null && json_last_error() !== JSON_ERROR_NONE) {
+                    continue;
+                }
+                
+                if (isset($chunk['error'])) {
+                    continue;
+                }
+                
+                if (!$chunk || !isset($chunk['candidates'])) {
+                    continue;
+                }
                 
                 // 提取 usageMetadata
                 if (isset($chunk['usageMetadata'])) {
@@ -133,22 +146,39 @@ class AsyncGeminiClient
         array $options
     ): void {
         $functionResponses = [];
+        $model = $options['model'] ?? $this->model;
         
         foreach ($functionCalls as $fc) {
             $name = $fc['name'];
             $args = $fc['args'];
             
             // 通知前端工具开始执行
-            $onChunk("\n> 🔧 执行工具: `{$name}`\n\n", false);
+            $onChunk("\n> 🔧 执行工具: `{$name}`\n", false);
             
             // 执行工具
-            $result = ToolManager::execute($name, $args);
-            
-            $functionResponses[] = [
-                'name' => $name,
-                'args' => $args,
-                'response' => $result,
-            ];
+            try {
+                $result = ToolManager::execute($name, $args);
+                
+                $functionResponses[] = [
+                    'name' => $name,
+                    'args' => $args,
+                    'result' => $result,
+                ];
+                
+                // 显示执行结果简要信息
+                if (isset($result['error'])) {
+                    $onChunk("> ❌ 工具执行失败: {$result['error']}\n\n", false);
+                } else {
+                    $onChunk("> ✅ 工具执行成功\n\n", false);
+                }
+            } catch (\Exception $e) {
+                $onChunk("> ❌ 工具异常: {$e->getMessage()}\n\n", false);
+                $functionResponses[] = [
+                    'name' => $name,
+                    'args' => $args,
+                    'result' => ['error' => $e->getMessage()],
+                ];
+            }
         }
         
         // 构建包含工具结果的新消息，让 AI 进行分析总结
@@ -162,7 +192,7 @@ class AsyncGeminiClient
         
         // 添加工具执行结果
         foreach ($functionResponses as $fr) {
-            $responseContent = $fr['response']['result'] ?? $fr['response'];
+            $responseContent = $fr['result']['result'] ?? $fr['result'];
             $newMessages[] = [
                 'role' => 'function',
                 'name' => $fr['name'],
@@ -177,14 +207,15 @@ class AsyncGeminiClient
         $this->chatStreamAsync(
             $newMessages,
             $onChunk,
-            function($finalContent) use ($currentContent, $onComplete) {
-                $onComplete($currentContent . $finalContent);
+            function($finalContent, $usageMetadata = null, $usedModel = null) use ($currentContent, $onComplete, $model) {
+                // 传递完整参数
+                $onComplete($currentContent . $finalContent, $usageMetadata, $usedModel ?? $model);
             },
-            function($error) use ($functionResponses, $onChunk, $currentContent, $onComplete) {
+            function($error) use ($functionResponses, $onChunk, $currentContent, $onComplete, $model) {
                 // 如果第二次请求失败，直接显示工具结果
                 $fallback = $this->formatToolResults($functionResponses);
                 $onChunk($fallback, false);
-                $onComplete($currentContent . $fallback);
+                $onComplete($currentContent . $fallback, null, $model);
             },
             $options
         );
