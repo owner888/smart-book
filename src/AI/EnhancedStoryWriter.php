@@ -2,18 +2,21 @@
 /**
  * 增强版小说续写服务
  * 
- * 使用 Context Cache + Few-shot Prompting 替代 Fine-tuning
+ * 使用 Context Cache + Few-shot Prompting + 语义搜索
  * 通过智能提示工程达到类似 Fine-tuning 的效果
  */
 
 namespace SmartBook\AI;
 
 use SmartBook\Cache\CacheService;
+use SmartBook\RAG\VectorStore;
+use SmartBook\RAG\EmbeddingClient;
 
 class EnhancedStoryWriter
 {
     private AsyncGeminiClient $gemini;
     private GeminiContextCache $cache;
+    private EmbeddingClient $embedder;
     private string $apiKey;
     private string $model;
     
@@ -22,6 +25,7 @@ class EnhancedStoryWriter
         'style_samples' => 5,       // 风格样本数量
         'sample_length' => 500,     // 每个样本的字符长度
         'character_limit' => 10,    // 最多分析的人物数量
+        'use_semantic_search' => true, // 是否使用语义搜索选择样本
     ];
     
     public function __construct(
@@ -32,6 +36,51 @@ class EnhancedStoryWriter
         $this->model = $model;
         $this->gemini = new AsyncGeminiClient($apiKey, $model);
         $this->cache = new GeminiContextCache($apiKey, $model);
+        $this->embedder = new EmbeddingClient($apiKey);
+    }
+    
+    /**
+     * 基于用户输入的语义搜索选择风格样本
+     * 
+     * @param string $userPrompt 用户的续写要求
+     * @param string $bookFile 书籍文件名
+     * @param int $topK 返回样本数量
+     * @return array 语义相关的风格样本
+     */
+    public function searchStyleSamples(string $userPrompt, string $bookFile, int $topK = 5): array
+    {
+        // 获取书籍索引缓存路径
+        $booksDir = dirname(__DIR__, 2) . '/books';
+        $indexPath = $booksDir . '/' . pathinfo($bookFile, PATHINFO_FILENAME) . '.index.json';
+        
+        if (!file_exists($indexPath)) {
+            // 如果没有索引，返回空数组（回退到随机样本）
+            return [];
+        }
+        
+        // 加载向量存储
+        $vectorStore = new VectorStore($indexPath);
+        
+        if ($vectorStore->isEmpty()) {
+            return [];
+        }
+        
+        // 生成用户输入的向量表示
+        $queryEmbedding = $this->embedder->embedQuery($userPrompt);
+        
+        // 执行混合搜索
+        $results = $vectorStore->hybridSearch($userPrompt, $queryEmbedding, $topK, 0.4);
+        
+        // 提取样本文本
+        $samples = [];
+        foreach ($results as $result) {
+            $text = $result['chunk']['text'] ?? '';
+            if (mb_strlen($text) > 100) {
+                $samples[] = $text;
+            }
+        }
+        
+        return $samples;
     }
     
     /**
@@ -136,6 +185,9 @@ class EnhancedStoryWriter
      * @param callable $onChunk 流式回调
      * @param callable $onComplete 完成回调
      * @param array $options 选项
+     *   - style_samples: 自定义风格样本（如果提供则不使用语义搜索）
+     *   - use_semantic_search: 是否使用语义搜索（默认 true）
+     *   - sample_count: 样本数量（默认 5）
      */
     public function continueStory(
         string $bookFile,
@@ -152,8 +204,28 @@ class EnhancedStoryWriter
             return;
         }
         
-        // 获取书籍内容用于提取风格样本（如果没有传入）
+        // 获取风格样本
         $styleSamples = $options['style_samples'] ?? [];
+        $useSemanticSearch = $options['use_semantic_search'] ?? $this->config['use_semantic_search'];
+        $sampleCount = $options['sample_count'] ?? $this->config['style_samples'];
+        
+        // 如果没有提供样本且启用了语义搜索，则基于用户输入搜索相关段落
+        if (empty($styleSamples) && $useSemanticSearch) {
+            $styleSamples = $this->searchStyleSamples($prompt, $bookFile, $sampleCount);
+            
+            // 如果语义搜索无结果，从 Redis 获取预存样本
+            if (empty($styleSamples)) {
+                $redis = CacheService::getRedis();
+                if ($redis) {
+                    $analysisKey = "story:analysis:{$bookFile}";
+                    $analysisData = $redis->get($analysisKey);
+                    if ($analysisData) {
+                        $data = json_decode($analysisData, true);
+                        $styleSamples = $data['styleSamples'] ?? [];
+                    }
+                }
+            }
+        }
         
         // 构建分析数据
         $analysisData = [
@@ -162,8 +234,14 @@ class EnhancedStoryWriter
             'bookFile' => $bookFile,
         ];
         
+        // 添加搜索方法标记（用于调试）
+        $searchMethod = empty($styleSamples) ? 'none' : 
+            ($useSemanticSearch ? 'semantic' : 'cached');
+        
         // 构建增强版系统提示词
-        $systemPrompt = $this->buildEnhancedSystemPrompt($analysisData, $options);
+        $systemPrompt = $this->buildEnhancedSystemPrompt($analysisData, array_merge($options, [
+            'search_method' => $searchMethod,
+        ]));
         
         // 构建消息
         $messages = [
