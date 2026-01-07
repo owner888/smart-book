@@ -20,6 +20,7 @@ class EnhancedStoryWriter
     private CharacterMemory $characterMemory;
     private PlotTracker $plotTracker;
     private ContinuationHistory $continuationHistory;
+    private WorldMemory $worldMemory;
     private string $apiKey;
     private string $model;
     
@@ -32,9 +33,11 @@ class EnhancedStoryWriter
         'use_character_memory' => true, // 是否使用人物记忆
         'use_plot_tracking' => true,   // 是否使用情节追踪
         'use_history' => true,         // 是否使用续写历史
+        'use_world_memory' => true,    // 是否使用世界观记忆
         'character_count' => 3,     // 注入的相关人物数量
         'event_count' => 5,         // 注入的相关事件数量
         'history_count' => 3,       // 注入的历史续写数量
+        'world_setting_count' => 5, // 注入的相关世界观设定数量
     ];
     
     public function __construct(
@@ -49,6 +52,7 @@ class EnhancedStoryWriter
         $this->characterMemory = new CharacterMemory($apiKey);
         $this->plotTracker = new PlotTracker($apiKey);
         $this->continuationHistory = new ContinuationHistory($apiKey);
+        $this->worldMemory = new WorldMemory($apiKey);
     }
     
     /**
@@ -275,6 +279,19 @@ class EnhancedStoryWriter
             $historyContext = $this->continuationHistory->generateContext($bookFile);
         }
         
+        // 获取相关世界观设定
+        $relevantWorldSettings = [];
+        $worldOverview = '';
+        $useWorldMemory = $options['use_world_memory'] ?? $this->config['use_world_memory'];
+        $worldSettingCount = $options['world_setting_count'] ?? $this->config['world_setting_count'];
+        
+        if ($useWorldMemory && $this->worldMemory->hasWorldData($bookFile)) {
+            // 获取基础世界观概述
+            $worldOverview = $this->worldMemory->generateBasicOverview($bookFile);
+            // 搜索与续写内容相关的设定
+            $relevantWorldSettings = $this->worldMemory->searchRelevantSettings($bookFile, $prompt, $worldSettingCount);
+        }
+        
         // 构建分析数据
         $analysisData = [
             'cacheName' => $bookCache['name'],
@@ -284,6 +301,8 @@ class EnhancedStoryWriter
             'events' => $relevantEvents,
             'unresolved' => $unresolvedEvents,
             'historyContext' => $historyContext,
+            'worldOverview' => $worldOverview,
+            'worldSettings' => $relevantWorldSettings,
             'prompt' => $prompt, // 保存当前 prompt 用于历史记录
         ];
         
@@ -325,6 +344,8 @@ class EnhancedStoryWriter
         $events = $analysisData['events'] ?? [];
         $unresolved = $analysisData['unresolved'] ?? [];
         $historyContext = $analysisData['historyContext'] ?? '';
+        $worldOverview = $analysisData['worldOverview'] ?? '';
+        $worldSettings = $analysisData['worldSettings'] ?? [];
         $bookFile = $analysisData['bookFile'] ?? '未知书籍';
         $tokenCount = $options['token_count'] ?? 0;
         
@@ -351,6 +372,17 @@ class EnhancedStoryWriter
         if (!empty($characters)) {
             $prompt .= "\n\n" . $this->characterMemory->generateCharacterSummary($characters, true);
             $prompt .= "\n**重要**：续写时请严格遵循以上人物的性格特点和说话风格，保持人物形象的一致性。\n";
+        }
+        
+        // 添加世界观信息（如果有）
+        if (!empty($worldOverview)) {
+            $prompt .= "\n\n" . $worldOverview;
+        }
+        
+        // 添加相关世界观设定（如果有）
+        if (!empty($worldSettings)) {
+            $prompt .= "\n\n" . $this->worldMemory->generateWorldSummary($worldSettings, true);
+            $prompt .= "\n**重要**：续写时请严格遵守以上世界观设定，不要打破规则。\n";
         }
         
         // 添加相关情节信息（如果有）
@@ -571,6 +603,129 @@ PROMPT;
     public function getContinuationHistory(): ContinuationHistory
     {
         return $this->continuationHistory;
+    }
+    
+    /**
+     * 获取世界观记忆实例
+     */
+    public function getWorldMemory(): WorldMemory
+    {
+        return $this->worldMemory;
+    }
+    
+    /**
+     * 使用 AI 提取世界观设定并保存
+     * 
+     * @param string $bookFile 书籍文件名
+     * @return array 提取结果
+     */
+    public function extractAndSaveWorldSettings(string $bookFile): array
+    {
+        // 获取缓存名称
+        $bookCache = $this->cache->getBookCache($bookFile);
+        if (!$bookCache) {
+            return ['success' => false, 'error' => '请先为书籍创建缓存'];
+        }
+        
+        // 使用同步方式调用 AI 提取世界观
+        $client = new GeminiClient($this->apiKey, $this->model);
+        
+        $prompt = <<<PROMPT
+请分析这本书的世界观设定，提取信息并以 JSON 格式返回。
+
+设定类别说明：
+- era: 时代背景（历史时期、年代）
+- geography: 地理环境（地点、地图、气候）
+- society: 社会结构（阶级、制度、习俗）
+- magic: 魔法/能力体系（超自然力量系统）
+- technology: 科技水平（技术发展程度）
+- religion: 宗教信仰（神灵、信仰体系）
+- organization: 组织势力（帮派、门派、国家）
+- item: 重要物品（神器、宝物、道具）
+- rule: 世界规则（物理法则、魔法规则）
+- language: 语言文化（特殊用语、称谓）
+
+输出格式要求：
+```json
+{
+  "era": [
+    {
+      "name": "设定名称",
+      "description": "详细描述",
+      "rules": ["规则1", "规则2"],
+      "limitations": ["限制1", "限制2"]
+    }
+  ],
+  "geography": [
+    {
+      "name": "地点名称",
+      "description": "地点描述",
+      "locations": ["相关地点1", "相关地点2"]
+    }
+  ],
+  "society": [...],
+  "magic": [...],
+  "organization": [...],
+  "item": [...],
+  "language": [
+    {
+      "name": "用语/称谓",
+      "description": "含义说明"
+    }
+  ]
+}
+```
+
+只提取书中明确出现的设定，不要编造。
+每个类别最多提取 5 个最重要的设定。
+如果某个类别在书中没有相关内容，可以留空数组。
+只输出 JSON，不要其他文字。
+PROMPT;
+        
+        try {
+            $response = $client->chat([
+                ['role' => 'user', 'content' => $prompt],
+            ], [
+                'cachedContent' => $bookCache['name'],
+                'jsonMode' => true,
+            ]);
+            
+            // 解析 JSON
+            $content = $response['text'] ?? '';
+            
+            // 清理可能的 markdown 代码块
+            $content = preg_replace('/```json\s*/', '', $content);
+            $content = preg_replace('/```\s*$/', '', $content);
+            $content = trim($content);
+            
+            $data = json_decode($content, true);
+            
+            if (!$data) {
+                return ['success' => false, 'error' => '无法解析世界观数据'];
+            }
+            
+            // 保存到世界观记忆系统
+            $saved = $this->worldMemory->saveWorldSettings($bookFile, $data);
+            
+            // 统计各类别的设定数量
+            $counts = [];
+            $total = 0;
+            foreach ($data as $category => $items) {
+                if (is_array($items) && !empty($items)) {
+                    $counts[$category] = count($items);
+                    $total += count($items);
+                }
+            }
+            
+            return [
+                'success' => $saved,
+                'total_count' => $total,
+                'categories' => $counts,
+            ];
+            
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
     }
     
     /**
