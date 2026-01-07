@@ -19,6 +19,7 @@ class EnhancedStoryWriter
     private EmbeddingClient $embedder;
     private CharacterMemory $characterMemory;
     private PlotTracker $plotTracker;
+    private ContinuationHistory $continuationHistory;
     private string $apiKey;
     private string $model;
     
@@ -30,8 +31,10 @@ class EnhancedStoryWriter
         'use_semantic_search' => true, // 是否使用语义搜索选择样本
         'use_character_memory' => true, // 是否使用人物记忆
         'use_plot_tracking' => true,   // 是否使用情节追踪
+        'use_history' => true,         // 是否使用续写历史
         'character_count' => 3,     // 注入的相关人物数量
         'event_count' => 5,         // 注入的相关事件数量
+        'history_count' => 3,       // 注入的历史续写数量
     ];
     
     public function __construct(
@@ -45,6 +48,7 @@ class EnhancedStoryWriter
         $this->embedder = new EmbeddingClient($apiKey);
         $this->characterMemory = new CharacterMemory($apiKey);
         $this->plotTracker = new PlotTracker($apiKey);
+        $this->continuationHistory = new ContinuationHistory($apiKey);
     }
     
     /**
@@ -263,6 +267,14 @@ class EnhancedStoryWriter
             $unresolvedEvents = $this->plotTracker->getUnresolvedEvents($bookFile);
         }
         
+        // 获取续写历史上下文
+        $historyContext = '';
+        $useHistory = $options['use_history'] ?? $this->config['use_history'];
+        
+        if ($useHistory && $this->continuationHistory->hasHistory($bookFile)) {
+            $historyContext = $this->continuationHistory->generateContext($bookFile);
+        }
+        
         // 构建分析数据
         $analysisData = [
             'cacheName' => $bookCache['name'],
@@ -271,6 +283,8 @@ class EnhancedStoryWriter
             'characters' => $relevantCharacters,
             'events' => $relevantEvents,
             'unresolved' => $unresolvedEvents,
+            'historyContext' => $historyContext,
+            'prompt' => $prompt, // 保存当前 prompt 用于历史记录
         ];
         
         // 添加搜索方法标记（用于调试）
@@ -310,6 +324,7 @@ class EnhancedStoryWriter
         $characters = $analysisData['characters'] ?? [];
         $events = $analysisData['events'] ?? [];
         $unresolved = $analysisData['unresolved'] ?? [];
+        $historyContext = $analysisData['historyContext'] ?? '';
         $bookFile = $analysisData['bookFile'] ?? '未知书籍';
         $tokenCount = $options['token_count'] ?? 0;
         
@@ -326,6 +341,11 @@ class EnhancedStoryWriter
             ['《' . $bookFile . '》', number_format($tokenCount)],
             $basePrompt
         );
+        
+        // 添加续写历史上下文（如果有）
+        if (!empty($historyContext)) {
+            $prompt .= "\n\n" . $historyContext;
+        }
         
         // 添加人物信息（如果有）
         if (!empty($characters)) {
@@ -543,6 +563,53 @@ PROMPT;
     public function getPlotTracker(): PlotTracker
     {
         return $this->plotTracker;
+    }
+    
+    /**
+     * 获取续写历史实例
+     */
+    public function getContinuationHistory(): ContinuationHistory
+    {
+        return $this->continuationHistory;
+    }
+    
+    /**
+     * 保存续写内容到历史记录
+     * 
+     * @param string $bookFile 书籍文件名
+     * @param string $prompt 用户的续写要求
+     * @param string $content 续写生成的内容
+     * @param array $metadata 额外信息
+     * @return bool
+     */
+    public function saveContinuation(
+        string $bookFile, 
+        string $prompt, 
+        string $content, 
+        array $metadata = []
+    ): bool {
+        return $this->continuationHistory->saveContinuation(
+            $bookFile, 
+            $prompt, 
+            $content, 
+            array_merge(['model' => $this->model], $metadata)
+        );
+    }
+    
+    /**
+     * 获取续写统计信息
+     */
+    public function getContinuationStats(string $bookFile): array
+    {
+        return $this->continuationHistory->getStats($bookFile);
+    }
+    
+    /**
+     * 导出所有续写内容
+     */
+    public function exportContinuations(string $bookFile): string
+    {
+        return $this->continuationHistory->mergeAllContent($bookFile);
     }
     
     /**
