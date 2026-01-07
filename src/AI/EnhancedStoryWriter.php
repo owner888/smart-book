@@ -17,6 +17,7 @@ class EnhancedStoryWriter
     private AsyncGeminiClient $gemini;
     private GeminiContextCache $cache;
     private EmbeddingClient $embedder;
+    private CharacterMemory $characterMemory;
     private string $apiKey;
     private string $model;
     
@@ -26,6 +27,8 @@ class EnhancedStoryWriter
         'sample_length' => 500,     // 每个样本的字符长度
         'character_limit' => 10,    // 最多分析的人物数量
         'use_semantic_search' => true, // 是否使用语义搜索选择样本
+        'use_character_memory' => true, // 是否使用人物记忆
+        'character_count' => 3,     // 注入的相关人物数量
     ];
     
     public function __construct(
@@ -37,6 +40,7 @@ class EnhancedStoryWriter
         $this->gemini = new AsyncGeminiClient($apiKey, $model);
         $this->cache = new GeminiContextCache($apiKey, $model);
         $this->embedder = new EmbeddingClient($apiKey);
+        $this->characterMemory = new CharacterMemory($apiKey);
     }
     
     /**
@@ -187,7 +191,9 @@ class EnhancedStoryWriter
      * @param array $options 选项
      *   - style_samples: 自定义风格样本（如果提供则不使用语义搜索）
      *   - use_semantic_search: 是否使用语义搜索（默认 true）
+     *   - use_character_memory: 是否使用人物记忆（默认 true）
      *   - sample_count: 样本数量（默认 5）
+     *   - character_count: 人物数量（默认 3）
      */
     public function continueStory(
         string $bookFile,
@@ -227,11 +233,25 @@ class EnhancedStoryWriter
             }
         }
         
+        // 获取相关人物信息
+        $relevantCharacters = [];
+        $useCharacterMemory = $options['use_character_memory'] ?? $this->config['use_character_memory'];
+        $characterCount = $options['character_count'] ?? $this->config['character_count'];
+        
+        if ($useCharacterMemory && $this->characterMemory->hasCharacterData($bookFile)) {
+            $relevantCharacters = $this->characterMemory->searchRelevantCharacters(
+                $bookFile, 
+                $prompt, 
+                $characterCount
+            );
+        }
+        
         // 构建分析数据
         $analysisData = [
             'cacheName' => $bookCache['name'],
             'styleSamples' => $styleSamples,
             'bookFile' => $bookFile,
+            'characters' => $relevantCharacters,
         ];
         
         // 添加搜索方法标记（用于调试）
@@ -268,6 +288,7 @@ class EnhancedStoryWriter
     private function buildEnhancedSystemPrompt(array $analysisData, array $options = []): string
     {
         $styleSamples = $analysisData['styleSamples'] ?? [];
+        $characters = $analysisData['characters'] ?? [];
         $bookFile = $analysisData['bookFile'] ?? '未知书籍';
         $tokenCount = $options['token_count'] ?? 0;
         
@@ -285,9 +306,15 @@ class EnhancedStoryWriter
             $basePrompt
         );
         
+        // 添加人物信息（如果有）
+        if (!empty($characters)) {
+            $prompt .= "\n\n" . $this->characterMemory->generateCharacterSummary($characters, true);
+            $prompt .= "\n**重要**：续写时请严格遵循以上人物的性格特点和说话风格，保持人物形象的一致性。\n";
+        }
+        
         // 如果有风格样本，添加参考部分
         if (!empty($styleSamples)) {
-            $prompt .= "\n\n## 原作风格参考\n\n以下是从原作中提取的几段示例，请仔细学习其文风特点：\n";
+            $prompt .= "\n\n## 原作风格参考\n\n以下是从原作中提取的与你续写内容相关的几段示例，请仔细学习其文风特点：\n";
             
             // 添加风格样本
             foreach ($styleSamples as $i => $sample) {
@@ -323,7 +350,7 @@ PROMPT;
     }
     
     /**
-     * 分析书籍人物（可选功能）
+     * 分析书籍人物（可选功能，流式输出 Markdown）
      */
     public function analyzeCharacters(
         string $bookFile,
@@ -365,6 +392,98 @@ PROMPT],
                 'includeThoughts' => false,
             ]
         );
+    }
+    
+    /**
+     * 使用 AI 提取人物卡片并保存到人物记忆系统
+     * 
+     * @param string $bookFile 书籍文件名
+     * @return array 提取结果
+     */
+    public function extractAndSaveCharacters(string $bookFile): array
+    {
+        // 获取缓存名称
+        $bookCache = $this->cache->getBookCache($bookFile);
+        if (!$bookCache) {
+            return ['success' => false, 'error' => '请先为书籍创建缓存'];
+        }
+        
+        // 使用同步方式调用 AI 提取人物
+        $client = new GeminiClient($this->apiKey, $this->model);
+        
+        $prompt = <<<PROMPT
+请分析这本书的主要人物，提取人物信息并以 JSON 格式返回。
+
+输出格式要求：
+```json
+{
+  "characters": [
+    {
+      "name": "人物姓名",
+      "aliases": ["别名1", "外号"],
+      "identity": "身份/职业",
+      "personality": ["性格特点1", "性格特点2", "性格特点3"],
+      "appearance": "外貌描述（简短）",
+      "speech_style": "说话风格或口头禅",
+      "relationships": [
+        {"target": "相关人物名", "relation": "关系描述"}
+      ],
+      "arc": "人物弧光（成长变化）",
+      "key_events": ["关键事件1", "关键事件2"]
+    }
+  ]
+}
+```
+
+请分析最多 10 个主要人物，按重要性排序。
+只输出 JSON，不要其他文字。
+PROMPT;
+        
+        try {
+            $response = $client->chat([
+                ['role' => 'user', 'content' => $prompt],
+            ], [
+                'cachedContent' => $bookCache['name'],
+                'jsonMode' => true,
+            ]);
+            
+            // 解析 JSON
+            $content = $response['text'] ?? '';
+            
+            // 清理可能的 markdown 代码块
+            $content = preg_replace('/```json\s*/', '', $content);
+            $content = preg_replace('/```\s*$/', '', $content);
+            $content = trim($content);
+            
+            $data = json_decode($content, true);
+            
+            if (!$data || empty($data['characters'])) {
+                return ['success' => false, 'error' => '无法解析人物数据'];
+            }
+            
+            // 保存到人物记忆系统
+            $saved = $this->characterMemory->saveCharacters($bookFile, $data['characters']);
+            
+            return [
+                'success' => $saved,
+                'count' => count($data['characters']),
+                'characters' => array_map(fn($c) => [
+                    'name' => $c['name'] ?? '',
+                    'identity' => $c['identity'] ?? '',
+                ], $data['characters']),
+            ];
+            
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+    
+    /**
+     * 获取人物记忆实例
+     */
+    public function getCharacterMemory(): CharacterMemory
+    {
+        return $this->characterMemory;
     }
     
     /**
