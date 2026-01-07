@@ -1353,7 +1353,9 @@ INSTRUCTIONS;
             
             // 检查是否完成
             if ($currentStep >= $steps) {
-                Timer::del($timerId);
+                if ($timerId !== null) {
+                    Timer::del($timerId);
+                }
                 
                 // 更新任务状态为完成
                 $completionTime = date('Y-m-d H:i:s');
