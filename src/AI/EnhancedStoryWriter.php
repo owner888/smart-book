@@ -21,6 +21,7 @@ class EnhancedStoryWriter
     private PlotTracker $plotTracker;
     private ContinuationHistory $continuationHistory;
     private WorldMemory $worldMemory;
+    private DialogueStyleAnalyzer $dialogueAnalyzer;
     private string $apiKey;
     private string $model;
     
@@ -53,6 +54,7 @@ class EnhancedStoryWriter
         $this->plotTracker = new PlotTracker($apiKey);
         $this->continuationHistory = new ContinuationHistory($apiKey);
         $this->worldMemory = new WorldMemory($apiKey);
+        $this->dialogueAnalyzer = new DialogueStyleAnalyzer($apiKey);
     }
     
     /**
@@ -611,6 +613,116 @@ PROMPT;
     public function getWorldMemory(): WorldMemory
     {
         return $this->worldMemory;
+    }
+    
+    /**
+     * 获取对话风格分析实例
+     */
+    public function getDialogueAnalyzer(): DialogueStyleAnalyzer
+    {
+        return $this->dialogueAnalyzer;
+    }
+    
+    /**
+     * 使用 AI 提取对话风格并保存
+     * 
+     * @param string $bookFile 书籍文件名
+     * @return array 提取结果
+     */
+    public function extractAndSaveDialogueStyles(string $bookFile): array
+    {
+        // 获取缓存名称
+        $bookCache = $this->cache->getBookCache($bookFile);
+        if (!$bookCache) {
+            return ['success' => false, 'error' => '请先为书籍创建缓存'];
+        }
+        
+        // 使用同步方式调用 AI 提取对话风格
+        $client = new GeminiClient($this->apiKey, $this->model);
+        
+        $prompt = <<<PROMPT
+请分析这本书中主要人物的对话风格，提取信息并以 JSON 格式返回。
+
+对话风格特征说明：
+- formality: 正式程度（文雅/正式/随意/粗俗）
+- vocabulary: 用词特点（文言/白话/专业术语/通俗）
+- sentence: 句式特点（长句/短句/多感叹/多反问）
+- emotion: 情感表达（内敛/外放/冷静/激动）
+- rhythm: 语言节奏（快速简洁/舒缓悠长）
+- dialect: 方言特色（如有）
+
+输出格式要求：
+```json
+{
+  "人物姓名1": {
+    "features": {
+      "formality": "正式，用词文雅",
+      "vocabulary": "多用书面语，偏古典",
+      "sentence": "长句为主，表达细腻",
+      "emotion": "内敛含蓄"
+    },
+    "catchphrases": ["口头禅1", "口头禅2"],
+    "vocabulary": ["常用词1", "常用词2", "常用词3"],
+    "examples": [
+      "原文对话示例1",
+      "原文对话示例2",
+      "原文对话示例3"
+    ],
+    "forbidden": ["不会使用的词语或表达"]
+  },
+  "人物姓名2": {
+    ...
+  }
+}
+```
+
+请分析最多 8 个主要对话较多的人物。
+对话示例必须是书中原文，每人提取 3-5 句经典对话。
+只输出 JSON，不要其他文字。
+PROMPT;
+        
+        try {
+            $response = $client->chat([
+                ['role' => 'user', 'content' => $prompt],
+            ], [
+                'cachedContent' => $bookCache['name'],
+                'jsonMode' => true,
+            ]);
+            
+            // 解析 JSON
+            $content = $response['text'] ?? '';
+            
+            // 清理可能的 markdown 代码块
+            $content = preg_replace('/```json\s*/', '', $content);
+            $content = preg_replace('/```\s*$/', '', $content);
+            $content = trim($content);
+            
+            $data = json_decode($content, true);
+            
+            if (!$data || empty($data)) {
+                return ['success' => false, 'error' => '无法解析对话风格数据'];
+            }
+            
+            // 保存到对话风格分析系统
+            $saved = $this->dialogueAnalyzer->saveDialogueStyles($bookFile, $data);
+            
+            // 统计信息
+            $characterCount = count($data);
+            $exampleCount = 0;
+            foreach ($data as $style) {
+                $exampleCount += count($style['examples'] ?? []);
+            }
+            
+            return [
+                'success' => $saved,
+                'character_count' => $characterCount,
+                'example_count' => $exampleCount,
+                'characters' => array_keys($data),
+            ];
+            
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
     }
     
     /**
