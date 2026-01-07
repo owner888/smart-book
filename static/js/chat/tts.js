@@ -128,7 +128,60 @@ const ChatTTS = {
         this.updateButtonState(button, true);  // 播放状态
     },
     
-    // 使用云端 TTS
+    // 分割长文本为小于 4500 字节的片段（留些余量）
+    splitTextForTTS(text, maxBytes = 4500) {
+        const chunks = [];
+        let currentChunk = '';
+        
+        // 按句子分割
+        const sentences = text.split(/(?<=[。！？.!?])\s*/);
+        
+        for (const sentence of sentences) {
+            // 检查当前句子加上已有内容是否超过限制
+            const testChunk = currentChunk + sentence;
+            const byteLength = new Blob([testChunk]).size;
+            
+            if (byteLength > maxBytes) {
+                // 如果当前块不为空，保存它
+                if (currentChunk.trim()) {
+                    chunks.push(currentChunk.trim());
+                }
+                
+                // 如果单个句子就超过限制，需要进一步分割
+                if (new Blob([sentence]).size > maxBytes) {
+                    // 按字符分割
+                    let remaining = sentence;
+                    while (remaining) {
+                        let partLength = remaining.length;
+                        let part = remaining;
+                        
+                        // 减少长度直到满足字节限制
+                        while (new Blob([part]).size > maxBytes && partLength > 0) {
+                            partLength = Math.floor(partLength * 0.8);
+                            part = remaining.substring(0, partLength);
+                        }
+                        
+                        chunks.push(part.trim());
+                        remaining = remaining.substring(partLength);
+                    }
+                    currentChunk = '';
+                } else {
+                    currentChunk = sentence;
+                }
+            } else {
+                currentChunk = testChunk;
+            }
+        }
+        
+        // 添加最后一个块
+        if (currentChunk.trim()) {
+            chunks.push(currentChunk.trim());
+        }
+        
+        return chunks;
+    },
+    
+    // 使用云端 TTS（支持长文本分批处理）
     async speakWithCloud(text, button, messageId) {
         try {
             this.updateButtonState(button, true, true);  // 加载中状态
@@ -136,46 +189,47 @@ const ChatTTS = {
             const voice = localStorage.getItem('ttsCloudVoice') || null;
             const rate = parseFloat(localStorage.getItem('ttsRate') || '1.0');
             
-            const response = await fetch(`${ChatConfig.API_BASE}/api/tts/synthesize`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, voice, rate }),
-            });
+            // 分割长文本
+            const chunks = this.splitTextForTTS(text);
+            console.log(`🔊 TTS: 文本分割为 ${chunks.length} 个片段`);
             
-            const data = await response.json();
+            // 存储所有音频数据
+            const audioDataList = [];
+            let totalCharCount = 0;
+            let totalCost = 0;
+            let usedVoice = voice;
             
-            if (data.error) {
-                throw new Error(data.error);
+            // 依次请求每个片段
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i];
+                console.log(`🔊 TTS: 处理片段 ${i + 1}/${chunks.length} (${chunk.length} 字符)`);
+                
+                const response = await fetch(`${ChatConfig.API_BASE}/api/tts/synthesize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: chunk, voice, rate }),
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                audioDataList.push(`data:audio/mp3;base64,${data.audio}`);
+                totalCharCount += data.charCount || chunk.length;
+                totalCost += data.cost || 0;
+                usedVoice = data.voice || voice;
             }
             
-            // 播放音频
-            const audioData = `data:audio/mp3;base64,${data.audio}`;
-            const audio = new Audio(audioData);
+            // 按顺序播放所有音频
+            this.playAudioSequence(audioDataList, button, messageId, 0);
             
-            audio.onplay = () => {
-                this.speaking = true;
-                this.currentAudio = audio;
-                this.currentButton = button;
-                this.currentMessageId = messageId;
-                this.updateButtonState(button, true);
-            };
-            
-            audio.onended = () => {
-                this.speaking = false;
-                this.currentAudio = null;
-                this.currentButton = null;
-                this.currentMessageId = null;
-                this.updateButtonState(button, false);
-            };
-            
-            audio.onerror = (e) => {
-                console.error('音频播放错误:', e);
-                this.speaking = false;
-                this.updateButtonState(button, false);
-                layer.msg('音频播放失败', { icon: 2 });
-            };
-            
-            audio.play();
+            // 显示总消耗
+            if (usedVoice) {
+                const costFormatted = totalCost < 0.01 ? '<$0.01' : '$' + totalCost.toFixed(4);
+                this.showCostInfo(button, usedVoice, totalCharCount, costFormatted);
+            }
             
         } catch (e) {
             console.error('云端 TTS 错误:', e);
@@ -189,6 +243,43 @@ const ChatTTS = {
                 layer.msg('TTS 错误: ' + e.message, { icon: 2 });
             }
         }
+    },
+    
+    // 按顺序播放音频片段
+    playAudioSequence(audioDataList, button, messageId, index) {
+        if (index >= audioDataList.length) {
+            // 全部播放完成
+            this.speaking = false;
+            this.currentAudio = null;
+            this.currentButton = null;
+            this.currentMessageId = null;
+            this.updateButtonState(button, false);
+            return;
+        }
+        
+        const audio = new Audio(audioDataList[index]);
+        
+        audio.onplay = () => {
+            this.speaking = true;
+            this.currentAudio = audio;
+            this.currentButton = button;
+            this.currentMessageId = messageId;
+            this.updateButtonState(button, true);
+        };
+        
+        audio.onended = () => {
+            // 播放下一个片段
+            this.playAudioSequence(audioDataList, button, messageId, index + 1);
+        };
+        
+        audio.onerror = (e) => {
+            console.error('音频播放错误:', e);
+            this.speaking = false;
+            this.updateButtonState(button, false);
+            layer.msg('音频播放失败', { icon: 2 });
+        };
+        
+        audio.play();
     },
     
     // 使用浏览器 TTS
