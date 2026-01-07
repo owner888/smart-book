@@ -342,7 +342,13 @@ class EnhancedStoryWriter
             $debugHeader .= $systemPrompt;
             $debugHeader .= "\n```\n\n</details>\n\n---\n\n**续写内容：**\n\n";
             
-            $onChunk($debugHeader);
+            // 检查回调接受的参数数量
+            $ref = new \ReflectionFunction($onChunk);
+            if ($ref->getNumberOfParameters() >= 2) {
+                $onChunk($debugHeader, false); // 2个参数：内容, 是否完成
+            } else {
+                $onChunk($debugHeader);
+            }
         }
         
         // 构建消息

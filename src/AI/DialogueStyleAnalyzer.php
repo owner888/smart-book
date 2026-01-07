@@ -235,9 +235,12 @@ class DialogueStyleAnalyzer
      */
     private function extractKeywords(string $text): array
     {
-        $text = preg_replace('/[，。！？、；：""''（）\[\]【】\s]+/u', ' ', $text);
+        $pattern = '/[\x{FF0C}\x{3002}\x{FF01}\x{FF1F}\x{3001}\x{FF1B}\x{FF1A}\x{201C}\x{201D}\x{2018}\x{2019}\x{FF08}\x{FF09}\x{3010}\x{3011}\[\]\s]+/u';
+        $text = preg_replace($pattern, ' ', $text);
         $words = array_filter(explode(' ', $text));
-        return array_filter($words, fn($w) => mb_strlen($w) >= 2);
+        return array_filter($words, function($w) {
+            return mb_strlen($w) >= 2;
+        });
     }
     
     /**
