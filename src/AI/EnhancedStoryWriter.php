@@ -18,6 +18,7 @@ class EnhancedStoryWriter
     private GeminiContextCache $cache;
     private EmbeddingClient $embedder;
     private CharacterMemory $characterMemory;
+    private PlotTracker $plotTracker;
     private string $apiKey;
     private string $model;
     
@@ -28,7 +29,9 @@ class EnhancedStoryWriter
         'character_limit' => 10,    // 最多分析的人物数量
         'use_semantic_search' => true, // 是否使用语义搜索选择样本
         'use_character_memory' => true, // 是否使用人物记忆
+        'use_plot_tracking' => true,   // 是否使用情节追踪
         'character_count' => 3,     // 注入的相关人物数量
+        'event_count' => 5,         // 注入的相关事件数量
     ];
     
     public function __construct(
@@ -41,6 +44,7 @@ class EnhancedStoryWriter
         $this->cache = new GeminiContextCache($apiKey, $model);
         $this->embedder = new EmbeddingClient($apiKey);
         $this->characterMemory = new CharacterMemory($apiKey);
+        $this->plotTracker = new PlotTracker($apiKey);
     }
     
     /**
@@ -246,12 +250,27 @@ class EnhancedStoryWriter
             );
         }
         
+        // 获取相关情节事件
+        $relevantEvents = [];
+        $unresolvedEvents = [];
+        $usePlotTracking = $options['use_plot_tracking'] ?? $this->config['use_plot_tracking'];
+        $eventCount = $options['event_count'] ?? $this->config['event_count'];
+        
+        if ($usePlotTracking && $this->plotTracker->hasPlotData($bookFile)) {
+            // 搜索与续写内容相关的事件
+            $relevantEvents = $this->plotTracker->searchRelevantEvents($bookFile, $prompt, $eventCount);
+            // 获取未解决的事件/伏笔
+            $unresolvedEvents = $this->plotTracker->getUnresolvedEvents($bookFile);
+        }
+        
         // 构建分析数据
         $analysisData = [
             'cacheName' => $bookCache['name'],
             'styleSamples' => $styleSamples,
             'bookFile' => $bookFile,
             'characters' => $relevantCharacters,
+            'events' => $relevantEvents,
+            'unresolved' => $unresolvedEvents,
         ];
         
         // 添加搜索方法标记（用于调试）
@@ -289,6 +308,8 @@ class EnhancedStoryWriter
     {
         $styleSamples = $analysisData['styleSamples'] ?? [];
         $characters = $analysisData['characters'] ?? [];
+        $events = $analysisData['events'] ?? [];
+        $unresolved = $analysisData['unresolved'] ?? [];
         $bookFile = $analysisData['bookFile'] ?? '未知书籍';
         $tokenCount = $options['token_count'] ?? 0;
         
@@ -312,6 +333,35 @@ class EnhancedStoryWriter
             $prompt .= "\n**重要**：续写时请严格遵循以上人物的性格特点和说话风格，保持人物形象的一致性。\n";
         }
         
+        // 添加相关情节信息（如果有）
+        if (!empty($events)) {
+            $prompt .= "\n\n" . $this->plotTracker->generatePlotSummary($events);
+            $prompt .= "\n**重要**：续写时请确保与以上已发生的情节保持一致，不要产生矛盾。\n";
+        }
+        
+        // 添加未解决的伏笔/悬念（如果有）
+        if (!empty($unresolved)) {
+            $prompt .= "\n\n## ⚠️ 未解决的情节/伏笔\n\n";
+            $prompt .= "以下是原作中尚未解决的情节，续写时请注意：\n\n";
+            
+            $count = 0;
+            foreach ($unresolved as $event) {
+                if ($count >= 5) break; // 最多显示5个
+                $title = $event['title'] ?? '未知';
+                $status = $event['status'] ?? 'ongoing';
+                $prompt .= "- **{$title}**";
+                if ($status === 'foreshadow') {
+                    $prompt .= " [伏笔]";
+                }
+                $prompt .= "\n";
+                if (!empty($event['description'])) {
+                    $prompt .= "  {$event['description']}\n";
+                }
+                $count++;
+            }
+            $prompt .= "\n*提示：续写时可以选择解决这些悬念，或继续保持悬念。*\n";
+        }
+        
         // 如果有风格样本，添加参考部分
         if (!empty($styleSamples)) {
             $prompt .= "\n\n## 原作风格参考\n\n以下是从原作中提取的与你续写内容相关的几段示例，请仔细学习其文风特点：\n";
@@ -333,7 +383,8 @@ class EnhancedStoryWriter
 3. **节奏** - 保持原作的叙事节奏，不要突然加快或放慢
 4. **对话** - 人物对话要符合其身份和性格，用词要与原作一致
 5. **描写** - 场景、动作、心理描写的详略程度要与原作匹配
-6. **禁忌** - 不要使用现代网络用语，不要打破原作的世界观
+6. **情节一致** - 不要与已发生的事件产生矛盾
+7. **禁忌** - 不要使用现代网络用语，不要打破原作的世界观
 
 ## 输出格式
 
@@ -484,6 +535,137 @@ PROMPT;
     public function getCharacterMemory(): CharacterMemory
     {
         return $this->characterMemory;
+    }
+    
+    /**
+     * 获取情节追踪实例
+     */
+    public function getPlotTracker(): PlotTracker
+    {
+        return $this->plotTracker;
+    }
+    
+    /**
+     * 使用 AI 提取情节事件并保存到情节追踪系统
+     * 
+     * @param string $bookFile 书籍文件名
+     * @return array 提取结果
+     */
+    public function extractAndSavePlotEvents(string $bookFile): array
+    {
+        // 获取缓存名称
+        $bookCache = $this->cache->getBookCache($bookFile);
+        if (!$bookCache) {
+            return ['success' => false, 'error' => '请先为书籍创建缓存'];
+        }
+        
+        // 使用同步方式调用 AI 提取情节
+        $client = new GeminiClient($this->apiKey, $this->model);
+        
+        $prompt = <<<PROMPT
+请分析这本书的主要情节和事件，提取信息并以 JSON 格式返回。
+
+事件类型说明：
+- plot: 主要情节发展
+- revelation: 秘密/真相揭露
+- death: 角色死亡
+- relationship: 关系变化（结婚、分手、反目等）
+- conflict: 主要冲突
+- resolution: 问题解决
+
+事件状态说明：
+- resolved: 已解决/已完成
+- ongoing: 正在进行/尚未解决
+- foreshadow: 伏笔（暗示未来会发生）
+
+输出格式要求：
+```json
+{
+  "events": [
+    {
+      "title": "事件标题",
+      "type": "plot",
+      "status": "resolved",
+      "description": "事件详细描述",
+      "characters": ["相关人物1", "相关人物2"],
+      "location": "发生地点",
+      "consequences": ["后果1", "后果2"],
+      "chapter": "大约在第几章/回"
+    }
+  ],
+  "timeline": [
+    {
+      "phase": "开端/发展/高潮/结局",
+      "description": "这个阶段的主要内容",
+      "key_events": ["事件标题1", "事件标题2"]
+    }
+  ]
+}
+```
+
+请提取最重要的 15-20 个事件，按故事发生顺序排列。
+特别注意标记：
+1. 尚未解决的悬念（status: ongoing）
+2. 可能的伏笔（status: foreshadow）
+3. 角色死亡事件（type: death）
+
+只输出 JSON，不要其他文字。
+PROMPT;
+        
+        try {
+            $response = $client->chat([
+                ['role' => 'user', 'content' => $prompt],
+            ], [
+                'cachedContent' => $bookCache['name'],
+                'jsonMode' => true,
+            ]);
+            
+            // 解析 JSON
+            $content = $response['text'] ?? '';
+            
+            // 清理可能的 markdown 代码块
+            $content = preg_replace('/```json\s*/', '', $content);
+            $content = preg_replace('/```\s*$/', '', $content);
+            $content = trim($content);
+            
+            $data = json_decode($content, true);
+            
+            if (!$data || empty($data['events'])) {
+                return ['success' => false, 'error' => '无法解析情节数据'];
+            }
+            
+            // 为每个事件添加 ID
+            foreach ($data['events'] as &$event) {
+                $event['id'] = uniqid('event_');
+                $event['source'] = 'original'; // 标记为原作事件
+            }
+            
+            // 保存到情节追踪系统
+            $saved = $this->plotTracker->savePlotData(
+                $bookFile, 
+                $data['events'], 
+                $data['timeline'] ?? []
+            );
+            
+            // 统计未解决事件
+            $unresolvedCount = count(array_filter($data['events'], fn($e) => 
+                ($e['status'] ?? '') === 'ongoing' || ($e['status'] ?? '') === 'foreshadow'
+            ));
+            
+            return [
+                'success' => $saved,
+                'count' => count($data['events']),
+                'unresolved_count' => $unresolvedCount,
+                'events' => array_map(fn($e) => [
+                    'title' => $e['title'] ?? '',
+                    'type' => $e['type'] ?? 'plot',
+                    'status' => $e['status'] ?? 'resolved',
+                ], array_slice($data['events'], 0, 10)), // 只返回前10个
+            ];
+            
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
     }
     
     /**
