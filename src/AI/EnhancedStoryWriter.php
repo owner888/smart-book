@@ -35,6 +35,7 @@ class EnhancedStoryWriter
         'use_plot_tracking' => true,   // 是否使用情节追踪
         'use_history' => true,         // 是否使用续写历史
         'use_world_memory' => true,    // 是否使用世界观记忆
+        'use_dialogue_styles' => true, // 是否使用对话风格分析
         'character_count' => 3,     // 注入的相关人物数量
         'event_count' => 5,         // 注入的相关事件数量
         'history_count' => 3,       // 注入的历史续写数量
@@ -294,6 +295,18 @@ class EnhancedStoryWriter
             $relevantWorldSettings = $this->worldMemory->searchRelevantSettings($bookFile, $prompt, $worldSettingCount);
         }
         
+        // 获取对话风格信息
+        $dialogueStyles = [];
+        $dialogueGuidelines = '';
+        $useDialogueStyles = $options['use_dialogue_styles'] ?? $this->config['use_dialogue_styles'];
+        
+        if ($useDialogueStyles && $this->dialogueAnalyzer->hasDialogueData($bookFile)) {
+            // 获取所有对话风格
+            $dialogueStyles = $this->dialogueAnalyzer->getAllStyles($bookFile);
+            // 生成对话写作指南
+            $dialogueGuidelines = $this->dialogueAnalyzer->generateDialogueGuidelines($bookFile);
+        }
+        
         // 构建分析数据
         $analysisData = [
             'cacheName' => $bookCache['name'],
@@ -305,6 +318,8 @@ class EnhancedStoryWriter
             'historyContext' => $historyContext,
             'worldOverview' => $worldOverview,
             'worldSettings' => $relevantWorldSettings,
+            'dialogueStyles' => $dialogueStyles,
+            'dialogueGuidelines' => $dialogueGuidelines,
             'prompt' => $prompt, // 保存当前 prompt 用于历史记录
         ];
         
@@ -348,6 +363,8 @@ class EnhancedStoryWriter
         $historyContext = $analysisData['historyContext'] ?? '';
         $worldOverview = $analysisData['worldOverview'] ?? '';
         $worldSettings = $analysisData['worldSettings'] ?? [];
+        $dialogueStyles = $analysisData['dialogueStyles'] ?? [];
+        $dialogueGuidelines = $analysisData['dialogueGuidelines'] ?? '';
         $bookFile = $analysisData['bookFile'] ?? '未知书籍';
         $tokenCount = $options['token_count'] ?? 0;
         
@@ -414,6 +431,17 @@ class EnhancedStoryWriter
                 $count++;
             }
             $prompt .= "\n*提示：续写时可以选择解决这些悬念，或继续保持悬念。*\n";
+        }
+        
+        // 添加对话风格信息（如果有）
+        if (!empty($dialogueStyles)) {
+            $prompt .= "\n\n" . $this->dialogueAnalyzer->generateDialogueSummary($dialogueStyles, true);
+            $prompt .= "\n**重要**：续写对话时请严格遵循以上各角色的说话风格和用语习惯。\n";
+        }
+        
+        // 添加对话写作指南（如果有）
+        if (!empty($dialogueGuidelines)) {
+            $prompt .= "\n\n" . $dialogueGuidelines;
         }
         
         // 如果有风格样本，添加参考部分
@@ -1000,6 +1028,57 @@ PROMPT;
         } catch (\Exception $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }
+    }
+    
+    /**
+     * 一键提取所有记忆数据
+     * 
+     * @param string $bookFile 书籍文件名
+     * @return array 提取结果
+     */
+    public function extractAllMemories(string $bookFile): array
+    {
+        $results = [
+            'book' => $bookFile,
+            'success' => true,
+            'extractions' => [],
+        ];
+        
+        // 1. 提取人物
+        $results['extractions']['characters'] = $this->extractAndSaveCharacters($bookFile);
+        
+        // 2. 提取情节
+        $results['extractions']['plot'] = $this->extractAndSavePlotEvents($bookFile);
+        
+        // 3. 提取世界观
+        $results['extractions']['world'] = $this->extractAndSaveWorldSettings($bookFile);
+        
+        // 4. 提取对话风格
+        $results['extractions']['dialogue'] = $this->extractAndSaveDialogueStyles($bookFile);
+        
+        // 检查是否全部成功
+        foreach ($results['extractions'] as $key => $extraction) {
+            if (!($extraction['success'] ?? false)) {
+                $results['success'] = false;
+                $results['failed'][] = $key;
+            }
+        }
+        
+        return $results;
+    }
+    
+    /**
+     * 获取书籍的记忆数据状态
+     */
+    public function getMemoryStatus(string $bookFile): array
+    {
+        return [
+            'characters' => $this->characterMemory->hasCharacterData($bookFile),
+            'plot' => $this->plotTracker->hasPlotData($bookFile),
+            'world' => $this->worldMemory->hasWorldData($bookFile),
+            'dialogue' => $this->dialogueAnalyzer->hasDialogueData($bookFile),
+            'history' => $this->continuationHistory->hasHistory($bookFile),
+        ];
     }
     
     /**
