@@ -37,6 +37,20 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
     }
     
     try {
+        // favicon.ico
+        if ($path === '/favicon.ico') {
+            $icoPath = dirname(__DIR__, 2) . '/static/favicon.ico';
+            if (file_exists($icoPath)) {
+                $connection->send(new Response(200, [
+                    'Content-Type' => 'image/x-icon', 
+                    'Cache-Control' => 'public, max-age=86400'
+                ], file_get_contents($icoPath)));
+            } else {
+                $connection->send(new Response(204, [], ''));
+            }
+            return;
+        }
+        
         // 首页
         if ($path === '/' || $path === '/index.html') {
             $indexHtmlPath = dirname(__DIR__, 2) . '/index.html';
