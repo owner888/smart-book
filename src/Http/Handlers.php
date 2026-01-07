@@ -1487,14 +1487,60 @@ function handleStreamEnhancedContinue(TcpConnection $connection, Request $reques
     $connection->send(new Response(200, $headers, ''));
     
     try {
-        // 首先查找书籍的缓存，获取缓存使用的模型
+        // 首先查找书籍的缓存
         $cacheClient = new GeminiContextCache(GEMINI_API_KEY, $requestedModel);
         $bookCache = $cacheClient->getBookCache($bookFile);
         
+        // 如果缓存不存在，自动创建
         if (!$bookCache) {
-            sendSSE($connection, 'error', "请先为书籍《{$bookFile}》创建 Context Cache");
-            $connection->close();
-            return null;
+            sendSSE($connection, 'sources', json_encode([
+                ['text' => "正在为《{$bookFile}》创建 Context Cache，请稍候...", 'score' => 0]
+            ], JSON_UNESCAPED_UNICODE));
+            
+            // 提取书籍内容
+            $booksDir = dirname(__DIR__, 2) . '/books';
+            $bookPath = $booksDir . '/' . $bookFile;
+            
+            if (!file_exists($bookPath)) {
+                sendSSE($connection, 'error', "书籍文件不存在: {$bookFile}");
+                $connection->close();
+                return null;
+            }
+            
+            $ext = strtolower(pathinfo($bookFile, PATHINFO_EXTENSION));
+            if ($ext === 'epub') {
+                $content = \SmartBook\Parser\EpubParser::extractText($bookPath);
+            } else {
+                $content = file_get_contents($bookPath);
+            }
+            
+            if (empty($content)) {
+                sendSSE($connection, 'error', "无法提取书籍内容");
+                $connection->close();
+                return null;
+            }
+            
+            // 创建缓存
+            $createResult = $cacheClient->createForBook($bookFile, $content, 7200);
+            
+            if (!$createResult['success']) {
+                sendSSE($connection, 'error', "创建缓存失败: " . ($createResult['error'] ?? '未知错误'));
+                $connection->close();
+                return null;
+            }
+            
+            // 重新获取缓存
+            $bookCache = $cacheClient->getBookCache($bookFile);
+            
+            if (!$bookCache) {
+                sendSSE($connection, 'error', "创建缓存后仍无法获取");
+                $connection->close();
+                return null;
+            }
+            
+            sendSSE($connection, 'sources', json_encode([
+                ['text' => "✅ Context Cache 创建成功！", 'score' => 100]
+            ], JSON_UNESCAPED_UNICODE));
         }
         
         // 检查模型是否匹配
