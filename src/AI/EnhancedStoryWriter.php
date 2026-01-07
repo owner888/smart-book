@@ -332,6 +332,19 @@ class EnhancedStoryWriter
             'search_method' => $searchMethod,
         ]));
         
+        // 是否输出调试信息（系统提示词）
+        $debugPrompt = $options['debug_prompt'] ?? true;
+        
+        if ($debugPrompt) {
+            // 先输出系统提示词作为调试信息
+            $debugHeader = "\n\n<details>\n<summary>📝 系统提示词（点击展开）</summary>\n\n";
+            $debugHeader .= "```markdown\n";
+            $debugHeader .= $systemPrompt;
+            $debugHeader .= "\n```\n\n</details>\n\n---\n\n**续写内容：**\n\n";
+            
+            $onChunk($debugHeader);
+        }
+        
         // 构建消息
         $messages = [
             ['role' => 'system', 'content' => $systemPrompt],
