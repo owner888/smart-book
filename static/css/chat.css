@@ -1295,3 +1295,52 @@ body {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.3; }
 }
+
+/* ===== 对话模式按钮 ===== */
+#conversationBtn {
+    position: relative;
+}
+
+#conversationBtn.conversation-active {
+    background: linear-gradient(135deg, #4caf50, #2196f3);
+    color: white;
+    animation: conversation-glow 2s infinite;
+}
+
+@keyframes conversation-glow {
+    0%, 100% { 
+        box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+    }
+    50% { 
+        box-shadow: 0 0 15px rgba(76, 175, 80, 0.8), 0 0 25px rgba(33, 150, 243, 0.5);
+    }
+}
+
+#conversationBtn.listening {
+    background: var(--accent-green);
+    color: white;
+}
+
+#conversationBtn.thinking {
+    background: #ff9800;
+    color: white;
+}
+
+#conversationBtn.thinking svg {
+    animation: spin 1s linear infinite;
+}
+
+#conversationBtn.speaking {
+    background: var(--accent-blue);
+    color: white;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* 确保对话模式按钮在所有尺寸下显示 */
+#conversationBtn {
+    display: flex !important;
+}

@@ -250,8 +250,28 @@ function showASRSettings() {
     }
 }
 
+// 对话模式开关
+function toggleConversation() {
+    if (typeof ChatASR !== 'undefined') {
+        ChatASR.startConversation();
+    } else {
+        layer.msg('对话模式模块未加载', { icon: 0 });
+    }
+}
+
+// 显示对话模式设置
+function showConversationSettings() {
+    if (typeof ChatASR !== 'undefined') {
+        ChatASR.showConversationSettings();
+    } else {
+        layer.msg('对话模式模块未加载', { icon: 0 });
+    }
+}
+
 // 全局函数
 window.toggleRAG = toggleRAG;
 window.showRAGSettings = showRAGSettings;
 window.toggleASR = toggleASR;
 window.showASRSettings = showASRSettings;
+window.toggleConversation = toggleConversation;
+window.showConversationSettings = showConversationSettings;

@@ -1,5 +1,6 @@
 /**
  * ASR 语音识别模块 - 支持 Google Cloud Speech-to-Text 和浏览器 Web Speech API
+ * 包含对话模式（持续监听、自动发送、TTS 回复）
  */
 
 const ChatASR = {
@@ -21,6 +22,15 @@ const ChatASR = {
     onResult: null,
     onError: null,
     onStateChange: null,
+    
+    // ========== 对话模式 ==========
+    conversationMode: false,      // 是否在对话模式中
+    conversationActive: false,    // 对话是否正在进行
+    silenceTimer: null,           // 静默计时器
+    silenceTimeout: 1500,         // 静默超时时间（毫秒）- 用户停顿多久认为说完
+    currentTranscript: '',        // 当前累积的文本
+    waitingForResponse: false,    // 是否在等待 AI 回复
+    autoTTS: true,                // 自动播放 TTS
     
     // 初始化
     init() {
@@ -489,6 +499,434 @@ const ChatASR = {
                 </svg>
             `;
         }
+    },
+    
+    // ========== 对话模式功能 ==========
+    
+    // 开始对话模式
+    startConversation() {
+        if (this.conversationActive) {
+            this.stopConversation();
+            return;
+        }
+        
+        this.conversationMode = true;
+        this.conversationActive = true;
+        this.currentTranscript = '';
+        this.waitingForResponse = false;
+        
+        // 更新 UI
+        this.updateConversationUI(true);
+        
+        // 显示提示
+        layer.msg('🎙️ 对话模式已开启，请开始说话', { icon: 1, time: 2000 });
+        
+        // 开始持续监听
+        this.startContinuousListening();
+    },
+    
+    // 停止对话模式
+    stopConversation() {
+        this.conversationMode = false;
+        this.conversationActive = false;
+        this.currentTranscript = '';
+        this.waitingForResponse = false;
+        
+        // 停止录音
+        this.stop();
+        
+        // 清除计时器
+        if (this.silenceTimer) {
+            clearTimeout(this.silenceTimer);
+            this.silenceTimer = null;
+        }
+        
+        // 停止 TTS
+        if (typeof ChatTTS !== 'undefined') {
+            ChatTTS.stop();
+        }
+        
+        // 更新 UI
+        this.updateConversationUI(false);
+        
+        layer.msg('🎙️ 对话模式已关闭', { icon: 0, time: 1500 });
+    },
+    
+    // 开始持续监听
+    startContinuousListening() {
+        if (!this.conversationActive || this.waitingForResponse) return;
+        
+        // 初始化浏览器 ASR 为持续模式
+        if (this.recognition) {
+            this.recognition.continuous = true;  // 持续监听
+            this.recognition.interimResults = true;
+            
+            // 重新绑定事件
+            this.recognition.onresult = (event) => {
+                this.handleConversationResult(event);
+            };
+            
+            this.recognition.onend = () => {
+                // 如果对话模式仍然激活，自动重新开始
+                if (this.conversationActive && !this.waitingForResponse) {
+                    setTimeout(() => {
+                        this.restartListening();
+                    }, 100);
+                }
+            };
+            
+            this.recognition.onerror = (event) => {
+                console.warn('对话模式 ASR 错误:', event.error);
+                if (event.error === 'no-speech') {
+                    // 没有检测到语音，重新开始
+                    if (this.conversationActive && !this.waitingForResponse) {
+                        this.restartListening();
+                    }
+                } else if (event.error === 'aborted') {
+                    // 被中止，可能是因为我们停止了
+                } else {
+                    layer.msg('语音识别错误: ' + event.error, { icon: 2 });
+                }
+            };
+        }
+        
+        this.restartListening();
+    },
+    
+    // 重新开始监听
+    restartListening() {
+        if (!this.conversationActive || this.waitingForResponse) return;
+        
+        try {
+            this.recognition.start();
+            this.recording = true;
+            console.log('🎤 持续监听中...');
+        } catch (e) {
+            // 可能已经在运行，先停止
+            try {
+                this.recognition.stop();
+            } catch (e2) {}
+            
+            setTimeout(() => {
+                if (this.conversationActive && !this.waitingForResponse) {
+                    try {
+                        this.recognition.start();
+                        this.recording = true;
+                    } catch (e3) {
+                        console.warn('无法重启语音识别:', e3);
+                    }
+                }
+            }, 200);
+        }
+    },
+    
+    // 处理对话模式的语音结果
+    handleConversationResult(event) {
+        let transcript = '';
+        let isFinal = false;
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            transcript += event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                isFinal = true;
+            }
+        }
+        
+        // 更新当前文本
+        this.currentTranscript = transcript;
+        
+        // 显示在输入框中
+        const input = document.getElementById('chatInput');
+        if (input) {
+            input.value = transcript;
+            input.dispatchEvent(new Event('input'));
+        }
+        
+        // 重置静默计时器
+        if (this.silenceTimer) {
+            clearTimeout(this.silenceTimer);
+        }
+        
+        // 如果有内容，设置静默计时器
+        if (transcript.trim()) {
+            this.silenceTimer = setTimeout(() => {
+                this.handleSilence();
+            }, this.silenceTimeout);
+        }
+    },
+    
+    // 处理静默（用户停止说话）
+    async handleSilence() {
+        const text = this.currentTranscript.trim();
+        if (!text) {
+            // 没有内容，继续监听
+            return;
+        }
+        
+        console.log('🎤 检测到静默，准备发送:', text);
+        
+        // 停止录音
+        try {
+            this.recognition.stop();
+        } catch (e) {}
+        this.recording = false;
+        
+        // 标记等待回复
+        this.waitingForResponse = true;
+        
+        // 清空当前文本
+        this.currentTranscript = '';
+        
+        // 更新状态显示
+        this.updateConversationStatus('thinking');
+        
+        // 发送消息
+        await this.sendAndWaitResponse(text);
+    },
+    
+    // 发送消息并等待回复
+    async sendAndWaitResponse(text) {
+        try {
+            // 设置输入框内容
+            const input = document.getElementById('chatInput');
+            if (input) {
+                input.value = text;
+            }
+            
+            // 设置对话模式回调
+            const originalOnComplete = window._conversationOnComplete;
+            
+            window._conversationOnComplete = async (responseText) => {
+                console.log('🤖 收到回复，准备播放 TTS');
+                
+                // 更新状态
+                this.updateConversationStatus('speaking');
+                
+                // 播放 TTS
+                if (this.autoTTS && responseText && typeof ChatTTS !== 'undefined') {
+                    await this.playTTSAndContinue(responseText);
+                } else {
+                    // 没有 TTS，直接继续监听
+                    this.continueListening();
+                }
+                
+                // 恢复原来的回调
+                window._conversationOnComplete = originalOnComplete;
+            };
+            
+            // 调用 ChatMessage 发送消息
+            if (typeof ChatMessage !== 'undefined' && typeof ChatMessage.sendMessage === 'function') {
+                await ChatMessage.sendMessage();
+            } else {
+                // 降级：直接模拟点击发送
+                const sendBtn = document.getElementById('sendBtn');
+                if (sendBtn) {
+                    sendBtn.click();
+                }
+            }
+            
+        } catch (e) {
+            console.error('发送消息错误:', e);
+            layer.msg('发送失败: ' + e.message, { icon: 2 });
+            this.continueListening();
+        }
+    },
+    
+    // 播放 TTS 并继续监听
+    async playTTSAndContinue(text) {
+        try {
+            // 提取纯文本（移除 Markdown 等）
+            const plainText = this.extractPlainText(text);
+            
+            if (!plainText) {
+                this.continueListening();
+                return;
+            }
+            
+            // 播放 TTS
+            await ChatTTS.speak(plainText, {
+                onEnd: () => {
+                    console.log('🔊 TTS 播放完成，继续监听');
+                    this.continueListening();
+                },
+                onError: (err) => {
+                    console.warn('TTS 错误:', err);
+                    this.continueListening();
+                }
+            });
+            
+        } catch (e) {
+            console.error('TTS 播放错误:', e);
+            this.continueListening();
+        }
+    },
+    
+    // 提取纯文本
+    extractPlainText(text) {
+        if (!text) return '';
+        
+        // 移除 Markdown 代码块
+        text = text.replace(/```[\s\S]*?```/g, '');
+        // 移除行内代码
+        text = text.replace(/`[^`]+`/g, '');
+        // 移除链接
+        text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+        // 移除图片
+        text = text.replace(/!\[[^\]]*\]\([^)]+\)/g, '');
+        // 移除 HTML 标签
+        text = text.replace(/<[^>]+>/g, '');
+        // 移除 Markdown 格式符号
+        text = text.replace(/[*_~#]+/g, '');
+        // 压缩空白
+        text = text.replace(/\s+/g, ' ').trim();
+        
+        // 限制长度（TTS 太长会有问题）
+        if (text.length > 500) {
+            text = text.substring(0, 500) + '...';
+        }
+        
+        return text;
+    },
+    
+    // 继续监听
+    continueListening() {
+        this.waitingForResponse = false;
+        this.updateConversationStatus('listening');
+        
+        if (this.conversationActive) {
+            setTimeout(() => {
+                this.restartListening();
+            }, 500);
+        }
+    },
+    
+    // 更新对话模式 UI
+    updateConversationUI(active) {
+        const btn = document.getElementById('conversationBtn');
+        if (btn) {
+            if (active) {
+                btn.classList.add('active', 'conversation-active');
+                btn.title = '停止对话';
+            } else {
+                btn.classList.remove('active', 'conversation-active');
+                btn.title = '开始对话';
+            }
+        }
+        
+        // 同时更新 ASR 按钮状态
+        const asrBtn = document.getElementById('asrBtn');
+        if (asrBtn) {
+            if (active) {
+                asrBtn.style.display = 'none';
+            } else {
+                asrBtn.style.display = '';
+            }
+        }
+    },
+    
+    // 更新对话状态显示
+    updateConversationStatus(status) {
+        const btn = document.getElementById('conversationBtn');
+        if (!btn) return;
+        
+        switch (status) {
+            case 'listening':
+                btn.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="23"/>
+                        <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                `;
+                btn.classList.remove('thinking', 'speaking');
+                btn.classList.add('listening');
+                break;
+            case 'thinking':
+                btn.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 6v6l4 2"/>
+                    </svg>
+                `;
+                btn.classList.remove('listening', 'speaking');
+                btn.classList.add('thinking');
+                break;
+            case 'speaking':
+                btn.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                    </svg>
+                `;
+                btn.classList.remove('listening', 'thinking');
+                btn.classList.add('speaking');
+                break;
+        }
+    },
+    
+    // 显示对话模式设置
+    showConversationSettings() {
+        const content = `
+            <div style="padding: 20px;">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">⏱️ 静默超时（毫秒）</label>
+                    <input type="range" id="silenceTimeoutRange" min="500" max="3000" step="100" value="${this.silenceTimeout}" 
+                           style="width: 100%;" oninput="document.getElementById('silenceTimeoutValue').textContent = this.value + 'ms'">
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
+                        <span>快速 (0.5s)</span>
+                        <span id="silenceTimeoutValue">${this.silenceTimeout}ms</span>
+                        <span>慢速 (3s)</span>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">用户停止说话多久后自动发送</div>
+                </div>
+                
+                <div style="margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="autoTTSCheck" ${this.autoTTS ? 'checked' : ''} style="width: 18px; height: 18px;">
+                        <span style="font-weight: 500;">🔊 自动播放 AI 回复</span>
+                    </label>
+                </div>
+                
+                <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                    <div style="font-weight: 500; margin-bottom: 8px;">💡 使用说明</div>
+                    <ul style="font-size: 13px; color: var(--text-secondary); padding-left: 20px; margin: 0;">
+                        <li>点击对话按钮开始语音对话</li>
+                        <li>说完一句话后稍作停顿</li>
+                        <li>系统会自动发送并获取回复</li>
+                        <li>AI 回复会自动朗读</li>
+                        <li>再次点击按钮结束对话</li>
+                    </ul>
+                </div>
+                
+                <button onclick="ChatASR.startConversation(); layer.closeAll();" 
+                        style="width: 100%; padding: 12px; background: var(--accent-green); border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 15px;">
+                    🎙️ 开始对话
+                </button>
+            </div>
+        `;
+        
+        layui.layer.open({
+            type: 1,
+            title: '🎙️ 对话模式设置',
+            area: ['380px', 'auto'],
+            shadeClose: true,
+            content: content,
+            end: () => {
+                const timeout = document.getElementById('silenceTimeoutRange')?.value;
+                const autoTTS = document.getElementById('autoTTSCheck')?.checked;
+                
+                if (timeout) {
+                    this.silenceTimeout = parseInt(timeout);
+                    localStorage.setItem('asrSilenceTimeout', timeout);
+                }
+                if (autoTTS !== undefined) {
+                    this.autoTTS = autoTTS;
+                    localStorage.setItem('asrAutoTTS', autoTTS);
+                }
+            }
+        });
     }
 };
 

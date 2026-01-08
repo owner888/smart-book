@@ -356,11 +356,21 @@ function finishStreamingMessage(isError = false) {
         ChatState.getCurrentState().history.push({ role: 'assistant', content: ChatState.currentContent });
     }
     
+    // 保存最终内容用于对话模式
+    const finalContent = ChatState.currentContent;
+    
     ChatState.currentMessageDiv = null;
     ChatState.currentContent = '';
     ChatState.currentSources = null;
     
     chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // 触发对话模式回调（如果已设置）
+    if (!isError && window._conversationOnComplete && typeof window._conversationOnComplete === 'function') {
+        setTimeout(() => {
+            window._conversationOnComplete(finalContent);
+        }, 100);
+    }
 }
 
 // 添加消息
