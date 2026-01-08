@@ -839,10 +839,17 @@ const ChatASR = {
     // 播放 TTS 并继续监听
     async playTTSAndContinue(text) {
         try {
+            console.log('🔊 playTTSAndContinue: 收到原始回复, 长度:', text ? text.length : 0);
+            console.log('🔊 playTTSAndContinue: 原始回复前100字符:', text ? text.substring(0, 100) : 'null');
+            
             // 提取纯文本（移除 Markdown 等）
             const plainText = this.extractPlainText(text);
             
+            console.log('🔊 playTTSAndContinue: 提取后纯文本长度:', plainText ? plainText.length : 0);
+            console.log('🔊 playTTSAndContinue: 纯文本前100字符:', plainText ? plainText.substring(0, 100) : 'null');
+            
             if (!plainText) {
+                console.log('🔊 playTTSAndContinue: 纯文本为空，跳过TTS');
                 this.continueListening();
                 return;
             }
@@ -871,6 +878,11 @@ const ChatASR = {
     extractPlainText(text) {
         if (!text) return '';
         
+        // 首先过滤工具调用信息（重要！）
+        text = text.replace(/^>\s*🔧.*$/gm, '');  // > 🔧 执行工具: xxx
+        text = text.replace(/^>\s*✅.*$/gm, '');  // > ✅ 工具执行成功
+        text = text.replace(/^>\s*❌.*$/gm, '');  // > ❌ 工具执行失败
+        
         // 移除 Markdown 代码块
         text = text.replace(/```[\s\S]*?```/g, '');
         // 移除行内代码
@@ -881,9 +893,21 @@ const ChatASR = {
         text = text.replace(/!\[[^\]]*\]\([^)]+\)/g, '');
         // 移除 HTML 标签
         text = text.replace(/<[^>]+>/g, '');
-        // 移除 Markdown 格式符号
-        text = text.replace(/[*_~#]+/g, '');
-        // 压缩空白
+        // 移除 Markdown 格式符号（粗体、斜体等）
+        text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
+        text = text.replace(/\*([^*]+)\*/g, '$1');
+        text = text.replace(/_([^_]+)_/g, '$1');
+        // 移除标题符号
+        text = text.replace(/^#+\s+/gm, '');
+        // 移除引用符号
+        text = text.replace(/^>\s*/gm, '');
+        // 移除列表符号
+        text = text.replace(/^[\s]*[-*+]\s+/gm, '');
+        text = text.replace(/^[\s]*\d+\.\s+/gm, '');
+        // 移除分隔线
+        text = text.replace(/^[-*_]{3,}$/gm, '');
+        // 压缩空白和换行
+        text = text.replace(/\n{2,}/g, '\n');
         text = text.replace(/\s+/g, ' ').trim();
         
         // 限制长度（TTS 太长会有问题）

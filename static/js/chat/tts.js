@@ -578,19 +578,43 @@ const ChatTTS = {
     async speakForConversation(text, options = {}) {
         const { onEnd, onError } = options;
         
-        // 停止当前播放
-        this.stop();
+        console.log('🔊 speakForConversation: 收到原始文本:', typeof text, text ? text.length : 0);
+        console.log('🔊 speakForConversation: 原始文本内容（前100字符）:', text ? text.substring(0, 100) : 'null/undefined');
         
-        // 清理 Markdown
-        const cleanText = this.cleanMarkdown(text);
-        if (!cleanText.trim()) {
-            console.log('🔊 speakForConversation: 文本为空，跳过');
+        // 如果没有文本，直接返回
+        if (!text) {
+            console.log('🔊 speakForConversation: 没有文本参数');
             if (onEnd) onEnd();
             return;
         }
         
+        // 停止当前播放
+        this.stop();
+        
+        // 清理 Markdown（但不要过度清理）
+        let cleanText = text;
+        try {
+            cleanText = this.cleanMarkdown(text);
+        } catch (e) {
+            console.error('🔊 cleanMarkdown 错误:', e);
+            cleanText = text.replace(/<[^>]+>/g, '').trim();  // 简单清理
+        }
+        
+        console.log('🔊 speakForConversation: 清理后文本长度:', cleanText.length);
+        
+        if (!cleanText.trim()) {
+            console.log('🔊 speakForConversation: 清理后文本为空');
+            // 如果清理后为空，尝试直接使用原文本（去除HTML）
+            cleanText = text.replace(/<[^>]+>/g, '').trim();
+            console.log('🔊 speakForConversation: 使用简单清理后长度:', cleanText.length);
+            if (!cleanText.trim()) {
+                if (onEnd) onEnd();
+                return;
+            }
+        }
+        
         console.log('🔊 speakForConversation: 使用云端TTS:', this.useCloudTTS);
-        console.log('🔊 speakForConversation: 文本长度:', cleanText.length);
+        console.log('🔊 speakForConversation: 最终文本长度:', cleanText.length);
         
         // 返回 Promise，确保等待完成
         return new Promise((resolve) => {
@@ -631,6 +655,7 @@ const ChatTTS = {
             // 依次请求每个片段
             for (let i = 0; i < chunks.length; i++) {
                 const chunk = chunks[i];
+                console.log(`🔊 对话TTS: 请求片段 ${i + 1}/${chunks.length}, 字符数: ${chunk.length}`);
                 
                 const response = await fetch(`${ChatConfig.API_BASE}/api/tts/synthesize`, {
                     method: 'POST',
@@ -638,7 +663,11 @@ const ChatTTS = {
                     body: JSON.stringify({ text: chunk, voice, rate }),
                 });
                 
+                console.log(`🔊 对话TTS: 响应状态: ${response.status}`);
+                
                 const data = await response.json();
+                
+                console.log(`🔊 对话TTS: 响应数据:`, data.error ? `错误: ${data.error}` : `音频长度: ${data.audio?.length || 0}`);
                 
                 if (data.error) {
                     throw new Error(data.error);
@@ -646,6 +675,8 @@ const ChatTTS = {
                 
                 audioDataList.push(`data:audio/mp3;base64,${data.audio}`);
             }
+            
+            console.log(`🔊 对话TTS: 所有音频已准备，共 ${audioDataList.length} 个`);
             
             // 按顺序播放所有音频
             this.playAudioSequenceCallback(audioDataList, 0, onEnd, onError);
