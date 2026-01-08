@@ -925,8 +925,8 @@ body {
         flex-wrap: wrap;
     }
     
-    /* 隐藏部分工具栏图标 */
-    .toolbar-icon:not(:nth-child(-n+6)):not(.send-btn):not(:last-child):not(.toolbar-spacer) {
+    /* 隐藏部分工具栏图标，但保留ASR按钮 */
+    .toolbar-icon:not(:nth-child(-n+6)):not(.send-btn):not(:last-child):not(.toolbar-spacer):not(#asrBtn) {
         display: none;
     }
     
@@ -1000,10 +1000,15 @@ body {
         padding: 4px 6px;
     }
     
-    /* 只显示最基本的工具 */
-    .toolbar-icon:not(:nth-child(-n+3)):not(.send-btn):not(:last-child):not(.toolbar-spacer) {
+    /* 只显示最基本的工具，但保留ASR按钮 */
+    .toolbar-icon:not(:nth-child(-n+3)):not(.send-btn):not(:last-child):not(.toolbar-spacer):not(#asrBtn) {
         display: none;
     }
+}
+
+/* 确保ASR按钮在所有尺寸下都显示 */
+#asrBtn {
+    display: flex !important;
 }
 
 /* 横屏模式优化 */
@@ -1240,4 +1245,53 @@ body {
 .action-btn svg {
     width: 16px;
     height: 16px;
+}
+
+/* ===== ASR 语音输入按钮 ===== */
+.toolbar-icon.recording {
+    color: #f44336;
+    animation: recording-pulse 1s infinite;
+}
+
+.toolbar-icon.recording svg {
+    fill: #f44336;
+}
+
+@keyframes recording-pulse {
+    0%, 100% { 
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% { 
+        transform: scale(1.1);
+        opacity: 0.8;
+    }
+}
+
+/* ASR 按钮特殊样式 */
+#asrBtn {
+    position: relative;
+}
+
+#asrBtn::after {
+    content: '';
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: #f44336;
+    border-radius: 50%;
+    top: 4px;
+    right: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+#asrBtn.recording::after {
+    opacity: 1;
+    animation: recording-dot 1s infinite;
+}
+
+@keyframes recording-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
 }

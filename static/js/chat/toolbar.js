@@ -231,6 +231,27 @@ window.ChatToolbar = {
     get keywordWeight() { return keywordWeight; }
 };
 
+// ASR 语音输入开关
+function toggleASR(btn) {
+    const input = document.getElementById('chatInput');
+    if (typeof ChatASR !== 'undefined') {
+        ChatASR.toggle(input, btn);
+    } else {
+        layer.msg('语音输入模块未加载', { icon: 0 });
+    }
+}
+
+// 显示 ASR 设置
+function showASRSettings() {
+    if (typeof ChatASR !== 'undefined') {
+        ChatASR.showSettings();
+    } else {
+        layer.msg('语音输入模块未加载', { icon: 0 });
+    }
+}
+
 // 全局函数
 window.toggleRAG = toggleRAG;
 window.showRAGSettings = showRAGSettings;
+window.toggleASR = toggleASR;
+window.showASRSettings = showASRSettings;

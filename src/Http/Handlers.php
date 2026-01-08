@@ -9,6 +9,7 @@ use Workerman\Protocols\Http\Response;
 use SmartBook\AI\AIService;
 use SmartBook\AI\TokenCounter;
 use SmartBook\AI\GoogleTTSClient;
+use SmartBook\AI\GoogleASRClient;
 use SmartBook\Cache\CacheService;
 use SmartBook\RAG\EmbeddingClient;
 use SmartBook\RAG\VectorStore;
@@ -111,6 +112,8 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             '/api/tts/synthesize' => handleTTSSynthesize($connection, $request),
             '/api/tts/voices' => handleTTSVoices(),
             '/api/tts/list-api-voices' => handleTTSListAPIVoices(),
+            '/api/asr/recognize' => handleASRRecognize($connection, $request),
+            '/api/asr/languages' => handleASRLanguages(),
             '/api/context-cache/list' => handleContextCacheList(),
             '/api/context-cache/create' => handleContextCacheCreate($request),
             '/api/context-cache/create-for-book' => handleContextCacheCreateForBook($request),
@@ -1252,6 +1255,74 @@ function handleTTSListAPIVoices(): array
         'cmn-TW' => $voicesByLang['cmn-TW'] ?? [],  // 普通话（台湾）
         'en-US' => $voicesByLang['en-US'] ?? [],
     ];
+}
+
+// ===================================
+// ASR 语音识别
+// ===================================
+
+/**
+ * 语音转文本
+ */
+function handleASRRecognize(TcpConnection $connection, Request $request): ?array
+{
+    $body = json_decode($request->rawBody(), true) ?? [];
+    $audio = $body['audio'] ?? '';  // Base64 编码的音频
+    $encoding = $body['encoding'] ?? 'WEBM_OPUS';
+    $sampleRate = intval($body['sample_rate'] ?? 48000);
+    $language = $body['language'] ?? null;
+    
+    if (empty($audio)) {
+        return ['error' => 'Missing audio data'];
+    }
+    
+    try {
+        $asrClient = new GoogleASRClient();
+        
+        // 如果没有指定语言，使用默认语言
+        if (!$language) {
+            $language = GoogleASRClient::getDefaultLanguage();
+        }
+        
+        $result = $asrClient->recognize($audio, $encoding, $sampleRate, $language);
+        
+        // 返回识别结果
+        $jsonHeaders = [
+            'Content-Type' => 'application/json; charset=utf-8',
+            'Access-Control-Allow-Origin' => '*',
+        ];
+        
+        $connection->send(new Response(200, $jsonHeaders, json_encode([
+            'success' => true,
+            'transcript' => $result['transcript'],
+            'confidence' => $result['confidence'],
+            'language' => $result['language'],
+            'duration' => $result['duration'] ?? 0,
+            'cost' => $result['cost'] ?? 0,
+            'costFormatted' => $result['costFormatted'] ?? '',
+        ], JSON_UNESCAPED_UNICODE)));
+        
+        return null;
+        
+    } catch (Exception $e) {
+        return ['error' => $e->getMessage()];
+    }
+}
+
+/**
+ * 获取支持的语言列表
+ */
+function handleASRLanguages(): array
+{
+    try {
+        $asrClient = new GoogleASRClient();
+        return [
+            'languages' => $asrClient->getLanguages(),
+            'default' => GoogleASRClient::getDefaultLanguage(),
+        ];
+    } catch (Exception $e) {
+        return ['error' => $e->getMessage()];
+    }
 }
 
 // ===================================
