@@ -624,6 +624,11 @@ const ChatASR = {
     
     // 处理对话模式的语音结果
     handleConversationResult(event) {
+        // 如果正在等待回复，忽略新的语音结果
+        if (this.waitingForResponse) {
+            return;
+        }
+        
         let transcript = '';
         let isFinal = false;
         
@@ -637,11 +642,13 @@ const ChatASR = {
         // 更新当前文本
         this.currentTranscript = transcript;
         
-        // 显示在输入框中
-        const input = document.getElementById('chatInput');
-        if (input) {
-            input.value = transcript;
-            input.dispatchEvent(new Event('input'));
+        // 显示在输入框中（只有在对话模式激活时）
+        if (this.conversationActive && !this.waitingForResponse) {
+            const input = document.getElementById('chatInput');
+            if (input) {
+                input.value = transcript;
+                input.dispatchEvent(new Event('input'));
+            }
         }
         
         // 重置静默计时器
@@ -766,6 +773,12 @@ const ChatASR = {
         
         // 清空当前文本
         this.currentTranscript = '';
+        
+        // 清空静默计时器
+        if (this.silenceTimer) {
+            clearTimeout(this.silenceTimer);
+            this.silenceTimer = null;
+        }
         
         // 更新状态显示
         this.updateConversationStatus('thinking');
