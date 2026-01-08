@@ -574,6 +574,151 @@ const ChatTTS = {
         }
     },
     
+    // 对话模式专用：朗读并回调（支持 onEnd 和 onError 回调）
+    async speakForConversation(text, options = {}) {
+        const { onEnd, onError } = options;
+        
+        // 停止当前播放
+        this.stop();
+        
+        // 清理 Markdown
+        const cleanText = this.cleanMarkdown(text);
+        if (!cleanText.trim()) {
+            if (onEnd) onEnd();
+            return;
+        }
+        
+        // 优先使用云端 TTS
+        if (this.useCloudTTS) {
+            await this.speakWithCloudCallback(cleanText, onEnd, onError);
+        } else {
+            this.speakWithBrowserCallback(cleanText, onEnd, onError);
+        }
+    },
+    
+    // 云端 TTS 带回调
+    async speakWithCloudCallback(text, onEnd, onError) {
+        try {
+            const voice = localStorage.getItem('ttsCloudVoice') || null;
+            const rate = parseFloat(localStorage.getItem('ttsRate') || '1.0');
+            
+            // 分割长文本
+            const chunks = this.splitTextForTTS(text);
+            console.log(`🔊 对话TTS: 文本分割为 ${chunks.length} 个片段`);
+            
+            // 存储所有音频数据
+            const audioDataList = [];
+            
+            // 依次请求每个片段
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i];
+                
+                const response = await fetch(`${ChatConfig.API_BASE}/api/tts/synthesize`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: chunk, voice, rate }),
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                audioDataList.push(`data:audio/mp3;base64,${data.audio}`);
+            }
+            
+            // 按顺序播放所有音频
+            this.playAudioSequenceCallback(audioDataList, 0, onEnd, onError);
+            
+        } catch (e) {
+            console.error('对话TTS云端错误:', e);
+            
+            // 如果云端失败，尝试使用浏览器 TTS
+            if ('speechSynthesis' in window) {
+                console.log('降级到浏览器TTS');
+                this.speakWithBrowserCallback(text, onEnd, onError);
+            } else {
+                if (onError) onError(e);
+            }
+        }
+    },
+    
+    // 按顺序播放音频片段（带回调）
+    playAudioSequenceCallback(audioDataList, index, onEnd, onError) {
+        if (index >= audioDataList.length) {
+            // 全部播放完成
+            this.speaking = false;
+            this.currentAudio = null;
+            console.log('🔊 对话TTS: 播放完成');
+            if (onEnd) onEnd();
+            return;
+        }
+        
+        const audio = new Audio(audioDataList[index]);
+        
+        audio.onplay = () => {
+            this.speaking = true;
+            this.currentAudio = audio;
+        };
+        
+        audio.onended = () => {
+            // 播放下一个片段
+            this.playAudioSequenceCallback(audioDataList, index + 1, onEnd, onError);
+        };
+        
+        audio.onerror = (e) => {
+            console.error('对话TTS音频播放错误:', e);
+            this.speaking = false;
+            if (onError) onError(e);
+        };
+        
+        audio.play().catch(e => {
+            console.error('对话TTS播放失败:', e);
+            if (onError) onError(e);
+        });
+    },
+    
+    // 浏览器 TTS 带回调
+    speakWithBrowserCallback(text, onEnd, onError) {
+        if (!('speechSynthesis' in window)) {
+            if (onError) onError(new Error('浏览器不支持语音朗读'));
+            return;
+        }
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        if (this.selectedBrowserVoice) {
+            utterance.voice = this.selectedBrowserVoice;
+        }
+        utterance.rate = parseFloat(localStorage.getItem('ttsRate') || '1.0');
+        utterance.pitch = parseFloat(localStorage.getItem('ttsPitch') || '1.0');
+        utterance.volume = parseFloat(localStorage.getItem('ttsVolume') || '1.0');
+        
+        utterance.onstart = () => {
+            this.speaking = true;
+        };
+        
+        utterance.onend = () => {
+            this.speaking = false;
+            console.log('🔊 对话TTS(浏览器): 播放完成');
+            if (onEnd) onEnd();
+        };
+        
+        utterance.onerror = (event) => {
+            this.speaking = false;
+            if (event.error !== 'interrupted') {
+                console.error('对话TTS(浏览器)错误:', event.error);
+                if (onError) onError(new Error(event.error));
+            } else {
+                // 被中断不算错误，直接回调结束
+                if (onEnd) onEnd();
+            }
+        };
+        
+        speechSynthesis.speak(utterance);
+    },
+    
     // 试听
     async testVoice() {
         const useCloud = document.getElementById('ttsUseCloud')?.checked;

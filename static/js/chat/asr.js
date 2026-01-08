@@ -743,8 +743,10 @@ const ChatASR = {
                 return;
             }
             
-            // 播放 TTS
-            await ChatTTS.speak(plainText, {
+            console.log('🔊 对话模式: 开始播放TTS, 文本长度:', plainText.length);
+            
+            // 使用对话专用的TTS方法（支持回调）
+            await ChatTTS.speakForConversation(plainText, {
                 onEnd: () => {
                     console.log('🔊 TTS 播放完成，继续监听');
                     this.continueListening();
