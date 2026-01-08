@@ -810,8 +810,16 @@ const ChatASR = {
                 btn.classList.add('active', 'conversation-active');
                 btn.title = '停止对话';
             } else {
-                btn.classList.remove('active', 'conversation-active');
+                btn.classList.remove('active', 'conversation-active', 'listening', 'thinking', 'speaking');
                 btn.title = '开始对话';
+                // 恢复原始图标
+                btn.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M8 12h8"/>
+                        <path d="M12 8v8"/>
+                    </svg>
+                `;
             }
         }
         
