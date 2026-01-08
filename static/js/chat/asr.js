@@ -586,8 +586,26 @@ const ChatASR = {
                     }
                 } else if (event.error === 'aborted') {
                     // 被中止，可能是因为我们停止了
+                } else if (event.error === 'audio-capture') {
+                    // 麦克风被占用或不可用，延迟重试
+                    console.log('麦克风被占用，1秒后重试...');
+                    setTimeout(() => {
+                        if (this.conversationActive && !this.waitingForResponse) {
+                            this.restartListening();
+                        }
+                    }, 1000);
+                } else if (event.error === 'not-allowed') {
+                    // 麦克风权限被拒绝
+                    layer.msg('请允许麦克风权限', { icon: 2 });
+                    this.stopConversation();
                 } else {
-                    layer.msg('语音识别错误: ' + event.error, { icon: 2 });
+                    // 其他错误，静默重试
+                    console.warn('ASR 错误，尝试重试:', event.error);
+                    setTimeout(() => {
+                        if (this.conversationActive && !this.waitingForResponse) {
+                            this.restartListening();
+                        }
+                    }, 500);
                 }
             };
         }
@@ -1022,6 +1040,14 @@ const ChatASR = {
         const content = `
             <div style="padding: 20px;">
                 <div style="margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="useCloudASRCheck" ${this.useCloudASR ? 'checked' : ''} style="width: 18px; height: 18px;">
+                        <span style="font-weight: 500;">🎤 使用 Google Cloud ASR（更准确）</span>
+                    </label>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">关闭后使用浏览器内置语音识别（免费）</div>
+                </div>
+                
+                <div style="margin-bottom: 16px;">
                     <label style="display: block; margin-bottom: 8px; font-weight: 500;">⏱️ 静默超时（毫秒）</label>
                     <input type="range" id="silenceTimeoutRange" min="500" max="3000" step="100" value="${this.silenceTimeout}" 
                            style="width: 100%;" oninput="document.getElementById('silenceTimeoutValue').textContent = this.value + 'ms'">
@@ -1065,9 +1091,14 @@ const ChatASR = {
             shadeClose: true,
             content: content,
             end: () => {
+                const useCloudASR = document.getElementById('useCloudASRCheck')?.checked;
                 const timeout = document.getElementById('silenceTimeoutRange')?.value;
                 const autoTTS = document.getElementById('autoTTSCheck')?.checked;
                 
+                if (useCloudASR !== undefined) {
+                    this.useCloudASR = useCloudASR;
+                    localStorage.setItem('asrUseCloud', useCloudASR);
+                }
                 if (timeout) {
                     this.silenceTimeout = parseInt(timeout);
                     localStorage.setItem('asrSilenceTimeout', timeout);
