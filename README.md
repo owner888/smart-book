@@ -1,6 +1,26 @@
 # Smart Book AI Server
 
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/owner888/smart-book.svg?style=flat-square)](https://packagist.org/packages/owner888/smart-book)
+[![License](https://img.shields.io/packagist/l/owner888/smart-book.svg?style=flat-square)](https://packagist.org/packages/owner888/smart-book)
+[![PHP Version](https://img.shields.io/packagist/php-v/owner888/smart-book.svg?style=flat-square)](https://packagist.org/packages/owner888/smart-book)
+
 基于 Workerman 的智能书籍问答服务，支持 RAG（检索增强生成）。
+
+## 安装
+
+### 通过 Composer 安装
+
+```bash
+composer require owner888/smart-book
+```
+
+### 手动安装
+
+```bash
+git clone https://github.com/owner888/smart-book.git
+cd smart-book
+composer install
+```
 
 ## 功能特性
 
