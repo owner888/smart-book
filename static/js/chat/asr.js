@@ -27,10 +27,12 @@ const ChatASR = {
     conversationMode: false,      // 是否在对话模式中
     conversationActive: false,    // 对话是否正在进行
     silenceTimer: null,           // 静默计时器
-    silenceTimeout: 1500,         // 静默超时时间（毫秒）- 用户停顿多久认为说完
+    silenceTimeout: 2000,         // 后备静默超时时间（毫秒）
     currentTranscript: '',        // 当前累积的文本
     waitingForResponse: false,    // 是否在等待 AI 回复
     autoTTS: true,                // 自动播放 TTS
+    smartDetection: true,         // 智能检测问题完整性
+    minSentenceLength: 3,         // 最短句子长度
     
     // 初始化
     init() {
@@ -647,12 +649,100 @@ const ChatASR = {
             clearTimeout(this.silenceTimer);
         }
         
-        // 如果有内容，设置静默计时器
+        // 智能检测：如果句子已完整，使用较短的超时
         if (transcript.trim()) {
+            let timeout = this.silenceTimeout;
+            
+            if (this.smartDetection) {
+                const completeness = this.checkSentenceCompleteness(transcript.trim());
+                if (completeness.isComplete) {
+                    // 句子已完整，使用短超时（500ms）
+                    timeout = 500;
+                    console.log('🎤 检测到完整句子:', completeness.reason);
+                } else if (completeness.confidence > 0.7) {
+                    // 可能完整，使用中等超时
+                    timeout = 800;
+                }
+            }
+            
             this.silenceTimer = setTimeout(() => {
                 this.handleSilence();
-            }, this.silenceTimeout);
+            }, timeout);
         }
+    },
+    
+    // 检测句子是否完整
+    checkSentenceCompleteness(text) {
+        const result = {
+            isComplete: false,
+            confidence: 0,
+            reason: ''
+        };
+        
+        if (!text || text.length < this.minSentenceLength) {
+            return result;
+        }
+        
+        // 获取最后一个字符
+        const lastChar = text.slice(-1);
+        const lastTwoChars = text.slice(-2);
+        
+        // 1. 检测明确的句末标点
+        const endPunctuations = ['？', '?', '。', '！', '!', '…'];
+        if (endPunctuations.includes(lastChar)) {
+            result.isComplete = true;
+            result.confidence = 1;
+            result.reason = '句末标点: ' + lastChar;
+            return result;
+        }
+        
+        // 2. 检测省略号
+        if (text.endsWith('...') || text.endsWith('。。。')) {
+            result.isComplete = true;
+            result.confidence = 0.9;
+            result.reason = '省略号结尾';
+            return result;
+        }
+        
+        // 3. 检测常见的问句结尾词（中文）
+        const questionEndings = ['吗', '呢', '吧', '啊', '呀', '哦', '嘛', '么', '了'];
+        if (questionEndings.includes(lastChar) && text.length > 5) {
+            result.isComplete = true;
+            result.confidence = 0.85;
+            result.reason = '问句结尾词: ' + lastChar;
+            return result;
+        }
+        
+        // 4. 检测英文问句
+        const englishQuestionWords = ['what', 'where', 'when', 'who', 'why', 'how', 'which', 'whose', 'whom'];
+        const lowerText = text.toLowerCase();
+        const startsWithQuestion = englishQuestionWords.some(w => lowerText.startsWith(w + ' '));
+        if (startsWithQuestion && text.length > 10) {
+            result.confidence = 0.75;
+            result.reason = '英文疑问句';
+            // 检查是否有动词等表示句子完整
+            if (text.split(' ').length >= 4) {
+                result.isComplete = true;
+            }
+        }
+        
+        // 5. 检测中文疑问词开头
+        const chineseQuestionStarters = ['什么', '怎么', '为什么', '哪里', '哪个', '谁', '几', '多少', '是否', '能不能', '可不可以'];
+        const hasQuestionStarter = chineseQuestionStarters.some(w => text.includes(w));
+        if (hasQuestionStarter && text.length > 8) {
+            result.confidence = 0.7;
+            result.reason = '包含疑问词';
+        }
+        
+        // 6. 检测祈使句/命令
+        const imperativeStarters = ['请', '帮我', '给我', '告诉我', '说说', '讲讲', '介绍', '解释'];
+        const hasImperativeStarter = imperativeStarters.some(w => text.startsWith(w));
+        if (hasImperativeStarter && text.length > 6) {
+            result.confidence = 0.65;
+            result.reason = '祈使句';
+        }
+        
+        return result;
     },
     
     // 处理静默（用户停止说话）
@@ -693,26 +783,40 @@ const ChatASR = {
                 input.value = text;
             }
             
-            // 设置对话模式回调
-            const originalOnComplete = window._conversationOnComplete;
+            // 保存 this 引用
+            const self = this;
             
-            window._conversationOnComplete = async (responseText) => {
+            // 设置对话模式回调（每次都重新设置，使用箭头函数绑定 this）
+            window._conversationOnComplete = function(responseText) {
                 console.log('🤖 收到回复，准备播放 TTS');
+                console.log('   - 对话模式激活:', self.conversationActive);
+                console.log('   - 自动TTS:', self.autoTTS);
+                console.log('   - 回复长度:', responseText ? responseText.length : 0);
                 
-                // 更新状态
-                this.updateConversationStatus('speaking');
-                
-                // 播放 TTS
-                if (this.autoTTS && responseText && typeof ChatTTS !== 'undefined') {
-                    await this.playTTSAndContinue(responseText);
-                } else {
-                    // 没有 TTS，直接继续监听
-                    this.continueListening();
+                // 只有在对话模式激活时才处理
+                if (!self.conversationActive) {
+                    console.log('对话模式已关闭，跳过 TTS');
+                    return;
                 }
                 
-                // 恢复原来的回调
-                window._conversationOnComplete = originalOnComplete;
+                // 更新状态
+                self.updateConversationStatus('speaking');
+                
+                // 播放 TTS（使用异步处理）
+                if (self.autoTTS && responseText && typeof ChatTTS !== 'undefined') {
+                    // 异步播放 TTS
+                    self.playTTSAndContinue(responseText).catch(err => {
+                        console.error('TTS 播放错误:', err);
+                        self.continueListening();
+                    });
+                } else {
+                    // 没有 TTS，直接继续监听
+                    console.log('跳过TTS，直接继续监听');
+                    self.continueListening();
+                }
             };
+            
+            console.log('🎤 对话模式: 回调已设置，准备发送消息');
             
             // 调用 ChatMessage 发送消息
             if (typeof ChatMessage !== 'undefined' && typeof ChatMessage.sendMessage === 'function') {

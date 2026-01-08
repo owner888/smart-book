@@ -584,16 +584,35 @@ const ChatTTS = {
         // 清理 Markdown
         const cleanText = this.cleanMarkdown(text);
         if (!cleanText.trim()) {
+            console.log('🔊 speakForConversation: 文本为空，跳过');
             if (onEnd) onEnd();
             return;
         }
         
-        // 优先使用云端 TTS
-        if (this.useCloudTTS) {
-            await this.speakWithCloudCallback(cleanText, onEnd, onError);
-        } else {
-            this.speakWithBrowserCallback(cleanText, onEnd, onError);
-        }
+        console.log('🔊 speakForConversation: 使用云端TTS:', this.useCloudTTS);
+        console.log('🔊 speakForConversation: 文本长度:', cleanText.length);
+        
+        // 返回 Promise，确保等待完成
+        return new Promise((resolve) => {
+            const wrappedOnEnd = () => {
+                console.log('🔊 speakForConversation: 播放真正完成');
+                if (onEnd) onEnd();
+                resolve();
+            };
+            
+            const wrappedOnError = (err) => {
+                console.log('🔊 speakForConversation: 播放错误', err);
+                if (onError) onError(err);
+                resolve();
+            };
+            
+            // 优先使用云端 TTS
+            if (this.useCloudTTS) {
+                this.speakWithCloudCallback(cleanText, wrappedOnEnd, wrappedOnError);
+            } else {
+                this.speakWithBrowserCallback(cleanText, wrappedOnEnd, wrappedOnError);
+            }
+        });
     },
     
     // 云端 TTS 带回调
@@ -681,34 +700,48 @@ const ChatTTS = {
     
     // 浏览器 TTS 带回调
     speakWithBrowserCallback(text, onEnd, onError) {
+        console.log('🔊 speakWithBrowserCallback: 开始, 文本长度:', text.length);
+        
         if (!('speechSynthesis' in window)) {
+            console.error('🔊 浏览器不支持语音朗读');
             if (onError) onError(new Error('浏览器不支持语音朗读'));
             return;
         }
+        
+        // 先取消任何正在进行的语音
+        speechSynthesis.cancel();
         
         const utterance = new SpeechSynthesisUtterance(text);
         
         if (this.selectedBrowserVoice) {
             utterance.voice = this.selectedBrowserVoice;
+            console.log('🔊 使用语音:', this.selectedBrowserVoice.name);
+        } else {
+            console.log('🔊 使用默认语音');
         }
+        
         utterance.rate = parseFloat(localStorage.getItem('ttsRate') || '1.0');
         utterance.pitch = parseFloat(localStorage.getItem('ttsPitch') || '1.0');
         utterance.volume = parseFloat(localStorage.getItem('ttsVolume') || '1.0');
+        utterance.lang = 'zh-CN';
+        
+        console.log('🔊 语音参数: rate=', utterance.rate, ', pitch=', utterance.pitch, ', volume=', utterance.volume);
         
         utterance.onstart = () => {
             this.speaking = true;
+            console.log('🔊 浏览器TTS: 开始播放');
         };
         
         utterance.onend = () => {
             this.speaking = false;
-            console.log('🔊 对话TTS(浏览器): 播放完成');
+            console.log('🔊 浏览器TTS: 播放完成 (onend)');
             if (onEnd) onEnd();
         };
         
         utterance.onerror = (event) => {
             this.speaking = false;
+            console.error('🔊 浏览器TTS错误:', event.error, event);
             if (event.error !== 'interrupted') {
-                console.error('对话TTS(浏览器)错误:', event.error);
                 if (onError) onError(new Error(event.error));
             } else {
                 // 被中断不算错误，直接回调结束
@@ -716,7 +749,15 @@ const ChatTTS = {
             }
         };
         
+        // 检查 speechSynthesis 状态
+        console.log('🔊 speechSynthesis.speaking:', speechSynthesis.speaking);
+        console.log('🔊 speechSynthesis.pending:', speechSynthesis.pending);
+        console.log('🔊 speechSynthesis.paused:', speechSynthesis.paused);
+        
+        // 开始播放
         speechSynthesis.speak(utterance);
+        
+        console.log('🔊 speak() 已调用');
     },
     
     // 试听
