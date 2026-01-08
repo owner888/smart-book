@@ -33,6 +33,7 @@ const ChatASR = {
     autoTTS: true,                // 自动播放 TTS
     smartDetection: true,         // 智能检测问题完整性
     minSentenceLength: 3,         // 最短句子长度
+    isRestarting: false,          // 防止重复重启
     
     // 初始化
     init() {
@@ -615,29 +616,40 @@ const ChatASR = {
     
     // 重新开始监听
     restartListening() {
-        if (!this.conversationActive || this.waitingForResponse) return;
-        
-        try {
-            this.recognition.start();
-            this.recording = true;
-            console.log('🎤 持续监听中...');
-        } catch (e) {
-            // 可能已经在运行，先停止
-            try {
-                this.recognition.stop();
-            } catch (e2) {}
-            
-            setTimeout(() => {
-                if (this.conversationActive && !this.waitingForResponse) {
-                    try {
-                        this.recognition.start();
-                        this.recording = true;
-                    } catch (e3) {
-                        console.warn('无法重启语音识别:', e3);
-                    }
-                }
-            }, 200);
+        // 防止重复调用
+        if (!this.conversationActive || this.waitingForResponse || this.isRestarting) {
+            return;
         }
+        
+        this.isRestarting = true;
+        
+        // 先确保停止
+        try {
+            this.recognition.abort();
+        } catch (e) {}
+        
+        // 延迟后重新开始
+        setTimeout(() => {
+            this.isRestarting = false;
+            
+            if (!this.conversationActive || this.waitingForResponse) {
+                return;
+            }
+            
+            try {
+                this.recognition.start();
+                this.recording = true;
+                console.log('🎤 持续监听中...');
+            } catch (e) {
+                console.warn('无法启动语音识别:', e.message);
+                // 如果还是失败，延迟再试一次
+                setTimeout(() => {
+                    if (this.conversationActive && !this.waitingForResponse && !this.isRestarting) {
+                        this.restartListening();
+                    }
+                }, 1000);
+            }
+        }, 300);
     },
     
     // 处理对话模式的语音结果
