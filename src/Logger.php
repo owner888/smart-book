@@ -30,7 +30,7 @@ class Logger
     private static bool $showTimestamp = true;
 
     // 是否是 CLI 模式
-    private static bool $isCli = null;
+    private static ?bool $isCli = null;
 
     // 注册的引擎
     private static array $engines = [];

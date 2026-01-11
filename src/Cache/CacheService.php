@@ -5,6 +5,8 @@
 
 namespace SmartBook\Cache;
 
+require_once dirname(__DIR__) . '/Logger.php';
+
 use Workerman\Redis\Client as RedisClient;
 
 class CacheService
@@ -17,7 +19,7 @@ class CacheService
         if (self::$redis !== null) return;
         self::$redis = new RedisClient('redis://' . REDIS_HOST . ':' . REDIS_PORT);
         self::$connected = true;
-        echo "✅ Redis 连接成功\n";
+        \Logger::info("Redis 连接成功");
     }
     
     public static function getRedis(): ?RedisClient { return self::$redis; }

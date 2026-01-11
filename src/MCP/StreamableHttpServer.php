@@ -16,6 +16,8 @@
 
 namespace SmartBook\MCP;
 
+require_once dirname(__DIR__) . '/Logger.php';
+
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
@@ -331,8 +333,7 @@ INSTRUCTIONS;
         $acceptHeader = $request->header('Accept', '');
         
         // SSE 连接始终打印日志（不受 debug 模式影响）
-        echo "\033[36m[" . date('Y-m-d H:i:s') . "] [SSE]\033[0m 🔌 Connection request received\n";
-        echo "  Client: {$clientIp}:{$clientPort}, UA: " . substr($userAgent, 0, 50) . "\n\n";
+        \Logger::info("SSE Connection request received from {$clientIp}:{$clientPort}, UA: " . substr($userAgent, 0, 50));
         
         $sessionId = $request->header('Mcp-Session-Id') ?? $request->get('session_id');
         $isNewSession = false;
@@ -355,10 +356,9 @@ INSTRUCTIONS;
             ];
             $this->saveSessions();
             
-            echo "\033[33m[" . date('Y-m-d H:i:s') . "] [SSE]\033[0m 🆕 Created new session: " . substr($sessionId, 0, 12) . "...\n";
-            echo "  Note: SSE established before initialize - session will be reused\n\n";
+            \Logger::info("Created new MCP session: " . substr($sessionId, 0, 12) . " (SSE established before initialize)");
         } else {
-            echo "\033[32m[" . date('Y-m-d H:i:s') . "] [SSE]\033[0m ♻️ Reusing existing session: " . substr($sessionId, 0, 12) . "...\n\n";
+            \Logger::info("Reusing existing MCP session: " . substr($sessionId, 0, 12));
         }
         
         $this->log('INFO', '🔗 [SSE] Establishing connection', ['sessionId' => $sessionId, 'isNewSession' => $isNewSession]);
@@ -740,8 +740,7 @@ INSTRUCTIONS;
             $this->sessions[$sessionId]['lastAccessAt'] = time();
             $this->sessions[$sessionId]['sseFirst'] = false;  // 清除标记
             
-            echo "\033[32m[" . date('Y-m-d H:i:s') . "] [Initialize]\033[0m ♻️ Reusing SSE session: " . substr($sessionId, 0, 12) . "...\n";
-            echo "  Client: {$clientName}, SSE connection: active ✅\n\n";
+            \Logger::info("Reusing SSE session for {$clientName}, session: " . substr($sessionId, 0, 12));
         } else {
             // 创建新会话
             $sessionId = $this->createSession();
@@ -756,8 +755,7 @@ INSTRUCTIONS;
                 'selectedBook' => null,
             ];
             
-            echo "\033[33m[" . date('Y-m-d H:i:s') . "] [Initialize]\033[0m 🆕 Created new session: " . substr($sessionId, 0, 12) . "...\n";
-            echo "  Client: {$clientName}, SSE connection: none\n\n";
+            \Logger::info("Created new MCP session for {$clientName}: " . substr($sessionId, 0, 12));
         }
         
         // 持久化 session
@@ -1303,11 +1301,7 @@ INSTRUCTIONS;
         $startTime = date('Y-m-d H:i:s');
         
         // 始终打印任务启动日志
-        echo "\033[33m[{$startTime}] [Task]\033[0m 🚀 Long task started (ASYNC)\n";
-        echo "  TaskId: {$taskId}\n";
-        echo "  Duration: {$duration}s, Steps: {$steps}\n";
-        echo "  SSE Connection: " . ($hasSSE ? "✅ yes (session: " . substr($sessionId, 0, 8) . "...)" : "❌ no") . "\n";
-        echo "  Mode: Background execution via Timer\n\n";
+        \Logger::info("Long task started: TaskId={$taskId}, Duration={$duration}s, Steps={$steps}, SSE=" . ($hasSSE ? 'yes' : 'no'));
         
         // 计算每步的间隔时间（秒）
         $intervalSec = $duration / $steps;
@@ -1331,8 +1325,7 @@ INSTRUCTIONS;
             $percent = round(($currentStep / $steps) * 100);
             
             // 打印进度日志
-            $now = date('Y-m-d H:i:s');
-            echo "\033[36m[{$now}] [Task]\033[0m 📊 Progress: {$currentStep}/{$steps} ({$percent}%)\n";
+            \Logger::info("Task {$taskId} progress: {$currentStep}/{$steps} ({$percent}%)");
             
             // 如果有 SSE 连接，发送进度通知
             if ($hasSSE && $sessionId) {
