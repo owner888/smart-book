@@ -181,38 +181,6 @@ INSTRUCTIONS;
     }
     
     /**
-     * 打印调试日志
-     * ERROR 类型的日志总是输出，其他类型只在 debug 模式下输出
-     */
-    private function log(string $type, string $message, mixed $data = null): void
-    {
-        // ERROR 类型总是输出，其他类型只在 debug 模式下输出
-        if (!$this->debug && $type !== 'ERROR') {
-            return;
-        }
-        
-        $timestamp = date('Y-m-d H:i:s');
-        $color = match ($type) {
-            'ERROR' => "\033[31m",     // 红色 - 错误
-            'WARN' => "\033[33m",      // 黄色 - 警告
-            'INFO' => "\033[36m",      // 青色 - 信息
-            'REQUEST' => "\033[34m",   // 蓝色 - 请求
-            'RESPONSE' => "\033[32m",  // 绿色 - 响应
-            'DEBUG' => "\033[37m",     // 白色 - 调试
-            default => "\033[0m",
-        };
-        $reset = "\033[0m";
-        
-        echo "{$color}[{$timestamp}] [{$type}]{$reset} {$message}\n";
-        
-        if ($data !== null) {
-            $jsonData = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-            echo "{$color}{$jsonData}{$reset}\n";
-        }
-        echo "\n";
-    }
-    
-    /**
      * 处理 HTTP 请求
      */
     public function handleRequest(TcpConnection $connection, Request $request): void
@@ -1372,9 +1340,7 @@ INSTRUCTIONS;
                 $server->saveTasks();
                 
                 // 打印完成日志
-                echo "\033[32m[{$completionTime}] [Task]\033[0m ✅ Task completed!\n";
-                echo "  TaskId: {$taskId}\n";
-                echo "  Total Steps: {$steps}\n\n";
+                \Logger::info("Task {$taskId} completed! Total Steps: {$steps}");
                 
                 // 发送完成通知
                 if ($hasSSE && $sessionId) {

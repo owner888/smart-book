@@ -6,6 +6,8 @@
 
 namespace SmartBook\MCP;
 
+require_once dirname(__DIR__) . '/Logger.php';
+
 class ToolManager
 {
     private static array $tools = [];
@@ -154,15 +156,15 @@ class ToolManager
                         $enabledTools[] = "{$serverName}:{$toolName}";
                     }
                     
-                    echo "🌐 MCP 服务器 '{$serverName}' 已连接，" . count($tools) . " 个工具\n";
+                    \Logger::info("MCP 服务器 '{$serverName}' 已连接，" . count($tools) . " 个工具");
                 } catch (\Exception $e) {
-                    echo "⚠️ MCP 服务器 '{$serverName}' 连接失败: " . $e->getMessage() . "\n";
+                    \Logger::warn("MCP 服务器 '{$serverName}' 连接失败: " . $e->getMessage());
                 }
             }
         }
         
         if (!empty($enabledTools)) {
-            echo "📦 MCP 工具已加载: " . implode(', ', $enabledTools) . "\n";
+            \Logger::info("MCP 工具已加载: " . implode(', ', $enabledTools));
         }
     }
     

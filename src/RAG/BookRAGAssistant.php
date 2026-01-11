@@ -5,6 +5,8 @@
 
 namespace SmartBook\RAG;
 
+require_once dirname(__DIR__) . '/Logger.php';
+
 use SmartBook\AI\GeminiClient;
 use SmartBook\Parser\EpubParser;
 
@@ -102,25 +104,25 @@ class BookRAGAssistant
     public function loadBook(string $epubPath, ?string $cacheFile = null): void
     {
         if ($cacheFile && file_exists($cacheFile)) {
-            echo "📂 从缓存加载索引...\n";
+            \Logger::info("从缓存加载索引...");
             $this->vectorStore = new VectorStore($cacheFile);
             $this->bookMetadata = EpubParser::extractMetadata($epubPath);
-            echo "✅ 已加载 {$this->vectorStore->count()} 个文档块\n";
+            \Logger::info("已加载 {$this->vectorStore->count()} 个文档块");
             return;
         }
         
         $this->bookMetadata = EpubParser::extractMetadata($epubPath);
-        echo "📖 书籍: {$this->bookMetadata['title']}\n";
+        \Logger::info("书籍: {$this->bookMetadata['title']}");
         
-        echo "📄 正在提取文本...\n";
+        \Logger::info("正在提取文本...");
         $text = EpubParser::extractText($epubPath);
-        echo "   提取了 " . mb_strlen($text) . " 个字符\n";
+        \Logger::info("  提取了 " . mb_strlen($text) . " 个字符");
         
-        echo "✂️  正在分块...\n";
+        \Logger::info("正在分块...");
         $chunks = $this->chunker->chunk($text);
-        echo "   生成了 " . count($chunks) . " 个文档块\n";
+        \Logger::info("  生成了 " . count($chunks) . " 个文档块");
         
-        echo "🔢 正在生成向量嵌入...\n";
+        \Logger::info("正在生成向量嵌入...");
         $batchSize = 20;
         $totalBatches = ceil(count($chunks) / $batchSize);
         
@@ -128,37 +130,36 @@ class BookRAGAssistant
             $batch = array_slice($chunks, $i, $batchSize);
             $embeddings = $this->embedder->embedBatch(array_column($batch, 'text'));
             $this->vectorStore->addBatch($batch, $embeddings);
-            echo "   批次 " . (floor($i / $batchSize) + 1) . "/{$totalBatches} 完成\n";
+            \Logger::debug("  批次 " . (floor($i / $batchSize) + 1) . "/{$totalBatches} 完成");
         }
         
         if ($cacheFile) {
-            echo "💾 保存索引缓存...\n";
+            \Logger::info("保存索引缓存...");
             $this->vectorStore->save($cacheFile);
         }
         
-        echo "✅ 索引完成！共 {$this->vectorStore->count()} 个文档块\n\n";
+        \Logger::info("索引完成！共 {$this->vectorStore->count()} 个文档块");
     }
     
     public function ask(string $question, int $topK = 5, bool $stream = true): string
     {
         if ($this->vectorStore->isEmpty()) return '错误：请先加载书籍';
         
-        echo "🔍 正在检索相关内容...\n";
+        \Logger::info("正在检索相关内容...");
         $queryEmbedding = $this->embedder->embedQuery($question);
         $results = $this->vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
         
         // 使用配置文件中的提示词模板
         $systemPrompt = $this->buildSystemPrompt($results);
         
-        echo "🤖 正在生成回答...\n\n--- AI 回复 ---\n";
+        \Logger::info("正在生成回答...");
         
         if ($stream) {
             $result = $this->llm->chatStream(
                 [['role' => 'system', 'content' => $systemPrompt], ['role' => 'user', 'content' => $question]],
-                function($text, $chunk, $isThought) { if (!$isThought) echo $text; },
+                function($text, $chunk, $isThought) { if (!$isThought) \Logger::debug($text); },
                 ['enableSearch' => false]
             );
-            echo "\n";
             return $result['content'];
         } else {
             $response = $this->llm->chat([['role' => 'system', 'content' => $systemPrompt], ['role' => 'user', 'content' => $question]]);
@@ -168,7 +169,7 @@ class BookRAGAssistant
                     if (!($part['thought'] ?? false)) $content .= $part['text'] ?? '';
                 }
             }
-            echo $content . "\n";
+            \Logger::info($content);
             return $content;
         }
     }
@@ -210,10 +211,11 @@ class BookRAGAssistant
         $queryEmbedding = $this->embedder->embedQuery($question);
         $results = $this->vectorStore->search($queryEmbedding, $topK);
         
-        echo "=== 检索结果 (Top {$topK}) ===\n\n";
+        \Logger::info("=== 检索结果 (Top {$topK}) ===");
         foreach ($results as $i => $result) {
-            echo "【片段 " . ($i + 1) . "】相关度: " . round($result['score'] * 100, 1) . "%\n";
-            echo str_repeat('-', 40) . "\n{$result['chunk']['text']}\n\n";
+            $text = "【片段 " . ($i + 1) . "】相关度: " . round($result['score'] * 100, 1) . "%\n";
+            $text .= str_repeat('-', 40) . "\n{$result['chunk']['text']}\n";
+            \Logger::info($text);
         }
     }
 }

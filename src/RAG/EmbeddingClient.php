@@ -5,6 +5,8 @@
 
 namespace SmartBook\RAG;
 
+require_once dirname(__DIR__) . '/Logger.php';
+
 class EmbeddingClient
 {
     private string $apiKey;
@@ -56,7 +58,7 @@ class EmbeddingClient
         
         $result = json_decode($response, true);
         if (isset($result['error'])) {
-            echo "❌ Embedding API 错误: " . ($result['error']['message'] ?? 'Unknown') . "\n";
+            \Logger::error("Embedding API 错误: " . ($result['error']['message'] ?? 'Unknown'));
             return [];
         }
         
