@@ -697,11 +697,11 @@ function triggerSummarizationIfNeeded(string $chatId, array $context): void
                     // 保存摘要并压缩历史
                     if (!empty($summaryText)) {
                         CacheService::saveSummaryAndCompress($chatId, $summaryText);
-                        echo "📝 对话 {$chatId} 已自动摘要\n";
+                        Logger::info("对话 {$chatId} 已自动摘要");
                     }
                 },
                 function ($error) use ($chatId) {
-                    echo "❌ 摘要生成失败 ({$chatId}): {$error}\n";
+                    Logger::error("摘要生成失败 ({$chatId}): {$error}");
                 },
                 ['enableSearch' => false]
             );
