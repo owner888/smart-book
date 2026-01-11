@@ -127,7 +127,7 @@ INSTRUCTIONS;
                     }
                 }
                 
-                $this->log('INFO', 'Loaded sessions from file', [
+                \Logger::info('Loaded sessions from file', [
                     'total' => count($sessions),
                     'active' => count($this->sessions),
                     'file' => $this->sessionsFile,
@@ -188,7 +188,7 @@ INSTRUCTIONS;
         $method = $request->method();
         $path = $request->path();
         
-        $this->log('DEBUG', "HTTP Request: {$method} {$path}");
+        \Logger::debug("HTTP Request: {$method} {$path}");
         
         // 处理 CORS 预检请求
         if ($method === 'OPTIONS') {
@@ -198,7 +198,7 @@ INSTRUCTIONS;
         
         // MCP Streamable HTTP 主端点（支持多种路径）
         if (in_array($path, ['/mcp', '/', '/message'])) {
-            $this->log('DEBUG', "Routing to MCP endpoint");
+            \Logger::debug("Routing to MCP endpoint");
             $this->handleMCPEndpoint($connection, $request);
             return;
         }
@@ -240,7 +240,7 @@ INSTRUCTIONS;
             $accept = $request->header('Accept', '');
             
             if (str_contains($accept, 'text/event-stream')) {
-                $this->log('DEBUG', '[SSE] GET request received, establishing SSE connection');
+                \Logger::debug('[SSE] GET request received, establishing SSE connection');
                 $this->handleSSEConnection($connection, $request);
                 return;
             }
@@ -329,7 +329,7 @@ INSTRUCTIONS;
             \Logger::info("Reusing existing MCP session: " . substr($sessionId, 0, 12));
         }
         
-        $this->log('INFO', '🔗 [SSE] Establishing connection', ['sessionId' => $sessionId, 'isNewSession' => $isNewSession]);
+        \Logger::info('🔗 [SSE] Establishing connection', ['sessionId' => $sessionId, 'isNewSession' => $isNewSession]);
         
         // 发送 SSE 响应头 - 注意：需要直接发送 HTTP 头而不是使用 Response 对象
         // SSE 流不使用 chunked encoding，而是依赖 Connection: keep-alive 保持连接
@@ -344,7 +344,7 @@ INSTRUCTIONS;
         $httpHeader .= "Mcp-Session-Id: {$sessionId}\r\n";
         $httpHeader .= "\r\n";
         
-        $this->log('INFO', '📤 [SSE] Sending HTTP headers', [
+        \Logger::info('📤 [SSE] Sending HTTP headers', [
             'sessionId' => $sessionId,
             'contentType' => 'text/event-stream',
             'cacheControl' => 'no-cache',
@@ -356,7 +356,7 @@ INSTRUCTIONS;
         // 保存 SSE 连接
         $this->sseConnections[$sessionId] = $connection;
         
-        $this->log('INFO', '💾 [SSE] Connection saved', [
+        \Logger::info('💾 [SSE] Connection saved', [
             'sessionId' => $sessionId,
             'activeConnections' => count($this->sseConnections),
         ]);
@@ -364,7 +364,7 @@ INSTRUCTIONS;
         // 发送初始心跳
         $this->sendSSEData($connection, ": heartbeat " . time() . "\n\n");
         
-        $this->log('DEBUG', '💓 [SSE] Initial heartbeat sent', ['sessionId' => $sessionId]);
+        \Logger::debug('💓 [SSE] Initial heartbeat sent', ['sessionId' => $sessionId]);
         
         // 启动心跳定时器（更短的间隔以保持连接活跃）
         $timerId = Timer::add(self::HEARTBEAT_INTERVAL, function() use ($sessionId, $connection) {
@@ -374,9 +374,9 @@ INSTRUCTIONS;
             try {
                 // 发送 SSE 心跳注释
                 $this->sendSSEData($connection, ": heartbeat " . time() . "\n\n");
-                $this->log('DEBUG', '💓 [SSE] Heartbeat sent', ['sessionId' => $sessionId, 'timestamp' => time()]);
+                \Logger::debug('💓 [SSE] Heartbeat sent', ['sessionId' => $sessionId, 'timestamp' => time()]);
             } catch (\Exception $e) {
-                $this->log('WARN', '⚠️ [SSE] Heartbeat failed', [
+                \Logger::warn('⚠️ [SSE] Heartbeat failed', [
                     'sessionId' => $sessionId,
                     'error' => $e->getMessage(),
                 ]);
@@ -384,7 +384,7 @@ INSTRUCTIONS;
         });
         $this->sseTimers[$sessionId] = $timerId;
         
-        $this->log('INFO', '⏱️ [SSE] Heartbeat timer started', [
+        \Logger::info('⏱️ [SSE] Heartbeat timer started', [
             'sessionId' => $sessionId,
             'timerId' => $timerId,
             'interval' => self::HEARTBEAT_INTERVAL . 's',
@@ -401,12 +401,12 @@ INSTRUCTIONS;
             if (isset($this->sseTimers[$sessionId])) {
                 Timer::del($this->sseTimers[$sessionId]);
                 unset($this->sseTimers[$sessionId]);
-                $this->log('INFO', '⏹️ [SSE] Heartbeat timer stopped', ['sessionId' => $sessionId]);
+                \Logger::info('⏹️ [SSE] Heartbeat timer stopped', ['sessionId' => $sessionId]);
             }
             
             unset($this->sseConnections[$sessionId]);
             
-            $this->log('INFO', '🔌 [SSE] Connection closed', [
+            \Logger::info('🔌 [SSE] Connection closed', [
                 'sessionId' => $sessionId,
                 'client' => "{$clientIp}:{$clientPort}",
                 'remainingConnections' => count($this->sseConnections),
@@ -414,7 +414,7 @@ INSTRUCTIONS;
             ]);
         };
         
-        $this->log('INFO', '✅ [SSE] Connection fully established', [
+        \Logger::info('✅ [SSE] Connection fully established', [
             'sessionId' => $sessionId,
             'client' => "{$clientIp}:{$clientPort}",
             'totalConnections' => count($this->sseConnections),
@@ -507,7 +507,7 @@ INSTRUCTIONS;
         
         // 验证 Content-Type
         if (!str_contains($contentType, 'application/json')) {
-            $this->log('ERROR', 'Invalid Content-Type', ['contentType' => $contentType]);
+            \Logger::error('Invalid Content-Type', ['contentType' => $contentType]);
             $this->sendJsonRpcError($connection, null, -32700, 'Invalid Content-Type, expected application/json');
             return;
         }
@@ -516,7 +516,7 @@ INSTRUCTIONS;
         $data = json_decode($body, true);
         
         if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
-            $this->log('ERROR', 'Parse error', ['body' => $body, 'error' => json_last_error_msg()]);
+            \Logger::error('Parse error', ['body' => $body, 'error' => json_last_error_msg()]);
             $this->sendJsonRpcError($connection, null, -32700, 'Parse error: ' . json_last_error_msg());
             return;
         }
@@ -527,7 +527,7 @@ INSTRUCTIONS;
         // 如果客户端发送了 session ID 但服务器不认识（可能是服务器重启后持久化文件被清理了），
         // 自动为该 session ID 重建一个空会话，这样客户端不需要重新初始化
         if ($sessionId && !isset($this->sessions[$sessionId])) {
-            $this->log('INFO', 'Unknown session ID (session expired or server data lost), recreating session', [
+            \Logger::info('Unknown session ID (session expired or server data lost), recreating session', [
                 'receivedSessionId' => $sessionId,
             ]);
             // 重建会话
@@ -549,9 +549,9 @@ INSTRUCTIONS;
         }
         
         // 打印请求日志
-        $this->log('REQUEST', 'MCP JSON-RPC Request', [
+        \Logger::debug('MCP JSON-RPC Request', [
             'sessionId' => $sessionId,
-            'data' => $data,
+            'method' => $data['method'] ?? 'unknown',
         ]);
         
         // 检查是否是批量请求
@@ -649,7 +649,7 @@ INSTRUCTIONS;
             // 只在调试模式或严重错误时输出详细日志
             $isServerError = $error['code'] <= -32000;
             if ($this->debug || $isServerError) {
-                $this->log('ERROR', "Exception in method '{$method}'", [
+                \Logger::error("Exception in method '{$method}'", [
                     'code' => $error['code'],
                     'message' => $error['message'],
                     'file' => basename($e->getFile()),
@@ -1163,7 +1163,7 @@ INSTRUCTIONS;
         
         // 验证日志级别，无效时默认使用 'info'
         if (!isset(self::LOG_LEVELS[$level])) {
-            $this->log('WARN', "Invalid log level '{$level}', using 'info' instead", [
+            \Logger::warn("Invalid log level '{$level}', using 'info' instead", [
                 'validLevels' => array_keys(self::LOG_LEVELS),
             ]);
             $level = 'info';
@@ -1177,7 +1177,7 @@ INSTRUCTIONS;
         // 更新全局日志级别
         $this->logLevel = $level;
         
-        $this->log('INFO', "Log level set to: {$level}", ['sessionId' => $sessionId]);
+        \Logger::info("Log level set to: {$level}", ['sessionId' => $sessionId]);
         
         return new \stdClass(); // 返回空对象表示成功
     }
@@ -2147,9 +2147,8 @@ INSTRUCTIONS;
         }
         
         // 打印响应日志
-        $this->log('RESPONSE', "MCP JSON-RPC Response (HTTP {$statusCode})", [
+        \Logger::debug("MCP JSON-RPC Response (HTTP {$statusCode})", [
             'sessionId' => $sessionId,
-            'data' => $data,
         ]);
         
         // 使用 (string) 将 Response 对象转换为 HTTP 响应字符串
