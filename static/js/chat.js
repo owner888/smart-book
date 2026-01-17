@@ -2,8 +2,8 @@
  * AI 书籍助手 - 主脚本
  */
 
-// 配置
-const API_BASE = 'http://localhost:8088';
+// 配置 - 从 ChatConfig 获取，如果未加载则使用默认值
+const API_BASE = window.ChatConfig?.API_BASE || 'http://localhost:8088';
 
 // 当前状态
 let currentAssistant = 'book';
