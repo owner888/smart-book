@@ -1,12 +1,21 @@
 /**
  * 配置模块
  * 必须最先加载，获取服务器配置
+ * 
+ * 依赖：
+ * - config.local.js 必须先加载（包含 LocalConfig）
  */
 
 // 同步加载配置（使用 XMLHttpRequest）
 function loadConfigSync() {
+    // 检查是否已加载本地配置
+    if (typeof window.LocalConfig === 'undefined') {
+        throw new Error('本地配置文件未加载！请确保 config.local.js 存在并已加载。\n\n如果是首次使用，请复制 config.example.js 为 config.local.js');
+    }
+    
+    const configServerUrl = window.LocalConfig.CONFIG_SERVER_URL;
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', 'http://localhost:8081/api/config', false); // 使用默认地址加载配置
+    xhr.open('GET', `${configServerUrl}/api/config`, false); // 使用本地配置的地址
     
     try {
         xhr.send();
@@ -22,7 +31,7 @@ function loadConfigSync() {
             throw new Error(`配置加载失败: HTTP ${xhr.status}`);
         }
     } catch (error) {
-        throw new Error(`无法加载配置: ${error.message}`);
+        throw new Error(`无法加载配置: ${error.message}\n配置服务器: ${configServerUrl}`);
     }
 }
 
