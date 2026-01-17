@@ -57,10 +57,10 @@ php server.php status         # 状态
 
 ### 4. 访问
 
-- Web 界面: http://localhost:8088
-- API: http://localhost:8088/api
-- WebSocket: ws://localhost:8081
-- MCP Server: http://localhost:8089/mcp
+- Web 界面: http://localhost:8081
+- API: http://localhost:8081/api
+- MCP Server: http://localhost:8082/mcp
+- WebSocket: ws://localhost:8083
 
 ## 目录结构
 

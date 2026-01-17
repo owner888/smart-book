@@ -1,13 +1,47 @@
 /**
  * 配置模块
- * 从 API 动态加载服务器配置
+ * 必须最先加载，获取服务器配置
  */
 
-// 导出全局配置对象（默认值作为回退）
+// 同步加载配置（使用 XMLHttpRequest）
+function loadConfigSync() {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', 'http://localhost:8088/api/config', false); // 使用默认地址加载配置
+    
+    try {
+        xhr.send();
+        
+        if (xhr.status === 200) {
+            const config = JSON.parse(xhr.responseText);
+            return {
+                API_BASE: config.webServer.url,
+                MCP_URL: config.mcpServer.url,
+                WS_URL: config.wsServer.url,
+            };
+        } else {
+            throw new Error(`配置加载失败: HTTP ${xhr.status}`);
+        }
+    } catch (error) {
+        throw new Error(`无法加载配置: ${error.message}`);
+    }
+}
+
+// 立即同步加载配置
+let config;
+try {
+    config = loadConfigSync();
+    console.log('✅ 配置加载成功:', config);
+} catch (error) {
+    console.error('❌ 配置加载失败:', error);
+    alert(`配置加载失败：${error.message}\n\n请确保服务器正在运行：php server.php start`);
+    throw error; // 阻止页面继续加载
+}
+
+// 导出全局配置
 window.ChatConfig = {
-    API_BASE: 'http://localhost:8088',
-    MCP_URL: 'http://localhost:8089/mcp',
-    WS_URL: 'ws://localhost:8081',
+    API_BASE: config.API_BASE,
+    MCP_URL: config.MCP_URL,
+    WS_URL: config.WS_URL,
     PHRASES_STORAGE_KEY: 'smart_book_phrases',
     
     // 提供异步刷新配置的方法
@@ -21,30 +55,12 @@ window.ChatConfig = {
                 this.WS_URL = config.wsServer.url;
                 console.log('✅ 配置已刷新:', config);
                 return config;
+            } else {
+                throw new Error(`HTTP ${response.status}`);
             }
         } catch (error) {
-            console.warn('⚠️ 刷新配置失败:', error);
+            console.error('⚠️ 刷新配置失败:', error);
+            throw error;
         }
     }
 };
-
-// 页面加载时同步加载配置（使用 XMLHttpRequest）
-(function loadConfigSync() {
-    try {
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', window.ChatConfig.API_BASE + '/api/config', false); // 同步请求
-        xhr.send();
-        
-        if (xhr.status === 200) {
-            const config = JSON.parse(xhr.responseText);
-            window.ChatConfig.API_BASE = config.webServer.url;
-            window.ChatConfig.MCP_URL = config.mcpServer.url;
-            window.ChatConfig.WS_URL = config.wsServer.url;
-            console.log('✅ 配置已从 API 加载:', config);
-        } else {
-            console.warn('⚠️ 无法加载配置，使用默认值');
-        }
-    } catch (error) {
-        console.warn('⚠️ 加载配置失败，使用默认值:', error);
-    }
-})();

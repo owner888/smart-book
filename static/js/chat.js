@@ -3,7 +3,8 @@
  */
 
 // 配置 - 从 ChatConfig 获取，如果未加载则使用默认值
-const API_BASE = window.ChatConfig?.API_BASE || 'http://localhost:8088';
+const API_BASE = window.ChatConfig.API_BASE;
+console.log('使用的 API_BASE:', API_BASE);
 
 // 当前状态
 let currentAssistant = 'book';
