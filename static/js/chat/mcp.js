@@ -34,7 +34,7 @@ const ChatMCP = {
                 this.servers = [{
                     name: 'smart-book',
                     type: 'http',
-                    url: 'http://localhost:8089/mcp',
+                    url: window.ChatConfig?.MCP_URL || 'http://localhost:8089/mcp',
                     enabled: true
                 }];
             }

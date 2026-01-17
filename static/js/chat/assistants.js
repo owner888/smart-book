@@ -46,8 +46,35 @@ async function loadAssistants() {
     }
 }
 
+// 构建空状态引导 HTML（没有书籍时显示）
+function buildEmptyState() {
+    return `
+        <div class="empty-state">
+            <div class="empty-state-icon">📚</div>
+            <div class="empty-state-title">还没有添加书籍</div>
+            <div class="empty-state-desc">
+                将您的电子书文件（.epub、.txt 等）放入 books 目录，然后点击下方按钮刷新书籍列表，即可开始与书籍对话。
+            </div>
+            <button class="empty-state-btn" onclick="ChatBooks.refreshBooks()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                    <path d="M3 3v5h5"/>
+                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                    <path d="M16 21h5v-5"/>
+                </svg>
+                刷新书籍列表
+            </button>
+        </div>
+    `;
+}
+
 // 构建欢迎消息 HTML
 function buildWelcomeMessage(assistant) {
+    // 检查是否有书籍
+    if (!ChatBooks.books || ChatBooks.books.length === 0) {
+        return buildEmptyState();
+    }
+    
     return `
         <div class="message">
             <div class="message-system">

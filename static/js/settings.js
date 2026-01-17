@@ -379,7 +379,7 @@ const MCPSettings = {
                 {
                     name: 'smart-book',
                     type: 'http',
-                    url: 'http://localhost:8089/mcp',
+                    url: window.ChatConfig?.MCP_URL || 'http://localhost:8089/mcp',
                     enabled: true,
                     tools: ['search_book', 'get_book_info', 'list_books', 'select_book']
                 }

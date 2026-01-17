@@ -95,13 +95,14 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
         $result = match ($path) {
             '/api' => ['status' => 'ok', 'message' => 'Smart Book AI API'],
             '/api/health' => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s'), 'redis' => CacheService::isConnected()],
+            '/api/config' => handleGetConfig(),
             '/api/models' => handleGetModels(),
             '/api/assistants' => handleGetAssistants(),
             '/api/books' => handleGetBooks(),
             '/api/books/select' => handleSelectBook($request),
             '/api/books/index' => handleIndexBook($connection, $request),
             '/api/mcp/servers' => $method === 'POST' ? handleSaveMCPServers($request) : handleGetMCPServers(),
-            '/api/mcp/status' => ['enabled' => true, 'url' => 'http://localhost:8089/mcp'],
+            '/api/mcp/status' => ['enabled' => true, 'url' => 'http://localhost:' . MCP_SERVER_PORT . '/mcp'],
             '/api/cache/stats' => handleCacheStats($connection),
             '/api/ask' => handleAskWithCache($connection, $request),
             '/api/chat' => handleChat($request),
@@ -165,6 +166,30 @@ function handleWebSocketMessage(TcpConnection $connection, string $data): void
 // ===================================
 // API 处理函数
 // ===================================
+
+/**
+ * 获取服务器配置信息
+ */
+function handleGetConfig(): array
+{
+    return [
+        'webServer' => [
+            'host' => WEB_SERVER_HOST,
+            'port' => WEB_SERVER_PORT,
+            'url' => 'http://localhost:' . WEB_SERVER_PORT,
+        ],
+        'mcpServer' => [
+            'host' => MCP_SERVER_HOST,
+            'port' => MCP_SERVER_PORT,
+            'url' => 'http://localhost:' . MCP_SERVER_PORT . '/mcp',
+        ],
+        'wsServer' => [
+            'host' => WS_SERVER_HOST,
+            'port' => WS_SERVER_PORT,
+            'url' => 'ws://localhost:' . WS_SERVER_PORT,
+        ],
+    ];
+}
 
 /**
  * 获取可用模型列表（从 Gemini API 动态获取）

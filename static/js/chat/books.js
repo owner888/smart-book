@@ -277,6 +277,31 @@ const ChatBooks = {
         } catch (e) {
             progressText.textContent = data;
         }
+    },
+    
+    // 刷新书籍列表（供空状态引导使用）
+    async refreshBooks() {
+        try {
+            layer.load(2, { time: 0 });
+            await this.loadBooks();
+            this.updateCurrentBookDisplay();
+            
+            // 重新加载助手配置以更新欢迎消息
+            await ChatAssistants.loadAssistants();
+            // 刷新当前助手的欢迎消息
+            ChatAssistants.switchAssistant(ChatState.currentAssistant);
+            
+            layer.closeAll();
+            
+            if (this.books.length > 0) {
+                layer.msg(`✅ 已发现 ${this.books.length} 本书籍`);
+            } else {
+                layer.msg('未找到新的书籍文件', { icon: 0 });
+            }
+        } catch (error) {
+            layer.closeAll();
+            layer.msg('刷新书籍列表失败: ' + error.message, { icon: 2 });
+        }
     }
 };
 

@@ -64,6 +64,14 @@ define('GEMINI_API_KEY', $GLOBALS['config']['app']['ai']['gemini']['api_key']);
 define('DEFAULT_BOOK_CACHE', $GLOBALS['config']['app']['books']['default']['cache']);
 define('DEFAULT_BOOK_PATH', $GLOBALS['config']['app']['books']['default']['path']);
 
+// 服务器配置常量
+define('WEB_SERVER_HOST', getenv('WEB_SERVER_HOST') ?: '0.0.0.0');
+define('WEB_SERVER_PORT', getenv('WEB_SERVER_PORT') ?: '8088');
+define('MCP_SERVER_HOST', getenv('MCP_SERVER_HOST') ?: '0.0.0.0');
+define('MCP_SERVER_PORT', getenv('MCP_SERVER_PORT') ?: '8089');
+define('WS_SERVER_HOST', getenv('WS_SERVER_HOST') ?: '0.0.0.0');
+define('WS_SERVER_PORT', getenv('WS_SERVER_PORT') ?: '8081');
+
 // 验证 API Key
 if (empty(GEMINI_API_KEY)) {
     die("❌ 错误: 无法获取 GEMINI_API_KEY\n" .

@@ -39,7 +39,7 @@ $indexer->checkAndIndexAll();
 // HTTP 服务器 (主服务)
 // ===================================
 
-$httpWorker = new Worker('http://0.0.0.0:8088');
+$httpWorker = new Worker('http://' . WEB_SERVER_HOST . ':' . WEB_SERVER_PORT);
 $httpWorker->count = 1;
 $httpWorker->name = 'AI-HTTP-Server';
 
@@ -61,7 +61,7 @@ $httpWorker->onMessage = function (TcpConnection $connection, Request $request) 
 // WebSocket 服务器
 // ===================================
 
-$wsWorker = new Worker('websocket://0.0.0.0:8081');
+$wsWorker = new Worker('websocket://' . WS_SERVER_HOST . ':' . WS_SERVER_PORT);
 $wsWorker->count = 1;
 $wsWorker->name = 'AI-WebSocket-Server';
 
@@ -77,7 +77,7 @@ $wsWorker->onClose = fn($conn) => null;
 
 // 使用 TCP 协议以支持 SSE 长连接
 // HTTP 协议会在响应后自动关闭连接，不适合 SSE
-$mcpWorker = new Worker('tcp://0.0.0.0:8089');
+$mcpWorker = new Worker('tcp://' . MCP_SERVER_HOST . ':' . MCP_SERVER_PORT);
 $mcpWorker->count = 1;
 $mcpWorker->name = 'MCP-Server';
 
@@ -94,11 +94,15 @@ $mcpWorker->onMessage = function (TcpConnection $connection, string $data) {
 // 启动
 // ===================================
 
+// 确定显示的主机名（0.0.0.0 显示为 localhost）
+$displayHost = (WEB_SERVER_HOST === '0.0.0.0' || WEB_SERVER_HOST === '::') ? 'localhost' : WEB_SERVER_HOST;
+$mcpDisplayHost = (MCP_SERVER_HOST === '0.0.0.0' || MCP_SERVER_HOST === '::') ? 'localhost' : MCP_SERVER_HOST;
+
 echo "=========================================\n";
 echo "   AI 书籍助手 Smart Book 服务\n";
 echo "=========================================\n";
-echo "🌐 Web UI:    http://localhost:8088\n";
-echo "🔌 MCP:       http://localhost:8089/mcp\n";
+echo "🌐 Web UI:    http://{$displayHost}:" . WEB_SERVER_PORT . "\n";
+echo "🔌 MCP:       http://{$mcpDisplayHost}:" . MCP_SERVER_PORT . "/mcp\n";
 echo "   └─ Protocol: Streamable HTTP\n";
 echo "   └─ Methods: POST (JSON-RPC), GET, DELETE\n";
 echo "=========================================\n";
