@@ -6,7 +6,7 @@
 // 同步加载配置（使用 XMLHttpRequest）
 function loadConfigSync() {
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', 'http://localhost:8088/api/config', false); // 使用默认地址加载配置
+    xhr.open('GET', 'http://localhost:8081/api/config', false); // 使用默认地址加载配置
     
     try {
         xhr.send();

@@ -57,7 +57,7 @@ printResult('本地 curl_multi', $localResults);
 
 function testSingleSSERequest(): array
 {
-    $url = 'http://localhost:8088/api/stream/ask';
+    $url = 'http://localhost:8082/api/stream/ask';
     $data = json_encode(['question' => '测试问题', 'top_k' => 3]);
     
     $startTime = microtime(true);
@@ -98,7 +98,7 @@ function testSingleSSERequest(): array
 
 function testConcurrentSSE(int $concurrent): array
 {
-    $url = 'http://localhost:8088/api/stream/ask';
+    $url = 'http://localhost:8082/api/stream/ask';
     
     $mh = curl_multi_init();
     $handles = [];

@@ -213,7 +213,7 @@ php mcp-stdio.php
 │  │                        Workerman Server                              │    │
 │  │  ┌─────────────────────┐         ┌─────────────────────┐            │    │
 │  │  │   HTTP Worker       │         │  WebSocket Worker   │            │    │
-│  │  │   (Port: 8088)      │         │   (Port: 8089)      │            │    │
+│  │  │   (Port: 8081)      │         │   (Port: 8083)      │            │    │
 │  │  └──────────┬──────────┘         └──────────┬──────────┘            │    │
 │  └─────────────┼───────────────────────────────┼───────────────────────┘    │
 │                │                               │                             │
@@ -402,8 +402,9 @@ WebSocket 消息类型:
 GEMINI_API_KEY=your_api_key_here
 
 # 服务端口
-HTTP_PORT=8088
-WS_PORT=8089
+HTTP_PORT=8081
+MCP_PORT=8082
+WS_PORT=8083
 
 # Redis
 REDIS_HOST=127.0.0.1
@@ -415,8 +416,8 @@ REDIS_PORT=6379
 ```php
 return [
     'server' => [
-        'http_port' => getenv('HTTP_PORT') ?: 8088,
-        'ws_port' => getenv('WS_PORT') ?: 8089,
+        'http_port' => getenv('HTTP_PORT') ?: 8081,
+        'ws_port' => getenv('WS_PORT') ?: 8083,
     ],
     'ai' => [
         'gemini' => [

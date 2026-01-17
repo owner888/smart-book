@@ -11,9 +11,9 @@ return [
     // ===================================
     'server' => [
         'http_host' => '0.0.0.0',
-        'http_port' => 8088,
+        'http_port' => 8081,
         'websocket_host' => '0.0.0.0',
-        'websocket_port' => 8081,
+        'websocket_port' => 8083,
         'workers' => 1,
     ],
     
