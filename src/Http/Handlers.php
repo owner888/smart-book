@@ -102,7 +102,7 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             '/api/books/select' => handleSelectBook($request),
             '/api/books/index' => handleIndexBook($connection, $request),
             '/api/mcp/servers' => $method === 'POST' ? handleSaveMCPServers($request) : handleGetMCPServers(),
-            '/api/mcp/status' => ['enabled' => true, 'url' => 'http://localhost:' . MCP_SERVER_PORT . '/mcp'],
+            '/api/mcp/status' => ['enabled' => true, 'url' => 'http://' . MCP_SERVER_HOST . ':' . MCP_SERVER_PORT . '/mcp'],
             '/api/cache/stats' => handleCacheStats($connection),
             '/api/ask' => handleAskWithCache($connection, $request),
             '/api/chat' => handleChat($request),
@@ -174,19 +174,13 @@ function handleGetConfig(): array
 {
     return [
         'webServer' => [
-            'host' => WEB_SERVER_HOST,
-            'port' => WEB_SERVER_PORT,
-            'url' => 'http://localhost:' . WEB_SERVER_PORT,
+            'url' => 'http://' . WEB_SERVER_HOST . ':' . WEB_SERVER_PORT,
         ],
         'mcpServer' => [
-            'host' => MCP_SERVER_HOST,
-            'port' => MCP_SERVER_PORT,
-            'url' => 'http://localhost:' . MCP_SERVER_PORT . '/mcp',
+            'url' => 'http://' . MCP_SERVER_HOST . ':' . MCP_SERVER_PORT . '/mcp',
         ],
         'wsServer' => [
-            'host' => WS_SERVER_HOST,
-            'port' => WS_SERVER_PORT,
-            'url' => 'ws://localhost:' . WS_SERVER_PORT,
+            'url' => 'ws://' . WS_SERVER_HOST . ':' . WS_SERVER_PORT,
         ],
     ];
 }

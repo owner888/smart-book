@@ -64,12 +64,17 @@ define('GEMINI_API_KEY', $GLOBALS['config']['app']['ai']['gemini']['api_key']);
 define('DEFAULT_BOOK_CACHE', $GLOBALS['config']['app']['books']['default']['cache']);
 define('DEFAULT_BOOK_PATH', $GLOBALS['config']['app']['books']['default']['path']);
 
-// 服务器配置常量
-define('WEB_SERVER_HOST', getenv('WEB_SERVER_HOST') ?: '0.0.0.0');
+// 服务器配置常量（分离监听地址和访问地址）
+define('WEB_SERVER_LISTEN', getenv('WEB_SERVER_LISTEN') ?: '0.0.0.0');  // 监听地址
+define('WEB_SERVER_HOST', getenv('WEB_SERVER_HOST') ?: 'localhost');    // 访问地址
 define('WEB_SERVER_PORT', getenv('WEB_SERVER_PORT') ?: '8088');
-define('MCP_SERVER_HOST', getenv('MCP_SERVER_HOST') ?: '0.0.0.0');
+
+define('MCP_SERVER_LISTEN', getenv('MCP_SERVER_LISTEN') ?: '0.0.0.0');
+define('MCP_SERVER_HOST', getenv('MCP_SERVER_HOST') ?: 'localhost');
 define('MCP_SERVER_PORT', getenv('MCP_SERVER_PORT') ?: '8089');
-define('WS_SERVER_HOST', getenv('WS_SERVER_HOST') ?: '0.0.0.0');
+
+define('WS_SERVER_LISTEN', getenv('WS_SERVER_LISTEN') ?: '0.0.0.0');
+define('WS_SERVER_HOST', getenv('WS_SERVER_HOST') ?: 'localhost');
 define('WS_SERVER_PORT', getenv('WS_SERVER_PORT') ?: '8081');
 
 // 验证 API Key
