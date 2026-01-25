@@ -171,14 +171,38 @@ class QueryBuilder
     }
     
     /**
+     * 执行查询（自动处理连接丢失）
+     */
+    private function executeQuery(callable $callback): mixed
+    {
+        try {
+            return $callback();
+        } catch (\PDOException $e) {
+            // 检查是否是连接丢失错误
+            if (DB::isConnectionError($e)) {
+                // 重连
+                DB::reconnect();
+                // 更新 PDO 实例
+                $this->pdo = DB::connection();
+                // 重试查询
+                return $callback();
+            }
+            // 其他错误直接抛出
+            throw $e;
+        }
+    }
+    
+    /**
      * 获取所有结果
      */
     public function get(): array
     {
-        $sql = $this->buildSelectSql();
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($this->bindings);
-        return $stmt->fetchAll();
+        return $this->executeQuery(function() {
+            $sql = $this->buildSelectSql();
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($this->bindings);
+            return $stmt->fetchAll();
+        });
     }
     
     /**
@@ -213,14 +237,16 @@ class QueryBuilder
      */
     public function count(): int
     {
-        $sql = "SELECT COUNT(*) as count FROM {$this->table}";
-        $sql .= $this->buildWhereSql();
-        
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($this->bindings);
-        $result = $stmt->fetch();
-        
-        return (int) $result['count'];
+        return $this->executeQuery(function() {
+            $sql = "SELECT COUNT(*) as count FROM {$this->table}";
+            $sql .= $this->buildWhereSql();
+            
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($this->bindings);
+            $result = $stmt->fetch();
+            
+            return (int) $result['count'];
+        });
     }
     
     /**
@@ -236,13 +262,15 @@ class QueryBuilder
      */
     public function insert(array $data): bool
     {
-        $columns = implode(', ', array_keys($data));
-        $placeholders = implode(', ', array_fill(0, count($data), '?'));
-        
-        $sql = "INSERT INTO {$this->table} ({$columns}) VALUES ({$placeholders})";
-        
-        $stmt = $this->pdo->prepare($sql);
-        return $stmt->execute(array_values($data));
+        return $this->executeQuery(function() use ($data) {
+            $columns = implode(', ', array_keys($data));
+            $placeholders = implode(', ', array_fill(0, count($data), '?'));
+            
+            $sql = "INSERT INTO {$this->table} ({$columns}) VALUES ({$placeholders})";
+            
+            $stmt = $this->pdo->prepare($sql);
+            return $stmt->execute(array_values($data));
+        });
     }
     
     /**
@@ -259,23 +287,25 @@ class QueryBuilder
      */
     public function update(array $data): int
     {
-        $sets = [];
-        $bindings = [];
-        
-        foreach ($data as $column => $value) {
-            $sets[] = "{$column} = ?";
-            $bindings[] = $value;
-        }
-        
-        $sql = "UPDATE {$this->table} SET " . implode(', ', $sets);
-        $sql .= $this->buildWhereSql();
-        
-        $bindings = array_merge($bindings, $this->bindings);
-        
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($bindings);
-        
-        return $stmt->rowCount();
+        return $this->executeQuery(function() use ($data) {
+            $sets = [];
+            $bindings = [];
+            
+            foreach ($data as $column => $value) {
+                $sets[] = "{$column} = ?";
+                $bindings[] = $value;
+            }
+            
+            $sql = "UPDATE {$this->table} SET " . implode(', ', $sets);
+            $sql .= $this->buildWhereSql();
+            
+            $bindings = array_merge($bindings, $this->bindings);
+            
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($bindings);
+            
+            return $stmt->rowCount();
+        });
     }
     
     /**
@@ -283,13 +313,15 @@ class QueryBuilder
      */
     public function delete(): int
     {
-        $sql = "DELETE FROM {$this->table}";
-        $sql .= $this->buildWhereSql();
-        
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($this->bindings);
-        
-        return $stmt->rowCount();
+        return $this->executeQuery(function() {
+            $sql = "DELETE FROM {$this->table}";
+            $sql .= $this->buildWhereSql();
+            
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($this->bindings);
+            
+            return $stmt->rowCount();
+        });
     }
     
     /**
@@ -297,15 +329,17 @@ class QueryBuilder
      */
     public function increment(string $column, int $amount = 1): int
     {
-        $sql = "UPDATE {$this->table} SET {$column} = {$column} + ?";
-        $sql .= $this->buildWhereSql();
-        
-        $bindings = array_merge([$amount], $this->bindings);
-        
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($bindings);
-        
-        return $stmt->rowCount();
+        return $this->executeQuery(function() use ($column, $amount) {
+            $sql = "UPDATE {$this->table} SET {$column} = {$column} + ?";
+            $sql .= $this->buildWhereSql();
+            
+            $bindings = array_merge([$amount], $this->bindings);
+            
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($bindings);
+            
+            return $stmt->rowCount();
+        });
     }
     
     /**

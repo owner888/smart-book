@@ -30,7 +30,7 @@ class DB
     }
     
     /**
-     * 获取 PDO 实例（自动检测连接状态）
+     * 获取 PDO 实例
      */
     public static function connection(): PDO
     {
@@ -38,34 +38,22 @@ class DB
             throw new \Exception('Database not initialized. Call DB::init($pdo) first.');
         }
         
-        // 检测连接是否存活
-        if (!self::ping()) {
-            self::reconnect();
-        }
-        
         return self::$pdo;
     }
     
     /**
-     * 检测连接是否存活
+     * 检查是否是连接丢失错误
      */
-    public static function ping(): bool
+    public static function isConnectionError(\PDOException $e): bool
     {
-        if (!self::$pdo) {
-            return false;
-        }
+        $errorInfo = $e->errorInfo ?? [];
+        $errorCode = $errorInfo[1] ?? 0;
         
-        try {
-            // 尝试执行一个简单查询
-            self::$pdo->query('SELECT 1');
-            return true;
-        } catch (\PDOException $e) {
-            // 连接已断开
-            // 常见错误码：
-            // 2006 - MySQL server has gone away
-            // 2013 - Lost connection to MySQL server
-            return false;
-        }
+        // MySQL 连接丢失的错误码
+        // 2006 - MySQL server has gone away
+        // 2013 - Lost connection to MySQL server during query
+        // 2055 - Lost connection to MySQL server at 'reading initial communication packet'
+        return in_array($errorCode, [2006, 2013, 2055]);
     }
     
     /**
@@ -116,23 +104,43 @@ class DB
     }
     
     /**
-     * 执行原始 SQL
+     * 执行原始 SQL（带自动重连）
      */
     public static function query(string $sql, array $bindings = []): array
     {
-        $stmt = self::connection()->prepare($sql);
-        $stmt->execute($bindings);
-        return $stmt->fetchAll();
+        try {
+            $stmt = self::connection()->prepare($sql);
+            $stmt->execute($bindings);
+            return $stmt->fetchAll();
+        } catch (\PDOException $e) {
+            if (self::isConnectionError($e)) {
+                self::reconnect();
+                $stmt = self::connection()->prepare($sql);
+                $stmt->execute($bindings);
+                return $stmt->fetchAll();
+            }
+            throw $e;
+        }
     }
     
     /**
-     * 执行插入/更新/删除
+     * 执行插入/更新/删除（带自动重连）
      */
     public static function execute(string $sql, array $bindings = []): int
     {
-        $stmt = self::connection()->prepare($sql);
-        $stmt->execute($bindings);
-        return $stmt->rowCount();
+        try {
+            $stmt = self::connection()->prepare($sql);
+            $stmt->execute($bindings);
+            return $stmt->rowCount();
+        } catch (\PDOException $e) {
+            if (self::isConnectionError($e)) {
+                self::reconnect();
+                $stmt = self::connection()->prepare($sql);
+                $stmt->execute($bindings);
+                return $stmt->rowCount();
+            }
+            throw $e;
+        }
     }
     
     /**
