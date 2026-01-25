@@ -432,6 +432,16 @@ class QueryBuilder
     }
     
     /**
+     * 魔术方法：转换为字符串
+     * 
+     * 使得查询对象可以直接当字符串使用
+     */
+    public function __toString(): string
+    {
+        return $this->toSql();
+    }
+    
+    /**
      * 获取绑定参数（用于调试）
      */
     public function getBindings(): array

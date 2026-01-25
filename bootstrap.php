@@ -84,3 +84,43 @@ if (empty(GEMINI_API_KEY)) {
         "   GEMINI_API_KEY=your_api_key_here\n\n" .
         "   或复制模板: cp .env.example .env\n");
 }
+
+// ===================================
+// 初始化数据库连接（可选）
+// ===================================
+
+// 如果需要使用 MySQL，取消下面的注释
+/*
+use SmartBook\Database\DB;
+
+try {
+    $dbConfig = $GLOBALS['config']['db']['mysql'];
+    
+    $dsn = sprintf(
+        'mysql:host=%s;port=%d;dbname=%s;charset=%s',
+        $dbConfig['host'],
+        $dbConfig['port'],
+        $dbConfig['database'],
+        $dbConfig['charset']
+    );
+    
+    $pdo = new PDO(
+        $dsn,
+        $dbConfig['username'],
+        $dbConfig['password'],
+        [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ]
+    );
+    
+    // 初始化 DB（传入配置以支持自动重连）
+    DB::init($pdo, $dbConfig);
+    
+    echo "✅ MySQL 连接成功\n";
+} catch (PDOException $e) {
+    echo "⚠️  MySQL 连接失败: " . $e->getMessage() . "\n";
+    echo "   如果不需要 MySQL，可以忽略此警告\n";
+}
+*/
