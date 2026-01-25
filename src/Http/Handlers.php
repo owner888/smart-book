@@ -838,10 +838,20 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
             if ($chatId) CacheService::addToChatHistory($chatId, ['role' => 'user', 'content' => $question]);
             
             $asyncGemini = AIService::getAsyncGemini($model);
-            $asyncGemini->chatStreamAsync(
+            $isConnectionAlive = true;
+            $requestId = $asyncGemini->chatStreamAsync(
                 $messages,
-                function ($text, $isThought) use ($connection) { if ($text) sendSSE($connection, $isThought ? 'thinking' : 'content', $text); },
-                function ($fullAnswer, $usageMetadata = null, $usedModel = null) use ($connection, $chatId, $context, $model) {
+                function ($text, $isThought) use ($connection, &$isConnectionAlive, &$requestId, $asyncGemini) {
+                    if (!$isConnectionAlive) return;
+                    if ($text) {
+                        if (!sendSSE($connection, $isThought ? 'thinking' : 'content', $text)) {
+                            $isConnectionAlive = false;
+                            if ($requestId) $asyncGemini->cancel($requestId);
+                        }
+                    }
+                },
+                function ($fullAnswer, $usageMetadata = null, $usedModel = null) use ($connection, $chatId, $context, $model, &$isConnectionAlive) {
+                    if (!$isConnectionAlive) return;
                     if ($chatId) {
                         CacheService::addToChatHistory($chatId, ['role' => 'assistant', 'content' => $fullAnswer]);
                         triggerSummarizationIfNeeded($chatId, $context);
@@ -853,7 +863,11 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
                     sendSSE($connection, 'done', '');
                     $connection->close();
                 },
-                function ($error) use ($connection) { sendSSE($connection, 'error', $error); $connection->close(); },
+                function ($error) use ($connection, &$isConnectionAlive) {
+                    if (!$isConnectionAlive) return;
+                    sendSSE($connection, 'error', $error);
+                    $connection->close();
+                },
                 ['enableSearch' => $enableSearch && $engine === 'google', 'enableTools' => $engine === 'mcp']
             );
         };
@@ -942,12 +956,20 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
         }
         
         $asyncGemini = AIService::getAsyncGemini($model);
-        $asyncGemini->chatStreamAsync(
+        $isConnectionAlive = true;
+        $requestId = $asyncGemini->chatStreamAsync(
             $messages,
-            function ($text, $isThought) use ($connection) { 
-                if ($text) sendSSE($connection, $isThought ? 'thinking' : 'content', $text); 
+            function ($text, $isThought) use ($connection, &$isConnectionAlive, &$requestId, $asyncGemini) {
+                if (!$isConnectionAlive) return;
+                if ($text) {
+                    if (!sendSSE($connection, $isThought ? 'thinking' : 'content', $text)) {
+                        $isConnectionAlive = false;
+                        if ($requestId) $asyncGemini->cancel($requestId);
+                    }
+                }
             },
-            function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $chatId, $context, $model) { 
+            function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $chatId, $context, $model, &$isConnectionAlive) {
+                if (!$isConnectionAlive) return;
                 // 保存助手回复
                 if ($chatId) {
                     CacheService::addToChatHistory($chatId, ['role' => 'assistant', 'content' => $fullContent]);
@@ -968,7 +990,8 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
                 sendSSE($connection, 'done', ''); 
                 $connection->close(); 
             },
-            function ($error) use ($connection) { 
+            function ($error) use ($connection, &$isConnectionAlive) {
+                if (!$isConnectionAlive) return;
                 sendSSE($connection, 'error', $error); 
                 $connection->close(); 
             },
@@ -1030,10 +1053,20 @@ function handleStreamContinue(TcpConnection $connection, Request $request): ?arr
         }
         
         $asyncGemini = AIService::getAsyncGemini($model);
-        $asyncGemini->chatStreamAsync(
+        $isConnectionAlive = true;
+        $requestId = $asyncGemini->chatStreamAsync(
             [['role' => 'system', 'content' => $systemPrompt], ['role' => 'user', 'content' => $userPrompt]],
-            function ($text, $isThought) use ($connection) { if (!$isThought && $text) sendSSE($connection, 'content', $text); },
-            function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $model) { 
+            function ($text, $isThought) use ($connection, &$isConnectionAlive, &$requestId, $asyncGemini) {
+                if (!$isConnectionAlive) return;
+                if (!$isThought && $text) {
+                    if (!sendSSE($connection, 'content', $text)) {
+                        $isConnectionAlive = false;
+                        if ($requestId) $asyncGemini->cancel($requestId);
+                    }
+                }
+            },
+            function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $model, &$isConnectionAlive) {
+                if (!$isConnectionAlive) return;
                 // 发送 token 使用统计
                 if ($usageMetadata) {
                     $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
@@ -1048,7 +1081,11 @@ function handleStreamContinue(TcpConnection $connection, Request $request): ?arr
                 sendSSE($connection, 'done', ''); 
                 $connection->close(); 
             },
-            function ($error) use ($connection) { sendSSE($connection, 'error', $error); $connection->close(); },
+            function ($error) use ($connection, &$isConnectionAlive) {
+                if (!$isConnectionAlive) return;
+                sendSSE($connection, 'error', $error);
+                $connection->close();
+            },
             ['enableSearch' => $enableSearch && $engine === 'google', 'enableTools' => $engine === 'mcp']
         );
     };
@@ -1689,15 +1726,20 @@ function handleStreamEnhancedContinue(TcpConnection $connection, Request $reques
             ['text' => "Context Cache（{$tokenCount} tokens）+ Few-shot（{$model}）", 'score' => 100]
         ], JSON_UNESCAPED_UNICODE));
         
+        $isConnectionAlive = true;
         $writer->continueStory(
             $bookFile,
             $prompt,
-            function ($text, $isThought) use ($connection) {
+            function ($text, $isThought) use ($connection, &$isConnectionAlive) {
+                if (!$isConnectionAlive) return;
                 if ($text && !$isThought) {
-                    sendSSE($connection, 'content', $text);
+                    if (!sendSSE($connection, 'content', $text)) {
+                        $isConnectionAlive = false;
+                    }
                 }
             },
-            function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $model) {
+            function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $model, &$isConnectionAlive) {
+                if (!$isConnectionAlive) return;
                 if ($usageMetadata) {
                     $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
                     sendSSE($connection, 'usage', json_encode([
@@ -1711,7 +1753,8 @@ function handleStreamEnhancedContinue(TcpConnection $connection, Request $reques
                 sendSSE($connection, 'done', '');
                 $connection->close();
             },
-            function ($error) use ($connection) {
+            function ($error) use ($connection, &$isConnectionAlive) {
+                if (!$isConnectionAlive) return;
                 sendSSE($connection, 'error', $error);
                 $connection->close();
             },
