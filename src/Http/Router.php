@@ -1,14 +1,12 @@
 <?php
 /**
- * 简洁的路由系统（支持动态参数）
+ * 简洁的路由系统（支持动态参数 + 类型验证）
  * 
  * 使用示例：
- * Router::get('/api/health', fn() => ['status' => 'ok']);
- * Router::get('/api/books/{id}', fn($conn, $req, $params) => ['book_id' => $params['id']]);
- * Router::post('/api/users/{userId}/posts/{postId}', fn($conn, $req, $params) => [
- *     'userId' => $params['userId'],
- *     'postId' => $params['postId']
- * ]);
+ * Router::get('/api/books/{id:int}', fn($conn, $req, $params) => [...]);
+ * Router::get('/api/users/{username:alpha}', fn($conn, $req, $params) => [...]);
+ * Router::get('/api/posts/{slug:slug}', fn($conn, $req, $params) => [...]);
+ * Router::get('/api/files/{path:path}', fn($conn, $req, $params) => [...]);
  */
 
 namespace SmartBook\Http;
@@ -20,6 +18,20 @@ class Router
 {
     private static array $routes = [];
     private static array $groups = [];
+    
+    /**
+     * 参数类型验证规则
+     */
+    private const PARAM_PATTERNS = [
+        'int'      => '[0-9]+',              // 纯数字
+        'id'       => '[0-9]+',              // ID（数字）
+        'alpha'    => '[a-zA-Z]+',           // 纯字母
+        'alnum'    => '[a-zA-Z0-9]+',        // 字母+数字
+        'slug'     => '[a-z0-9\-]+',         // URL slug（小写字母、数字、连字符）
+        'uuid'     => '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', // UUID
+        'path'     => '[a-zA-Z0-9/_\-\.]+',  // 文件路径（限制字符，防止路径遍历）
+        'any'      => '[^/]+',               // 任意字符（默认）
+    ];
     
     /**
      * 注册 GET 路由
@@ -86,19 +98,31 @@ class Router
     {
         $fullPath = implode('', self::$groups) . $path;
         
-        // 将路径模式转换为正则表达式
-        // /api/books/{id} => ^/api/books/([^/]+)$
-        // /api/users/{userId}/posts/{postId} => ^/api/users/([^/]+)/posts/([^/]+)$
+        // 解析路径参数和类型
+        // {id} => 参数名: id, 类型: any (默认)
+        // {id:int} => 参数名: id, 类型: int
         $pattern = $fullPath;
         $params = [];
+        $types = [];
         
-        // 提取所有参数名
-        if (preg_match_all('/{([^}]+)}/', $pattern, $matches)) {
-            $params = $matches[1];
+        // 提取所有参数及其类型
+        if (preg_match_all('/{([^}:]+)(?::([^}]+))?}/', $pattern, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $paramName = $match[1];
+                $paramType = $match[2] ?? 'any';
+                
+                $params[] = $paramName;
+                $types[$paramName] = $paramType;
+                
+                // 获取对应的正则表达式
+                $regex = self::PARAM_PATTERNS[$paramType] ?? self::PARAM_PATTERNS['any'];
+                
+                // 替换路径中的参数占位符
+                $pattern = str_replace($match[0], "({$regex})", $pattern);
+            }
         }
         
-        // 转换为正则表达式
-        $pattern = preg_replace('/{[^}]+}/', '([^/]+)', $pattern);
+        // 转换为完整的正则表达式
         $pattern = '#^' . $pattern . '$#';
         
         self::$routes[] = [
@@ -106,6 +130,7 @@ class Router
             'path' => $fullPath,
             'pattern' => $pattern,
             'params' => $params,
+            'types' => $types,
             'handler' => $handler,
         ];
     }
@@ -120,6 +145,11 @@ class Router
         $method = $request->method();
         $path = $request->path();
         
+        // 安全检查：防止路径遍历攻击
+        if (self::containsPathTraversal($path)) {
+            return ['error' => 'Invalid path', 'message' => 'Path traversal detected'];
+        }
+        
         foreach (self::$routes as $route) {
             // 检查 HTTP 方法
             if ($route['method'] !== '*' && $route['method'] !== $method) {
@@ -128,12 +158,21 @@ class Router
             
             // 检查路径匹配
             if (preg_match($route['pattern'], $path, $matches)) {
-                // 提取路径参数
+                // 提取并验证路径参数
                 $params = [];
                 array_shift($matches); // 移除完整匹配
                 
                 foreach ($route['params'] as $index => $paramName) {
-                    $params[$paramName] = $matches[$index] ?? null;
+                    $value = $matches[$index] ?? null;
+                    
+                    if ($value === null) {
+                        continue;
+                    }
+                    
+                    // 对参数值进行安全清理
+                    $value = self::sanitizeParam($value, $route['types'][$paramName] ?? 'any');
+                    
+                    $params[$paramName] = $value;
                 }
                 
                 $handler = $route['handler'];
@@ -157,6 +196,70 @@ class Router
     }
     
     /**
+     * 检测路径遍历攻击
+     */
+    private static function containsPathTraversal(string $path): bool
+    {
+        // 检查常见的路径遍历模式
+        $dangerous = ['../', '..\\', '%2e%2e/', '%2e%2e\\', '....', '\0'];
+        
+        foreach ($dangerous as $pattern) {
+            if (stripos($path, $pattern) !== false) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 对参数值进行安全清理
+     */
+    private static function sanitizeParam(string $value, string $type): string|int
+    {
+        switch ($type) {
+            case 'int':
+            case 'id':
+                // 转换为整数
+                return (int) $value;
+                
+            case 'alpha':
+                // 只保留字母
+                return preg_replace('/[^a-zA-Z]/', '', $value);
+                
+            case 'alnum':
+                // 只保留字母和数字
+                return preg_replace('/[^a-zA-Z0-9]/', '', $value);
+                
+            case 'slug':
+                // 只保留 slug 允许的字符
+                return preg_replace('/[^a-z0-9\-]/', '', strtolower($value));
+                
+            case 'uuid':
+                // UUID 已经通过正则验证，直接返回
+                return strtolower($value);
+                
+            case 'path':
+                // 路径需要额外清理
+                // 移除多余的斜杠
+                $value = preg_replace('#/+#', '/', $value);
+                // 移除开头和结尾的斜杠
+                $value = trim($value, '/');
+                // 再次检查路径遍历
+                if (str_contains($value, '..')) {
+                    return '';
+                }
+                return $value;
+                
+            case 'any':
+            default:
+                // 对任意类型进行基本清理
+                // HTML 实体编码（防止 XSS）
+                return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+        }
+    }
+    
+    /**
      * 清空所有路由（测试用）
      */
     public static function clear(): void
@@ -174,6 +277,15 @@ class Router
             'method' => $route['method'],
             'path' => $route['path'],
             'params' => $route['params'],
+            'types' => $route['types'],
         ], self::$routes);
+    }
+    
+    /**
+     * 获取支持的参数类型列表
+     */
+    public static function getSupportedTypes(): array
+    {
+        return array_keys(self::PARAM_PATTERNS);
     }
 }

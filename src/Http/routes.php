@@ -69,36 +69,74 @@ Router::group('/api', function() {
     Router::post('/enhanced-writer/status', fn($conn, $req) => handleEnhancedWriterStatus($req));
     
     // ===================================
-    // 动态路由示例（演示路径参数功能）
+    // 动态路由示例（带类型验证和安全检查）
     // ===================================
     
-    // 示例 1: 单个参数
-    Router::get('/example/user/{id}', fn($conn, $req, $params) => [
-        'message' => '获取用户信息',
+    // 示例 1: 整数参数（自动转换为 int，防止 SQL 注入）
+    Router::get('/example/user/{id:int}', fn($conn, $req, $params) => [
+        'message' => '获取用户信息（安全）',
         'userId' => $params['id'],
-        'type' => is_numeric($params['id']) ? 'numeric' : 'string'
+        'type' => gettype($params['id']),  // 返回 "integer"
+        'safe' => 'ID 已验证为整数，可安全用于数据库查询'
     ]);
     
-    // 示例 2: 多个参数
-    Router::get('/example/user/{userId}/post/{postId}', fn($conn, $req, $params) => [
+    // 示例 2: 多个类型参数
+    Router::get('/example/user/{userId:int}/post/{postId:int}', fn($conn, $req, $params) => [
         'message' => '获取用户的文章',
-        'userId' => $params['userId'],
-        'postId' => $params['postId']
+        'userId' => $params['userId'],     // int
+        'postId' => $params['postId'],     // int
+        'safe' => '所有 ID 都已验证为整数'
     ]);
     
-    // 示例 3: RESTful API
-    Router::get('/example/books/{id}', fn($conn, $req, $params) => [
+    // 示例 3: RESTful API（带类型验证）
+    Router::get('/example/books/{id:int}', fn($conn, $req, $params) => [
         'action' => 'GET',
-        'bookId' => $params['id']
+        'bookId' => $params['id'],
+        'sql_safe' => true
     ]);
     
-    Router::put('/example/books/{id}', fn($conn, $req, $params) => [
+    Router::put('/example/books/{id:int}', fn($conn, $req, $params) => [
         'action' => 'PUT (更新)',
         'bookId' => $params['id']
     ]);
     
-    Router::delete('/example/books/{id}', fn($conn, $req, $params) => [
+    Router::delete('/example/books/{id:int}', fn($conn, $req, $params) => [
         'action' => 'DELETE (删除)',
         'bookId' => $params['id']
+    ]);
+    
+    // 示例 4: 字母参数（用户名等）
+    Router::get('/example/profile/{username:alpha}', fn($conn, $req, $params) => [
+        'message' => '获取用户资料',
+        'username' => $params['username'],  // 只包含字母
+        'safe' => '用户名已过滤，只包含 a-zA-Z'
+    ]);
+    
+    // 示例 5: Slug 参数（URL 友好）
+    Router::get('/example/article/{slug:slug}', fn($conn, $req, $params) => [
+        'message' => '获取文章',
+        'slug' => $params['slug'],  // hello-world-123
+        'safe' => 'Slug 已标准化为小写字母、数字和连字符'
+    ]);
+    
+    // 示例 6: UUID 参数
+    Router::get('/example/order/{orderId:uuid}', fn($conn, $req, $params) => [
+        'message' => '获取订单',
+        'orderId' => $params['orderId'],  // 550e8400-e29b-41d4-a716-446655440000
+        'safe' => 'UUID 格式已验证'
+    ]);
+    
+    // 示例 7: 路径参数（文件路径，已防护路径遍历）
+    Router::get('/example/file/{path:path}', fn($conn, $req, $params) => [
+        'message' => '获取文件',
+        'path' => $params['path'],  // docs/readme.txt
+        'safe' => '路径已清理，防止 ../ 攻击'
+    ]);
+    
+    // 示例 8: 任意参数（HTML 转义，防止 XSS）
+    Router::get('/example/search/{query}', fn($conn, $req, $params) => [
+        'message' => '搜索',
+        'query' => $params['query'],  // 自动 HTML 转义
+        'safe' => '查询已 HTML 转义，防止 XSS 攻击'
     ]);
 });
