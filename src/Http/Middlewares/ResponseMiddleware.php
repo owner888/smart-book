@@ -8,6 +8,7 @@
 namespace SmartBook\Http\Middlewares;
 
 use SmartBook\Http\Middleware;
+use SmartBook\Http\Context;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
@@ -23,23 +24,23 @@ class ResponseMiddleware implements Middleware
         $this->excludePaths = $excludePaths;
     }
     
-    public function handle(TcpConnection $connection, Request $request, callable $next): mixed
+    public function handle(Context $ctx, callable $next): mixed
     {
-        // 执行请求
-        $result = $next($connection, $request);
-        
-        // 如果中间件已禁用，直接返回
+        // 如果中间件已禁用，直接继续
         if (!$this->enabled) {
-            return $result;
+            return $next($ctx);
         }
         
-        // 如果是排除路径，直接返回
-        $path = $request->path();
+        // 如果是排除路径，直接继续
+        $path = $ctx->path();
         foreach ($this->excludePaths as $excludePath) {
             if (str_starts_with($path, $excludePath)) {
-                return $result;
+                return $next($ctx);
             }
         }
+        
+        // 执行请求
+        $result = $next($ctx);
         
         // 如果已发送响应（返回 null），不处理
         if ($result === null) {
@@ -55,7 +56,7 @@ class ResponseMiddleware implements Middleware
         $wrapped = $this->wrapResponse($result);
         
         // 发送包装后的响应
-        $connection->send(new Response(
+        $ctx->connection()->send(new Response(
             $wrapped['status'],
             [
                 'Content-Type' => 'application/json; charset=utf-8',

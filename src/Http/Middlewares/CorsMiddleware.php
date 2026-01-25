@@ -8,6 +8,7 @@
 namespace SmartBook\Http\Middlewares;
 
 use SmartBook\Http\Middleware;
+use SmartBook\Http\Context;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
@@ -27,11 +28,11 @@ class CorsMiddleware implements Middleware
         ], $config);
     }
     
-    public function handle(TcpConnection $connection, Request $request, callable $next): mixed
+    public function handle(Context $ctx, callable $next): mixed
     {
         // 处理 OPTIONS 预检请求
-        if ($request->method() === 'OPTIONS') {
-            $connection->send(new Response(200, [
+        if ($ctx->method() === 'OPTIONS') {
+            $ctx->connection()->send(new Response(200, [
                 'Access-Control-Allow-Origin' => $this->config['allow_origin'],
                 'Access-Control-Allow-Methods' => $this->config['allow_methods'],
                 'Access-Control-Allow-Headers' => $this->config['allow_headers'],
@@ -42,11 +43,11 @@ class CorsMiddleware implements Middleware
         }
         
         // 继续处理请求
-        $result = $next($connection, $request);
+        $result = $next($ctx);
         
         // 如果返回数组，需要包装成 Response
         if (is_array($result)) {
-            $connection->send(new Response(200, [
+            $ctx->connection()->send(new Response(200, [
                 'Content-Type' => 'application/json; charset=utf-8',
                 'Access-Control-Allow-Origin' => $this->config['allow_origin'],
                 'Access-Control-Allow-Credentials' => $this->config['allow_credentials'] ? 'true' : 'false',

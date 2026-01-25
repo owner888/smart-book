@@ -8,6 +8,7 @@
 namespace SmartBook\Http\Middlewares;
 
 use SmartBook\Http\Middleware;
+use SmartBook\Http\Context;
 use SmartBook\Cache\CacheService;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
@@ -24,9 +25,9 @@ class RateLimitMiddleware implements Middleware
         $this->windowSeconds = $windowSeconds;
     }
     
-    public function handle(TcpConnection $connection, Request $request, callable $next): mixed
+    public function handle(Context $ctx, callable $next): mixed
     {
-        $ip = $request->header('x-forwarded-for') ?: $connection->getRemoteIp();
+        $ip = $ctx->ip();
         $key = "rate_limit:{$ip}";
         
         // 获取当前计数
@@ -37,21 +38,15 @@ class RateLimitMiddleware implements Middleware
         
         // 检查是否超过限制
         if ($count >= $this->maxRequests) {
-            $retryAfter = $this->windowSeconds;
-            
-            $connection->send(new Response(429, [
-                'Content-Type' => 'application/json; charset=utf-8',
-                'Retry-After' => (string) $retryAfter,
-                'X-RateLimit-Limit' => (string) $this->maxRequests,
-                'X-RateLimit-Remaining' => '0',
-                'X-RateLimit-Reset' => (string) (time() + $retryAfter),
-            ], json_encode([
-                'error' => 'Too Many Requests',
-                'message' => "Rate limit exceeded. Try again in {$retryAfter} seconds.",
-                'limit' => $this->maxRequests,
-                'window' => $this->windowSeconds,
-            ], JSON_UNESCAPED_UNICODE)));
-            return null;
+            return $ctx->error(
+                "Rate limit exceeded. Try again in {$this->windowSeconds} seconds.",
+                429,
+                [
+                    'limit' => $this->maxRequests,
+                    'window' => $this->windowSeconds,
+                    'retry_after' => $this->windowSeconds,
+                ]
+            );
         }
         
         // 增加计数
@@ -59,11 +54,11 @@ class RateLimitMiddleware implements Middleware
         CacheService::set($key, $count, $this->windowSeconds);
         
         // 继续处理请求
-        $result = $next($connection, $request);
+        $result = $next($ctx);
         
         // 添加限流头信息
         if (is_array($result)) {
-            $connection->send(new Response(200, [
+            $ctx->connection()->send(new Response(200, [
                 'Content-Type' => 'application/json; charset=utf-8',
                 'X-RateLimit-Limit' => (string) $this->maxRequests,
                 'X-RateLimit-Remaining' => (string) ($this->maxRequests - $count),

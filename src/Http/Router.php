@@ -202,27 +202,30 @@ class Router
                     $params[$paramName] = $value;
                 }
                 
+                // 创建 Context
+                $ctx = new Context($connection, $request, $params);
+                
                 // 合并全局中间件和路由中间件
                 $middlewares = array_merge(self::$middlewares, $route['middlewares'] ?? []);
                 
                 // 构建中间件管道
                 $handler = $route['handler'];
-                $pipeline = self::buildPipeline($middlewares, function($conn, $req) use ($handler, $params) {
+                $pipeline = self::buildPipeline($middlewares, function($ctx) use ($handler) {
                     // 支持数组格式 [Class::class, 'method']
                     if (is_array($handler)) {
                         [$class, $method] = $handler;
                         if (is_string($class)) {
                             $class = new $class();
                         }
-                        return $class->$method($conn, $req, $params);
+                        return $class->$method($ctx);
                     }
                     
                     // 调用闭包或函数
-                    return $handler($conn, $req, $params);
+                    return $handler($ctx);
                 });
                 
                 // 执行中间件管道
-                return $pipeline($connection, $request);
+                return $pipeline($ctx);
             }
         }
         
@@ -240,8 +243,8 @@ class Router
         
         foreach (array_reverse($middlewares) as $middleware) {
             $next = $pipeline;
-            $pipeline = function($connection, $request) use ($middleware, $next) {
-                return $middleware->handle($connection, $request, $next);
+            $pipeline = function($ctx) use ($middleware, $next) {
+                return $middleware->handle($ctx, $next);
             };
         }
         

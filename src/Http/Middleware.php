@@ -7,18 +7,14 @@
 
 namespace SmartBook\Http;
 
-use Workerman\Connection\TcpConnection;
-use Workerman\Protocols\Http\Request;
-
 interface Middleware
 {
     /**
      * 处理请求
      * 
-     * @param TcpConnection $connection
-     * @param Request $request
+     * @param Context $ctx 请求上下文
      * @param callable $next 调用下一个中间件或路由处理器
      * @return mixed 返回响应数据，或 null 表示已发送响应
      */
-    public function handle(TcpConnection $connection, Request $request, callable $next): mixed;
+    public function handle(Context $ctx, callable $next): mixed;
 }

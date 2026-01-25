@@ -8,6 +8,7 @@
 namespace SmartBook\Http\Middlewares;
 
 use SmartBook\Http\Middleware;
+use SmartBook\Http\Context;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
@@ -24,32 +25,25 @@ class AuthMiddleware implements Middleware
         $this->headerName = $headerName;
     }
     
-    public function handle(TcpConnection $connection, Request $request, callable $next): mixed
+    public function handle(Context $ctx, callable $next): mixed
     {
-        $token = $this->extractToken($request);
+        $token = $this->extractToken($ctx);
         
         if (!$token || !$this->isValidToken($token)) {
-            $connection->send(new Response(401, [
-                'Content-Type' => 'application/json; charset=utf-8',
-                'WWW-Authenticate' => 'Bearer realm="API"',
-            ], json_encode([
-                'error' => 'Unauthorized',
-                'message' => 'Invalid or missing authentication token',
-            ], JSON_UNESCAPED_UNICODE)));
-            return null;
+            return $ctx->unauthorized('Invalid or missing authentication token');
         }
         
         // 认证成功，继续处理
-        return $next($connection, $request);
+        return $next($ctx);
     }
     
-    private function extractToken(Request $request): ?string
+    private function extractToken(Context $ctx): ?string
     {
-        $header = $request->header($this->headerName);
+        $header = $ctx->header($this->headerName);
         
         if (!$header) {
             // 尝试从查询参数获取
-            return $request->get('token');
+            return $ctx->query('token');
         }
         
         // 支持 Bearer Token
