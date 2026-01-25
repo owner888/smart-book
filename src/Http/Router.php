@@ -18,6 +18,8 @@ class Router
 {
     private static array $routes = [];
     private static array $groups = [];
+    private static array $middlewares = [];
+    private static array $groupMiddlewares = [];
     
     /**
      * 参数类型验证规则
@@ -82,13 +84,31 @@ class Router
     }
     
     /**
-     * 路由组（添加前缀）
+     * 添加全局中间件
      */
-    public static function group(string $prefix, callable $callback): void
+    public static function middleware(string|array $middleware): void
+    {
+        $middlewares = is_array($middleware) ? $middleware : [$middleware];
+        self::$middlewares = array_merge(self::$middlewares, $middlewares);
+    }
+    
+    /**
+     * 路由组（添加前缀和中间件）
+     */
+    public static function group(string $prefix, callable $callback, array $middlewares = []): void
     {
         self::$groups[] = $prefix;
+        
+        if (!empty($middlewares)) {
+            self::$groupMiddlewares[] = $middlewares;
+        }
+        
         $callback();
+        
         array_pop(self::$groups);
+        if (!empty($middlewares)) {
+            array_pop(self::$groupMiddlewares);
+        }
     }
     
     /**
@@ -125,6 +145,12 @@ class Router
         // 转换为完整的正则表达式
         $pattern = '#^' . $pattern . '$#';
         
+        // 收集当前组的所有中间件
+        $middlewares = [];
+        foreach (self::$groupMiddlewares as $groupMiddleware) {
+            $middlewares = array_merge($middlewares, $groupMiddleware);
+        }
+        
         self::$routes[] = [
             'method' => $method,
             'path' => $fullPath,
@@ -132,6 +158,7 @@ class Router
             'params' => $params,
             'types' => $types,
             'handler' => $handler,
+            'middlewares' => $middlewares,
         ];
     }
     
@@ -175,24 +202,50 @@ class Router
                     $params[$paramName] = $value;
                 }
                 
+                // 合并全局中间件和路由中间件
+                $middlewares = array_merge(self::$middlewares, $route['middlewares'] ?? []);
+                
+                // 构建中间件管道
                 $handler = $route['handler'];
-                
-                // 支持数组格式 [Class::class, 'method']
-                if (is_array($handler)) {
-                    [$class, $method] = $handler;
-                    if (is_string($class)) {
-                        $class = new $class();
+                $pipeline = self::buildPipeline($middlewares, function($conn, $req) use ($handler, $params) {
+                    // 支持数组格式 [Class::class, 'method']
+                    if (is_array($handler)) {
+                        [$class, $method] = $handler;
+                        if (is_string($class)) {
+                            $class = new $class();
+                        }
+                        return $class->$method($conn, $req, $params);
                     }
-                    return $class->$method($connection, $request, $params);
-                }
+                    
+                    // 调用闭包或函数
+                    return $handler($conn, $req, $params);
+                });
                 
-                // 调用闭包或函数
-                return $handler($connection, $request, $params);
+                // 执行中间件管道
+                return $pipeline($connection, $request);
             }
         }
         
         // 未找到路由
         return ['error' => 'Not Found', 'path' => $path];
+    }
+    
+    /**
+     * 构建中间件管道（洋葱模型）
+     */
+    private static function buildPipeline(array $middlewares, callable $core): callable
+    {
+        // 从后往前构建管道
+        $pipeline = $core;
+        
+        foreach (array_reverse($middlewares) as $middleware) {
+            $next = $pipeline;
+            $pipeline = function($connection, $request) use ($middleware, $next) {
+                return $middleware->handle($connection, $request, $next);
+            };
+        }
+        
+        return $pipeline;
     }
     
     /**

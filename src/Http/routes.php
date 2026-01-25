@@ -6,6 +6,14 @@
  */
 
 use SmartBook\Http\Router;
+use SmartBook\Http\Middlewares\CorsMiddleware;
+use SmartBook\Http\Middlewares\AuthMiddleware;
+use SmartBook\Http\Middlewares\RateLimitMiddleware;
+
+// ===================================
+// 全局中间件（应用于所有路由）
+// ===================================
+// Router::middleware(new CorsMiddleware());
 
 // ===================================
 // API 路由组
