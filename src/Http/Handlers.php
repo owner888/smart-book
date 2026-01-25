@@ -7,6 +7,7 @@ use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
 use SmartBook\Http\RequestLogger;
+use SmartBook\Http\Router;
 use SmartBook\AI\AIService;
 use SmartBook\AI\TokenCounter;
 use SmartBook\AI\GoogleTTSClient;
@@ -16,6 +17,9 @@ use SmartBook\RAG\EmbeddingClient;
 use SmartBook\RAG\VectorStore;
 use SmartBook\AI\GeminiContextCache;
 use SmartBook\AI\EnhancedStoryWriter;
+
+// 加载路由定义
+require_once __DIR__ . '/routes.php';
 
 // ===================================
 // HTTP 主入口
@@ -101,43 +105,14 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             }
         }
         
-        // API 路由
-        $result = match ($path) {
-            '/api' => ['status' => 'ok', 'message' => 'Smart Book AI API'],
-            '/api/health' => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s'), 'redis' => CacheService::isConnected()],
-            '/api/config' => handleGetConfig(),
-            '/api/models' => handleGetModels(),
-            '/api/assistants' => handleGetAssistants(),
-            '/api/books' => handleGetBooks(),
-            '/api/books/select' => handleSelectBook($request),
-            '/api/books/index' => handleIndexBook($connection, $request),
-            '/api/mcp/servers' => $method === 'POST' ? handleSaveMCPServers($request) : handleGetMCPServers(),
-            '/api/mcp/status' => ['enabled' => true, 'url' => 'http://' . MCP_SERVER_HOST . ':' . MCP_SERVER_PORT . '/mcp'],
-            '/api/cache/stats' => handleCacheStats($connection),
-            '/api/ask' => handleAskWithCache($connection, $request),
-            '/api/chat' => handleChat($request),
-            '/api/continue' => handleContinue($request),
-            '/api/stream/ask' => handleStreamAskAsync($connection, $request),
-            '/api/stream/chat' => handleStreamChat($connection, $request),
-            '/api/stream/continue' => handleStreamContinue($connection, $request),
-            '/api/tts/synthesize' => handleTTSSynthesize($connection, $request),
-            '/api/tts/voices' => handleTTSVoices(),
-            '/api/tts/list-api-voices' => handleTTSListAPIVoices(),
-            '/api/asr/recognize' => handleASRRecognize($connection, $request),
-            '/api/asr/languages' => handleASRLanguages(),
-            '/api/context-cache/list' => handleContextCacheList(),
-            '/api/context-cache/create' => handleContextCacheCreate($request),
-            '/api/context-cache/create-for-book' => handleContextCacheCreateForBook($request),
-            '/api/context-cache/delete' => handleContextCacheDelete($request),
-            '/api/context-cache/get' => handleContextCacheGet($request),
-            '/api/enhanced-writer/prepare' => handleEnhancedWriterPrepare($request),
-            '/api/enhanced-writer/status' => handleEnhancedWriterStatus($request),
-            '/api/stream/enhanced-continue' => handleStreamEnhancedContinue($connection, $request),
-            '/api/stream/analyze-characters' => handleStreamAnalyzeCharacters($connection, $request),
-            default => ['error' => 'Not Found', 'path' => $path],
-        };
+        // API 路由（使用新路由系统）
+        $result = Router::dispatch($connection, $request);
         
-        if ($result === null) return;
+        // 流式 API 返回 null，记录日志后直接返回
+        if ($result === null) {
+            RequestLogger::end($request, 200, $startTime, $connection);
+            return;
+        }
         
         $statusCode = isset($result['error']) ? 404 : 200;
         $connection->send(new Response($statusCode, $jsonHeaders, json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)));
