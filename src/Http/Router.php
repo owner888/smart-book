@@ -20,6 +20,7 @@ class Router
     private static array $groups = [];
     private static array $middlewares = [];
     private static array $groupMiddlewares = [];
+    private static ?ExceptionHandler $exceptionHandler = null;
     
     /**
      * 参数类型验证规则
@@ -90,6 +91,14 @@ class Router
     {
         $middlewares = is_array($middleware) ? $middleware : [$middleware];
         self::$middlewares = array_merge(self::$middlewares, $middlewares);
+    }
+    
+    /**
+     * 设置异常处理器
+     */
+    public static function setExceptionHandler(ExceptionHandler $handler): void
+    {
+        self::$exceptionHandler = $handler;
     }
     
     /**
@@ -224,8 +233,18 @@ class Router
                     return $handler($ctx);
                 });
                 
-                // 执行中间件管道
-                return $pipeline($ctx);
+                // 执行中间件管道（捕获异常）
+                try {
+                    return $pipeline($ctx);
+                } catch (\Throwable $e) {
+                    // 使用异常处理器
+                    if (self::$exceptionHandler) {
+                        self::$exceptionHandler->handle($e, $ctx);
+                        return null;
+                    }
+                    // 如果没有异常处理器，重新抛出
+                    throw $e;
+                }
             }
         }
         

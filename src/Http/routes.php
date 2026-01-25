@@ -10,6 +10,16 @@ use SmartBook\Http\Middlewares\CorsMiddleware;
 use SmartBook\Http\Middlewares\AuthMiddleware;
 use SmartBook\Http\Middlewares\RateLimitMiddleware;
 use SmartBook\Http\Middlewares\ResponseMiddleware;
+use SmartBook\Http\ExceptionHandler;
+
+// ===================================
+// 全局异常处理器
+// ===================================
+// 开发模式：显示详细错误信息
+// 生产模式：隐藏错误细节
+Router::setExceptionHandler(new ExceptionHandler(
+    debug: true  // 开发环境设为 true，生产环境设为 false
+));
 
 // ===================================
 // 全局中间件（应用于所有路由）

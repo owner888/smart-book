@@ -1,0 +1,119 @@
+<?php
+/**
+ * 全局异常处理器
+ * 
+ * 捕获所有未处理的异常并转换为合适的 HTTP 响应
+ */
+
+namespace SmartBook\Http;
+
+use SmartBook\Http\Exceptions\HttpException;
+use Throwable;
+
+class ExceptionHandler
+{
+    private bool $debug;
+    
+    public function __construct(bool $debug = false)
+    {
+        $this->debug = $debug;
+    }
+    
+    /**
+     * 处理异常
+     */
+    public function handle(Throwable $e, Context $ctx): void
+    {
+        // HTTP 异常 - 直接转换
+        if ($e instanceof HttpException) {
+            $this->handleHttpException($e, $ctx);
+            return;
+        }
+        
+        // 其他异常 - 转换为 500
+        $this->handleGenericException($e, $ctx);
+    }
+    
+    /**
+     * 处理 HTTP 异常
+     */
+    private function handleHttpException(HttpException $e, Context $ctx): void
+    {
+        $data = [
+            'error' => $e->getMessage(),
+            'status_code' => $e->getStatusCode(),
+        ];
+        
+        if ($e->getDetails()) {
+            $data['details'] = $e->getDetails();
+        }
+        
+        // 在调试模式下添加堆栈追踪
+        if ($this->debug) {
+            $data['trace'] = $this->getTrace($e);
+        }
+        
+        $ctx->connection()->send(new \Workerman\Protocols\Http\Response(
+            $e->getStatusCode(),
+            array_merge([
+                'Content-Type' => 'application/json; charset=utf-8',
+            ], $e->getHeaders()),
+            json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
+        ));
+    }
+    
+    /**
+     * 处理通用异常
+     */
+    private function handleGenericException(Throwable $e, Context $ctx): void
+    {
+        // 记录错误日志
+        error_log(sprintf(
+            "[%s] %s in %s:%d\nStack trace:\n%s",
+            get_class($e),
+            $e->getMessage(),
+            $e->getFile(),
+            $e->getLine(),
+            $e->getTraceAsString()
+        ));
+        
+        $data = [
+            'error' => $this->debug ? $e->getMessage() : 'Internal Server Error',
+            'status_code' => 500,
+        ];
+        
+        // 在调试模式下添加详细信息
+        if ($this->debug) {
+            $data['exception'] = get_class($e);
+            $data['file'] = $e->getFile();
+            $data['line'] = $e->getLine();
+            $data['trace'] = $this->getTrace($e);
+        }
+        
+        $ctx->connection()->send(new \Workerman\Protocols\Http\Response(
+            500,
+            ['Content-Type' => 'application/json; charset=utf-8'],
+            json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
+        ));
+    }
+    
+    /**
+     * 获取格式化的堆栈追踪
+     */
+    private function getTrace(Throwable $e): array
+    {
+        $trace = [];
+        foreach ($e->getTrace() as $i => $item) {
+            $trace[] = sprintf(
+                "#%d %s%s%s() at %s:%d",
+                $i,
+                $item['class'] ?? '',
+                $item['type'] ?? '',
+                $item['function'] ?? '',
+                $item['file'] ?? 'unknown',
+                $item['line'] ?? 0
+            );
+        }
+        return $trace;
+    }
+}
