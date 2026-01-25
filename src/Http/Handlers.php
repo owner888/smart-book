@@ -6,6 +6,7 @@
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
+use SmartBook\Http\RequestLogger;
 use SmartBook\AI\AIService;
 use SmartBook\AI\TokenCounter;
 use SmartBook\AI\GoogleTTSClient;
@@ -22,6 +23,9 @@ use SmartBook\AI\EnhancedStoryWriter;
 
 function handleHttpRequest(TcpConnection $connection, Request $request): void
 {
+    // 记录请求开始时间
+    $startTime = RequestLogger::start($request);
+    
     $path = $request->path();
     $method = $request->method();
     
@@ -34,6 +38,7 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
     
     if ($method === 'OPTIONS') {
         $connection->send(new Response(200, $jsonHeaders, ''));
+        RequestLogger::end($request, 200, $startTime, $connection);
         return;
     }
     
@@ -46,8 +51,10 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
                     'Content-Type' => 'image/x-icon', 
                     'Cache-Control' => 'public, max-age=86400'
                 ], file_get_contents($icoPath)));
+                RequestLogger::end($request, 200, $startTime, $connection);
             } else {
                 $connection->send(new Response(204, [], ''));
+                RequestLogger::end($request, 204, $startTime, $connection);
             }
             return;
         }
@@ -57,6 +64,7 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             $indexHtmlPath = dirname(__DIR__, 2) . '/index.html';
             if (file_exists($indexHtmlPath)) {
                 $connection->send(new Response(200, ['Content-Type' => 'text/html; charset=utf-8'], file_get_contents($indexHtmlPath)));
+                RequestLogger::end($request, 200, $startTime, $connection);
                 return;
             }
         }
@@ -66,6 +74,7 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             $pagePath = dirname(__DIR__, 2) . $path;
             if (file_exists($pagePath)) {
                 $connection->send(new Response(200, ['Content-Type' => 'text/html; charset=utf-8'], file_get_contents($pagePath)));
+                RequestLogger::end($request, 200, $startTime, $connection);
                 return;
             }
         }
@@ -87,6 +96,7 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
                     'eot' => 'application/vnd.ms-fontobject',
                 ];
                 $connection->send(new Response(200, ['Content-Type' => $mimeTypes[$ext] ?? 'application/octet-stream'], file_get_contents($filePath)));
+                RequestLogger::end($request, 200, $startTime, $connection);
                 return;
             }
         }
@@ -131,9 +141,11 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
         
         $statusCode = isset($result['error']) ? 404 : 200;
         $connection->send(new Response($statusCode, $jsonHeaders, json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)));
+        RequestLogger::end($request, $statusCode, $startTime, $connection);
         
     } catch (Exception $e) {
         $connection->send(new Response(500, $jsonHeaders, json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE)));
+        RequestLogger::end($request, 500, $startTime, $connection);
     }
 }
 
