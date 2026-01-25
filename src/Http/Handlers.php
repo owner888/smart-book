@@ -732,18 +732,38 @@ function triggerSummarizationIfNeeded(string $chatId, array $context): void
 // SSE 流式处理
 // ===================================
 
-function sendSSE(TcpConnection $connection, string $event, string $data): void
+/**
+ * 发送 SSE 事件（带连接检测）
+ * 
+ * @param TcpConnection $connection Workerman 连接对象
+ * @param string $event 事件类型
+ * @param string $data 事件数据
+ * @return bool 返回 true 表示发送成功，false 表示连接已断开
+ */
+function sendSSE(TcpConnection $connection, string $event, string $data): bool
 {
-    // SSE 规范：data 字段中的换行符需要分成多行 data:
-    // 或者直接将换行符替换为 \n 字符串（前端会处理）
-    // 这里使用分行方式
+    // 检查连接状态
+    if ($connection->getStatus() !== TcpConnection::STATUS_ESTABLISHED) {
+        Logger::info("[SSE] 连接已断开，停止发送事件: {$event}");
+        return false;
+    }
+    
+    // 构建 SSE 消息
     $lines = explode("\n", $data);
     $message = "event: {$event}\n";
     foreach ($lines as $line) {
         $message .= "data: {$line}\n";
     }
     $message .= "\n";
-    $connection->send($message);
+    
+    // 尝试发送
+    try {
+        $connection->send($message);
+        return true;
+    } catch (Exception $e) {
+        Logger::error("[SSE] 发送失败: {$e->getMessage()}");
+        return false;
+    }
 }
 
 function handleStreamAskAsync(TcpConnection $connection, Request $request): ?array
