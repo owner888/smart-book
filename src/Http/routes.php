@@ -67,4 +67,38 @@ Router::group('/api', function() {
     // 增强版续写
     Router::post('/enhanced-writer/prepare', fn($conn, $req) => handleEnhancedWriterPrepare($req));
     Router::post('/enhanced-writer/status', fn($conn, $req) => handleEnhancedWriterStatus($req));
+    
+    // ===================================
+    // 动态路由示例（演示路径参数功能）
+    // ===================================
+    
+    // 示例 1: 单个参数
+    Router::get('/example/user/{id}', fn($conn, $req, $params) => [
+        'message' => '获取用户信息',
+        'userId' => $params['id'],
+        'type' => is_numeric($params['id']) ? 'numeric' : 'string'
+    ]);
+    
+    // 示例 2: 多个参数
+    Router::get('/example/user/{userId}/post/{postId}', fn($conn, $req, $params) => [
+        'message' => '获取用户的文章',
+        'userId' => $params['userId'],
+        'postId' => $params['postId']
+    ]);
+    
+    // 示例 3: RESTful API
+    Router::get('/example/books/{id}', fn($conn, $req, $params) => [
+        'action' => 'GET',
+        'bookId' => $params['id']
+    ]);
+    
+    Router::put('/example/books/{id}', fn($conn, $req, $params) => [
+        'action' => 'PUT (更新)',
+        'bookId' => $params['id']
+    ]);
+    
+    Router::delete('/example/books/{id}', fn($conn, $req, $params) => [
+        'action' => 'DELETE (删除)',
+        'bookId' => $params['id']
+    ]);
 });
