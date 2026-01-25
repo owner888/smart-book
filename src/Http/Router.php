@@ -86,7 +86,7 @@ class Router
     /**
      * 添加全局中间件
      */
-    public static function middleware(string|array $middleware): void
+    public static function middleware(Middleware|array $middleware): void
     {
         $middlewares = is_array($middleware) ? $middleware : [$middleware];
         self::$middlewares = array_merge(self::$middlewares, $middlewares);

@@ -9,10 +9,18 @@ use SmartBook\Http\Router;
 use SmartBook\Http\Middlewares\CorsMiddleware;
 use SmartBook\Http\Middlewares\AuthMiddleware;
 use SmartBook\Http\Middlewares\RateLimitMiddleware;
+use SmartBook\Http\Middlewares\ResponseMiddleware;
 
 // ===================================
 // 全局中间件（应用于所有路由）
 // ===================================
+// 统一响应格式 - 自动包装成 {success, data, error, meta}
+Router::middleware(new ResponseMiddleware(true, [
+    '/static',      // 排除静态文件
+    '/favicon',     // 排除 favicon
+]));
+
+// CORS 跨域支持（可选）
 // Router::middleware(new CorsMiddleware());
 
 // ===================================
