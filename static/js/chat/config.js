@@ -21,7 +21,9 @@ function loadConfigSync() {
         xhr.send();
         
         if (xhr.status === 200) {
-            const config = JSON.parse(xhr.responseText);
+            const response = JSON.parse(xhr.responseText);
+            // ResponseMiddleware 包装了响应，需要从 data 中获取
+            const config = response.data || response;
             return {
                 API_BASE: config.webServer.url,
                 MCP_URL: config.mcpServer.url,
@@ -58,7 +60,9 @@ window.ChatConfig = {
         try {
             const response = await fetch(this.API_BASE + '/api/config');
             if (response.ok) {
-                const config = await response.json();
+                const result = await response.json();
+                // ResponseMiddleware 包装了响应，需要从 data 中获取
+                const config = result.data || result;
                 this.API_BASE = config.webServer.url;
                 this.MCP_URL = config.mcpServer.url;
                 this.WS_URL = config.wsServer.url;

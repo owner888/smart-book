@@ -8,6 +8,11 @@
 use SmartBook\Http\Router;
 use SmartBook\Http\Middlewares\ResponseMiddleware;
 use SmartBook\Http\ExceptionHandler;
+use SmartBook\Http\Handlers\ConfigHandler;
+use SmartBook\Http\Handlers\ChatHandler;
+use SmartBook\Http\Handlers\BookHandler;
+use SmartBook\Http\Handlers\TTSHandler;
+use SmartBook\Http\Handlers\ASRHandler;
 
 // ===================================
 // 全局异常处理器
@@ -39,16 +44,16 @@ Router::group('/api', function() {
     // 基础信息
     Router::get('', fn($ctx) => ['status' => 'ok', 'message' => 'Smart Book AI API']);
     Router::get('/health', fn($ctx) => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s'), 'redis' => \SmartBook\Cache\CacheService::isConnected()]);
-    Router::get('/config', fn($ctx) => handleGetConfig());
+    Router::get('/config', fn($ctx) => ConfigHandler::getConfig());
     
     // 模型和助手
-    Router::get('/models', fn($ctx) => handleGetModels());
-    Router::get('/assistants', fn($ctx) => handleGetAssistants());
+    Router::get('/models', fn($ctx) => ConfigHandler::getModels());
+    Router::get('/assistants', fn($ctx) => ConfigHandler::getAssistants());
     
     // 书籍管理
-    Router::get('/books', fn($ctx) => handleGetBooks());
-    Router::post('/books/select', fn($ctx) => handleSelectBook($ctx));
-    Router::post('/books/index', fn($ctx) => handleIndexBook($ctx));
+    Router::get('/books', fn($ctx) => BookHandler::getBooks());
+    Router::post('/books/select', fn($ctx) => BookHandler::selectBook($ctx));
+    Router::post('/books/index', fn($ctx) => BookHandler::indexBook($ctx));
     
     // MCP 服务器
     Router::any('/mcp/servers', function($ctx) {
@@ -60,25 +65,25 @@ Router::group('/api', function() {
     Router::get('/cache/stats', fn($ctx) => handleCacheStats($ctx));
     
     // 问答 API
-    Router::post('/ask', fn($ctx) => handleAskWithCache($ctx));
-    Router::post('/chat', fn($ctx) => handleChat($ctx));
-    Router::post('/continue', fn($ctx) => handleContinue($ctx));
+    Router::post('/ask', fn($ctx) => ChatHandler::askWithCache($ctx));
+    Router::post('/chat', fn($ctx) => ChatHandler::chat($ctx));
+    Router::post('/continue', fn($ctx) => ChatHandler::continue($ctx));
     
     // 流式 API
-    Router::post('/stream/ask', fn($ctx) => handleStreamAskAsync($ctx));
-    Router::post('/stream/chat', fn($ctx) => handleStreamChat($ctx));
-    Router::post('/stream/continue', fn($ctx) => handleStreamContinue($ctx));
+    Router::post('/stream/ask', fn($ctx) => ChatHandler::streamAskAsync($ctx));
+    Router::post('/stream/chat', fn($ctx) => ChatHandler::streamChat($ctx));
+    Router::post('/stream/continue', fn($ctx) => ChatHandler::streamContinue($ctx));
     Router::post('/stream/enhanced-continue', fn($ctx) => handleStreamEnhancedContinue($ctx));
     Router::post('/stream/analyze-characters', fn($ctx) => handleStreamAnalyzeCharacters($ctx));
     
     // TTS 语音合成
-    Router::post('/tts/synthesize', fn($ctx) => handleTTSSynthesize($ctx));
-    Router::get('/tts/voices', fn($ctx) => handleTTSVoices());
-    Router::get('/tts/list-api-voices', fn($ctx) => handleTTSListAPIVoices());
+    Router::post('/tts/synthesize', fn($ctx) => TTSHandler::synthesize($ctx));
+    Router::get('/tts/voices', fn($ctx) => TTSHandler::getVoices());
+    Router::get('/tts/list-api-voices', fn($ctx) => TTSHandler::listAPIVoices());
     
     // ASR 语音识别
-    Router::post('/asr/recognize', fn($ctx) => handleASRRecognize($ctx));
-    Router::get('/asr/languages', fn($ctx) => handleASRLanguages());
+    Router::post('/asr/recognize', fn($ctx) => ASRHandler::recognize($ctx));
+    Router::get('/asr/languages', fn($ctx) => ASRHandler::getLanguages());
     
     // Context Cache 管理
     Router::get('/context-cache/list', fn($ctx) => handleContextCacheList());

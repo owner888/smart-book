@@ -9,8 +9,6 @@ namespace SmartBook\Http\Middlewares;
 
 use SmartBook\Http\Middleware;
 use SmartBook\Http\Context;
-use Workerman\Connection\TcpConnection;
-use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
 
 class ResponseMiddleware implements Middleware
@@ -55,12 +53,15 @@ class ResponseMiddleware implements Middleware
         // 包装响应
         $wrapped = $this->wrapResponse($result);
         
-        // 发送包装后的响应
+        // 发送包装后的响应（包含 CORS headers）
         $ctx->connection()->send(new Response(
             $wrapped['status'],
             [
                 'Content-Type' => 'application/json; charset=utf-8',
                 'X-Response-Format' => 'wrapped',
+                'Access-Control-Allow-Origin' => '*',
+                'Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Headers' => 'Content-Type, Authorization',
             ],
             json_encode($wrapped['body'], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
         ));
