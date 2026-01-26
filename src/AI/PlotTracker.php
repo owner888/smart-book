@@ -180,7 +180,7 @@ class PlotTracker
     /**
      * 根据续写内容搜索相关事件
      */
-    public function searchRelevantEvents(string $bookFile, string $query, int $topK = 10): array
+    public function searchRelevantEvents(string $bookFile, string $query, int $topK = DEFAULT_TOP_K): array
     {
         $data = $this->loadPlotData($bookFile);
         if (!$data || empty($data['events'])) {

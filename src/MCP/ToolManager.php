@@ -299,7 +299,7 @@ class ToolManager
             
             'search_book' => function($args) {
                 $query = $args['query'] ?? '';
-                $topK = $args['top_k'] ?? 5;
+                $topK = $args['top_k'] ?? DEFAULT_TOP_K;
                 
                 $currentCache = ConfigHandler::getCurrentBookCache();
                 if (!$currentCache) {

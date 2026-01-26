@@ -54,7 +54,7 @@ class AIService
     /**
      * RAG 问答（非流式）
      */
-    public static function askBook(string $question, int $topK = 10): array
+    public static function askBook(string $question, int $topK = DEFAULT_TOP_K): array
     {
         $currentCache = ConfigHandler::getCurrentBookCache();
         if (!$currentCache) {

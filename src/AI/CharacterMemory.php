@@ -201,7 +201,7 @@ class CharacterMemory
      * @param int $topK 返回人物数量
      * @return array 相关人物列表
      */
-    public function searchRelevantCharacters(string $bookFile, string $query, int $topK = 3): array
+    public function searchRelevantCharacters(string $bookFile, string $query, int $topK = DEFAULT_TOP_K): array
     {
         $data = $this->loadCharacters($bookFile);
         if (!$data || empty($data['characters'])) {

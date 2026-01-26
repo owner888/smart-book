@@ -1058,7 +1058,7 @@ INSTRUCTIONS;
     private function toolSearchBook(array $args, ?array $session): array
     {
         $query = $args['query'] ?? '';
-        $topK = $args['top_k'] ?? 5;
+        $topK = $args['top_k'] ?? DEFAULT_TOP_K;
         
         if (empty($query)) {
             throw new \Exception('Missing query parameter');

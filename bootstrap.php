@@ -64,6 +64,9 @@ define('GEMINI_API_KEY', $GLOBALS['config']['app']['ai']['gemini']['api_key']);
 define('DEFAULT_BOOK_CACHE', $GLOBALS['config']['app']['books']['default']['cache']);
 define('DEFAULT_BOOK_PATH', $GLOBALS['config']['app']['books']['default']['path']);
 
+// 搜索配置常量
+define('DEFAULT_TOP_K', $GLOBALS['config']['app']['search']['default_top_k']);  // 默认搜索返回数量
+
 // 服务器配置常量（分离监听地址和访问地址）
 define('WEB_SERVER_LISTEN', getenv('WEB_SERVER_LISTEN') ?: '0.0.0.0');  // 监听地址
 define('WEB_SERVER_HOST', getenv('WEB_SERVER_HOST') ?: 'localhost');    // 访问地址

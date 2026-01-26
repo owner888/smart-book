@@ -149,7 +149,7 @@ class DialogueStyleAnalyzer
     /**
      * 搜索相似对话场景
      */
-    public function searchSimilarDialogues(string $bookFile, string $context, int $topK = 10): array
+    public function searchSimilarDialogues(string $bookFile, string $context, int $topK = DEFAULT_TOP_K): array
     {
         $data = $this->loadDialogueData($bookFile);
         if (!$data || empty($data['dialogueTexts'])) {

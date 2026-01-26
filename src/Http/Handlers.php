@@ -178,7 +178,7 @@ function handleWebSocketMessage(TcpConnection $connection, string $data): void
 function streamAsk(TcpConnection $connection, array $request): void
 {
     $question = $request['question'] ?? '';
-    $topK = $request['top_k'] ?? 10;
+    $topK = $request['top_k'] ?? DEFAULT_TOP_K;
     if (empty($question)) { $connection->send(json_encode(['error' => 'Missing question'])); return; }
     
     $currentCache = ConfigHandler::getCurrentBookCache();

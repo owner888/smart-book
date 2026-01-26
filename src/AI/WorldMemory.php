@@ -163,7 +163,7 @@ class WorldMemory
     /**
      * 根据续写内容搜索相关世界观设定
      */
-    public function searchRelevantSettings(string $bookFile, string $query, int $topK = 10): array
+    public function searchRelevantSettings(string $bookFile, string $query, int $topK = DEFAULT_TOP_K): array
     {
         $data = $this->loadWorldData($bookFile);
         if (!$data || empty($data['settingTexts'])) {
