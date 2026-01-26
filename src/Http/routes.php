@@ -40,59 +40,59 @@ Router::middleware(new ResponseMiddleware(true, [
 Router::group('/api', function() {
     
     // 基础信息
-    Router::get('', fn() => ['status' => 'ok', 'message' => 'Smart Book AI API']);
-    Router::get('/health', fn() => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s'), 'redis' => \SmartBook\Cache\CacheService::isConnected()]);
-    Router::get('/config', fn($conn, $req) => handleGetConfig());
+    Router::get('', fn($conn, $req, $params) => ['status' => 'ok', 'message' => 'Smart Book AI API']);
+    Router::get('/health', fn($conn, $req, $params) => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s'), 'redis' => \SmartBook\Cache\CacheService::isConnected()]);
+    Router::get('/config', fn($conn, $req, $params) => handleGetConfig());
     
     // 模型和助手
-    Router::get('/models', fn($conn, $req) => handleGetModels());
-    Router::get('/assistants', fn($conn, $req) => handleGetAssistants());
+    Router::get('/models', fn($conn, $req, $params) => handleGetModels());
+    Router::get('/assistants', fn($conn, $req, $params) => handleGetAssistants());
     
     // 书籍管理
-    Router::get('/books', fn($conn, $req) => handleGetBooks());
-    Router::post('/books/select', fn($conn, $req) => handleSelectBook($req));
-    Router::post('/books/index', fn($conn, $req) => handleIndexBook($conn, $req));
+    Router::get('/books', fn($conn, $req, $params) => handleGetBooks());
+    Router::post('/books/select', fn($conn, $req, $params) => handleSelectBook($req));
+    Router::post('/books/index', fn($conn, $req, $params) => handleIndexBook($conn, $req));
     
     // MCP 服务器
-    Router::any('/mcp/servers', function($conn, $req) {
+    Router::any('/mcp/servers', function($conn, $req, $params) {
         return $req->method() === 'POST' ? handleSaveMCPServers($req) : handleGetMCPServers();
     });
-    Router::get('/mcp/status', fn() => ['enabled' => true, 'url' => 'http://' . MCP_SERVER_HOST . ':' . MCP_SERVER_PORT . '/mcp']);
+    Router::get('/mcp/status', fn($conn, $req, $params) => ['enabled' => true, 'url' => 'http://' . MCP_SERVER_HOST . ':' . MCP_SERVER_PORT . '/mcp']);
     
     // 缓存
-    Router::get('/cache/stats', fn($conn, $req) => handleCacheStats($conn));
+    Router::get('/cache/stats', fn($conn, $req, $params) => handleCacheStats($conn));
     
     // 问答 API
-    Router::post('/ask', fn($conn, $req) => handleAskWithCache($conn, $req));
-    Router::post('/chat', fn($conn, $req) => handleChat($req));
-    Router::post('/continue', fn($conn, $req) => handleContinue($req));
+    Router::post('/ask', fn($conn, $req, $params) => handleAskWithCache($conn, $req));
+    Router::post('/chat', fn($conn, $req, $params) => handleChat($req));
+    Router::post('/continue', fn($conn, $req, $params) => handleContinue($req));
     
     // 流式 API
-    Router::post('/stream/ask', fn($conn, $req) => handleStreamAskAsync($conn, $req));
-    Router::post('/stream/chat', fn($conn, $req) => handleStreamChat($conn, $req));
-    Router::post('/stream/continue', fn($conn, $req) => handleStreamContinue($conn, $req));
-    Router::post('/stream/enhanced-continue', fn($conn, $req) => handleStreamEnhancedContinue($conn, $req));
-    Router::post('/stream/analyze-characters', fn($conn, $req) => handleStreamAnalyzeCharacters($conn, $req));
+    Router::post('/stream/ask', fn($conn, $req, $params) => handleStreamAskAsync($conn, $req));
+    Router::post('/stream/chat', fn($conn, $req, $params) => handleStreamChat($conn, $req));
+    Router::post('/stream/continue', fn($conn, $req, $params) => handleStreamContinue($conn, $req));
+    Router::post('/stream/enhanced-continue', fn($conn, $req, $params) => handleStreamEnhancedContinue($conn, $req));
+    Router::post('/stream/analyze-characters', fn($conn, $req, $params) => handleStreamAnalyzeCharacters($conn, $req));
     
     // TTS 语音合成
-    Router::post('/tts/synthesize', fn($conn, $req) => handleTTSSynthesize($conn, $req));
-    Router::get('/tts/voices', fn($conn, $req) => handleTTSVoices());
-    Router::get('/tts/list-api-voices', fn($conn, $req) => handleTTSListAPIVoices());
+    Router::post('/tts/synthesize', fn($conn, $req, $params) => handleTTSSynthesize($conn, $req));
+    Router::get('/tts/voices', fn($conn, $req, $params) => handleTTSVoices());
+    Router::get('/tts/list-api-voices', fn($conn, $req, $params) => handleTTSListAPIVoices());
     
     // ASR 语音识别
-    Router::post('/asr/recognize', fn($conn, $req) => handleASRRecognize($conn, $req));
-    Router::get('/asr/languages', fn($conn, $req) => handleASRLanguages());
+    Router::post('/asr/recognize', fn($conn, $req, $params) => handleASRRecognize($conn, $req));
+    Router::get('/asr/languages', fn($conn, $req, $params) => handleASRLanguages());
     
     // Context Cache 管理
-    Router::get('/context-cache/list', fn($conn, $req) => handleContextCacheList());
-    Router::post('/context-cache/create', fn($conn, $req) => handleContextCacheCreate($req));
-    Router::post('/context-cache/create-for-book', fn($conn, $req) => handleContextCacheCreateForBook($req));
-    Router::post('/context-cache/delete', fn($conn, $req) => handleContextCacheDelete($req));
-    Router::post('/context-cache/get', fn($conn, $req) => handleContextCacheGet($req));
+    Router::get('/context-cache/list', fn($conn, $req, $params) => handleContextCacheList());
+    Router::post('/context-cache/create', fn($conn, $req, $params) => handleContextCacheCreate($req));
+    Router::post('/context-cache/create-for-book', fn($conn, $req, $params) => handleContextCacheCreateForBook($req));
+    Router::post('/context-cache/delete', fn($conn, $req, $params) => handleContextCacheDelete($req));
+    Router::post('/context-cache/get', fn($conn, $req, $params) => handleContextCacheGet($req));
     
     // 增强版续写
-    Router::post('/enhanced-writer/prepare', fn($conn, $req) => handleEnhancedWriterPrepare($req));
-    Router::post('/enhanced-writer/status', fn($conn, $req) => handleEnhancedWriterStatus($req));
+    Router::post('/enhanced-writer/prepare', fn($conn, $req, $params) => handleEnhancedWriterPrepare($req));
+    Router::post('/enhanced-writer/status', fn($conn, $req, $params) => handleEnhancedWriterStatus($req));
     
     // ===================================
     // 动态路由示例（带类型验证和安全检查）
