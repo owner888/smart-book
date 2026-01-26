@@ -206,8 +206,16 @@ class ConfigHandler
         $bookDescription = str_replace('{title}', $bookTitle, $prompts['book']['description'] ?? '我是书籍问答助手');
         
         return [
+            'chat' => [
+                'name' => '通用聊天',
+                'avatar' => '💬',
+                'color' => '#2196f3',
+                'description' => '像 ChatGPT 一样自由对话',
+                'systemPrompt' => '',
+                'action' => 'chat',
+            ],
             'book' => [
-                'name' => '书籍问答助手',
+                'name' => '书籍问答',
                 'avatar' => '📚',
                 'color' => '#4caf50',
                 'description' => $bookDescription,
@@ -221,22 +229,6 @@ class ConfigHandler
                 'description' => str_replace('{title}', $bookTitle, $prompts['continue']['description'] ?? ''),
                 'systemPrompt' => str_replace('{title}', $bookTitle, $prompts['continue']['system'] ?? ''),
                 'action' => 'continue',
-            ],
-            'chat' => [
-                'name' => '通用聊天',
-                'avatar' => '💬',
-                'color' => '#2196f3',
-                'description' => $prompts['chat']['description'] ?? '',
-                'systemPrompt' => $prompts['chat']['system'] ?? '',
-                'action' => 'chat',
-            ],
-            'default' => [
-                'name' => 'Default Assistant',
-                'avatar' => '⭐',
-                'color' => '#9c27b0',
-                'description' => $prompts['default']['description'] ?? '',
-                'systemPrompt' => $prompts['default']['system'] ?? '你是一个通用 AI 助手',
-                'action' => 'chat',
             ],
         ];
     }
