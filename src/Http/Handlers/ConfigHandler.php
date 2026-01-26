@@ -79,15 +79,20 @@ class ConfigHandler
                     $modelPrice = $pricing[$modelId]['output'] ?? 2.5;
                     $rate = $modelPrice == 0 ? '0x' : round($modelPrice / $basePrice, 2) . 'x';
                     
+                    // 获取定价信息
+                    $inputPrice = $pricing[$modelId]['input'] ?? null;
+                    $outputPrice = $pricing[$modelId]['output'] ?? null;
+                    
                     $models[] = [
                         'id' => $modelId,
                         'name' => $model['displayName'] ?? $modelId,
                         'provider' => 'google',
                         'rate' => $rate,
                         'description' => $model['description'] ?? '',
-                        'context_length' => $model['inputTokenLimit'] ?? 0,
-                        'output_limit' => $model['outputTokenLimit'] ?? 0,
-                        'default' => $modelId === $default,
+                        // 使用 Swift 期望的字段名
+                        'max_tokens' => $model['inputTokenLimit'] ?? 0,
+                        'cost_per_1m_input' => $inputPrice,
+                        'cost_per_1m_output' => $outputPrice,
                     ];
                 }
                 
@@ -99,8 +104,26 @@ class ConfigHandler
         
         if (empty($models)) {
             $models = [
-                ['id' => 'gemini-2.5-flash', 'name' => 'Gemini 2.5 Flash', 'provider' => 'google', 'rate' => '0.33x', 'default' => true],
-                ['id' => 'gemini-2.5-pro', 'name' => 'Gemini 2.5 Pro', 'provider' => 'google', 'rate' => '1x'],
+                [
+                    'id' => 'gemini-2.5-flash',
+                    'name' => 'Gemini 2.5 Flash',
+                    'provider' => 'google',
+                    'rate' => '0.33x',
+                    'description' => 'Fast and efficient model',
+                    'max_tokens' => 1000000,
+                    'cost_per_1m_input' => 0.3,
+                    'cost_per_1m_output' => 2.5,
+                ],
+                [
+                    'id' => 'gemini-2.5-pro',
+                    'name' => 'Gemini 2.5 Pro',
+                    'provider' => 'google',
+                    'rate' => '1x',
+                    'description' => 'Advanced reasoning model',
+                    'max_tokens' => 2000000,
+                    'cost_per_1m_input' => 2.5,
+                    'cost_per_1m_output' => 15.0,
+                ],
             ];
         }
         

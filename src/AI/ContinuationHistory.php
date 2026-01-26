@@ -17,7 +17,6 @@ class ContinuationHistory
     private array $config = [
         'max_history' => 10,        // 最多保存的续写历史条数
         'summary_length' => 500,    // 每条历史的摘要长度
-        'context_length' => 2000,   // 注入提示词的最大上下文长度
     ];
     
     public function __construct(string $apiKey)
@@ -191,12 +190,10 @@ class ContinuationHistory
      * 生成续写上下文（用于注入提示词）
      * 
      * @param string $bookFile 书籍文件名
-     * @param int $maxLength 最大长度
      * @return string
      */
-    public function generateContext(string $bookFile, ?int $maxLength = null): string
+    public function generateContext(string $bookFile): string
     {
-        $maxLength = $maxLength ?? $this->config['context_length'];
         $continuations = $this->getContinuations($bookFile);
         
         if (empty($continuations)) {
@@ -206,30 +203,16 @@ class ContinuationHistory
         $context = "## 之前的续写内容\n\n";
         $context .= "以下是你之前为这本书生成的续写内容，请确保新续写与之保持连贯：\n\n";
         
-        $totalLength = mb_strlen($context);
-        $addedCount = 0;
-        
-        // 从最近的开始添加
+        // 从最近的开始添加所有续写历史
         foreach (array_reverse($continuations) as $i => $cont) {
             $entry = "### 续写 " . ($i + 1) . "\n";
             $entry .= "**用户要求**: {$cont['prompt']}\n\n";
             $entry .= "**续写内容**:\n{$cont['summary']}\n\n";
             
-            $entryLength = mb_strlen($entry);
-            
-            // 检查是否超出长度限制
-            if ($totalLength + $entryLength > $maxLength && $addedCount > 0) {
-                break;
-            }
-            
             $context .= $entry;
-            $totalLength += $entryLength;
-            $addedCount++;
         }
         
-        if ($addedCount > 0) {
-            $context .= "**重要**：新续写必须紧接上述内容，保持情节和人物的连贯性。\n";
-        }
+        $context .= "**重要**：新续写必须紧接上述内容，保持情节和人物的连贯性。\n";
         
         return $context;
     }
