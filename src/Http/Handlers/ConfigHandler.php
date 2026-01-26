@@ -132,7 +132,7 @@ class ConfigHandler
                     ];
                 }
                 
-                usort($models, fn($a, $b) => strcmp($a['name'], $b['name']));
+                // 保持 Gemini API 原始返回的顺序，不再排序
             }
         } catch (\Exception $e) {
             // Fallback
