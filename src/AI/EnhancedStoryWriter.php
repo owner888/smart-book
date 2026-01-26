@@ -28,18 +28,13 @@ class EnhancedStoryWriter
     // 续写配置
     private array $config = [
         'style_samples' => 5,       // 风格样本数量
-        'sample_length' => 500,     // 每个样本的字符长度
-        'character_limit' => 10,    // 最多分析的人物数量
+        'sample_length' => 2000,    // 每个样本的字符长度
         'use_semantic_search' => true, // 是否使用语义搜索选择样本
         'use_character_memory' => true, // 是否使用人物记忆
         'use_plot_tracking' => true,   // 是否使用情节追踪
         'use_history' => true,         // 是否使用续写历史
         'use_world_memory' => true,    // 是否使用世界观记忆
         'use_dialogue_styles' => true, // 是否使用对话风格分析
-        'character_count' => 3,     // 注入的相关人物数量
-        'event_count' => 5,         // 注入的相关事件数量
-        'history_count' => 3,       // 注入的历史续写数量
-        'world_setting_count' => 5, // 注入的相关世界观设定数量
     ];
     
     public function __construct(
@@ -248,10 +243,10 @@ class EnhancedStoryWriter
             }
         }
         
-        // 获取相关人物信息
+        // 获取相关人物信息（无数量限制，由系统根据相关性动态返回）
         $relevantCharacters = [];
         $useCharacterMemory = $options['use_character_memory'] ?? $this->config['use_character_memory'];
-        $characterCount = $options['character_count'] ?? $this->config['character_count'];
+        $characterCount = $options['character_count'] ?? PHP_INT_MAX; // 无限制，返回所有相关人物
         
         if ($useCharacterMemory && $this->characterMemory->hasCharacterData($bookFile)) {
             $relevantCharacters = $this->characterMemory->searchRelevantCharacters(
@@ -261,11 +256,11 @@ class EnhancedStoryWriter
             );
         }
         
-        // 获取相关情节事件
+        // 获取相关情节事件（无数量限制，由系统根据相关性动态返回）
         $relevantEvents = [];
         $unresolvedEvents = [];
         $usePlotTracking = $options['use_plot_tracking'] ?? $this->config['use_plot_tracking'];
-        $eventCount = $options['event_count'] ?? $this->config['event_count'];
+        $eventCount = $options['event_count'] ?? PHP_INT_MAX; // 无限制，返回所有相关事件
         
         if ($usePlotTracking && $this->plotTracker->hasPlotData($bookFile)) {
             // 搜索与续写内容相关的事件
@@ -282,11 +277,11 @@ class EnhancedStoryWriter
             $historyContext = $this->continuationHistory->generateContext($bookFile);
         }
         
-        // 获取相关世界观设定
+        // 获取相关世界观设定（无数量限制，由系统根据相关性动态返回）
         $relevantWorldSettings = [];
         $worldOverview = '';
         $useWorldMemory = $options['use_world_memory'] ?? $this->config['use_world_memory'];
-        $worldSettingCount = $options['world_setting_count'] ?? $this->config['world_setting_count'];
+        $worldSettingCount = $options['world_setting_count'] ?? PHP_INT_MAX; // 无限制，返回所有相关设定
         
         if ($useWorldMemory && $this->worldMemory->hasWorldData($bookFile)) {
             // 获取基础世界观概述
