@@ -6,6 +6,7 @@
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
+use SmartBook\Http\Context;
 use SmartBook\Http\RequestLogger;
 use SmartBook\Http\Router;
 use SmartBook\AI\AIService;
@@ -375,23 +376,24 @@ function handleGetAssistants(): array
     ];
 }
 
-function handleChat(Request $request): array
+function handleChat(Context $ctx): array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $body = $ctx->jsonBody() ?? [];
     $messages = $body['messages'] ?? [];
     if (empty($messages)) return ['error' => 'Missing messages'];
     return AIService::chat($messages);
 }
 
-function handleContinue(Request $request): array
+function handleContinue(Context $ctx): array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $body = $ctx->jsonBody() ?? [];
     return AIService::continueStory($body['prompt'] ?? '');
 }
 
-function handleAskWithCache(TcpConnection $connection, Request $request): ?array
+function handleAskWithCache(Context $ctx): ?array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $connection = $ctx->connection();
+    $body = $ctx->jsonBody() ?? [];
     $question = $body['question'] ?? '';
     $topK = $body['top_k'] ?? 8;
     
@@ -415,8 +417,9 @@ function handleAskWithCache(TcpConnection $connection, Request $request): ?array
     return null;
 }
 
-function handleCacheStats(TcpConnection $connection): ?array
+function handleCacheStats(Context $ctx): ?array
 {
+    $connection = $ctx->connection();
     $jsonHeaders = ['Content-Type' => 'application/json; charset=utf-8', 'Access-Control-Allow-Origin' => '*'];
     CacheService::getStats(fn($stats) => $connection->send(new Response(200, $jsonHeaders, json_encode($stats))));
     return null;
@@ -507,9 +510,9 @@ function handleGetBooks(): array
 /**
  * 选择当前书籍
  */
-function handleSelectBook(Request $request): array
+function handleSelectBook(Context $ctx): array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $body = $ctx->jsonBody() ?? [];
     $bookFile = $body['book'] ?? '';
     
     if (empty($bookFile)) {
@@ -548,9 +551,10 @@ function handleSelectBook(Request $request): array
 /**
  * 为书籍创建向量索引（SSE 流式返回进度）
  */
-function handleIndexBook(TcpConnection $connection, Request $request): ?array
+function handleIndexBook(Context $ctx): ?array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $connection = $ctx->connection();
+    $body = $ctx->jsonBody() ?? [];
     $bookFile = $body['book'] ?? '';
     
     if (empty($bookFile)) {
@@ -753,9 +757,10 @@ function sendSSE(TcpConnection $connection, string $event, string $data): bool
     }
 }
 
-function handleStreamAskAsync(TcpConnection $connection, Request $request): ?array
+function handleStreamAskAsync(Context $ctx): ?array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $connection = $ctx->connection();
+    $body = $ctx->jsonBody() ?? [];
     $question = $body['question'] ?? '';
     $chatId = $body['chat_id'] ?? '';
     $enableSearch = $body['search'] ?? true;
@@ -890,9 +895,10 @@ function handleStreamAskAsync(TcpConnection $connection, Request $request): ?arr
     return null;
 }
 
-function handleStreamChat(TcpConnection $connection, Request $request): ?array
+function handleStreamChat(Context $ctx): ?array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $connection = $ctx->connection();
+    $body = $ctx->jsonBody() ?? [];
     $message = $body['message'] ?? '';
     $chatId = $body['chat_id'] ?? '';
     $enableSearch = $body['search'] ?? true;  // 默认开启搜索
@@ -1097,9 +1103,10 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
     return null;
 }
 
-function handleStreamContinue(TcpConnection $connection, Request $request): ?array
+function handleStreamContinue(Context $ctx): ?array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $connection = $ctx->connection();
+    $body = $ctx->jsonBody() ?? [];
     $prompt = $body['prompt'] ?? '';
     $enableSearch = $body['search'] ?? false;  // 续写默认关闭搜索
     $engine = $body['engine'] ?? 'off';        // 默认关闭
@@ -1295,9 +1302,10 @@ function streamContinue(TcpConnection $connection, array $request): void
 /**
  * 文本转语音
  */
-function handleTTSSynthesize(TcpConnection $connection, Request $request): ?array
+function handleTTSSynthesize(Context $ctx): ?array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $connection = $ctx->connection();
+    $body = $ctx->jsonBody() ?? [];
     $text = $body['text'] ?? '';
     $voice = $body['voice'] ?? null;
     $rate = floatval($body['rate'] ?? 1.0);
@@ -1435,9 +1443,10 @@ function handleTTSListAPIVoices(): array
 /**
  * 语音转文本
  */
-function handleASRRecognize(TcpConnection $connection, Request $request): ?array
+function handleASRRecognize(Context $ctx): ?array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $connection = $ctx->connection();
+    $body = $ctx->jsonBody() ?? [];
     $audio = $body['audio'] ?? '';  // Base64 编码的音频
     $encoding = $body['encoding'] ?? 'WEBM_OPUS';
     $sampleRate = intval($body['sample_rate'] ?? 48000);
@@ -1516,9 +1525,9 @@ function handleContextCacheList(): array
 /**
  * 创建上下文缓存
  */
-function handleContextCacheCreate(Request $request): array
+function handleContextCacheCreate(Context $ctx): array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $body = $ctx->jsonBody() ?? [];
     $content = $body['content'] ?? '';
     $displayName = $body['display_name'] ?? null;
     $systemInstruction = $body['system_instruction'] ?? null;
@@ -1551,9 +1560,9 @@ function handleContextCacheCreate(Request $request): array
 /**
  * 为书籍创建上下文缓存
  */
-function handleContextCacheCreateForBook(Request $request): array
+function handleContextCacheCreateForBook(Context $ctx): array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $body = $ctx->jsonBody() ?? [];
     $bookFile = $body['book'] ?? '';
     $ttl = intval($body['ttl'] ?? GeminiContextCache::DEFAULT_TTL);
     $model = $body['model'] ?? 'gemini-2.5-flash';
@@ -1611,9 +1620,9 @@ function handleContextCacheCreateForBook(Request $request): array
 /**
  * 删除上下文缓存
  */
-function handleContextCacheDelete(Request $request): array
+function handleContextCacheDelete(Context $ctx): array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $body = $ctx->jsonBody() ?? [];
     $cacheName = $body['name'] ?? '';
     
     if (empty($cacheName)) {
@@ -1631,9 +1640,9 @@ function handleContextCacheDelete(Request $request): array
 /**
  * 获取上下文缓存详情
  */
-function handleContextCacheGet(Request $request): array
+function handleContextCacheGet(Context $ctx): array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $body = $ctx->jsonBody() ?? [];
     $cacheName = $body['name'] ?? '';
     
     if (empty($cacheName)) {
@@ -1661,9 +1670,9 @@ function handleContextCacheGet(Request $request): array
 /**
  * 为书籍准备续写环境（创建缓存 + 提取风格样本）
  */
-function handleEnhancedWriterPrepare(Request $request): array
+function handleEnhancedWriterPrepare(Context $ctx): array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $body = $ctx->jsonBody() ?? [];
     $bookFile = $body['book'] ?? '';
     $model = $body['model'] ?? 'gemini-2.5-flash';
     
@@ -1703,9 +1712,9 @@ function handleEnhancedWriterPrepare(Request $request): array
 /**
  * 获取书籍的续写状态
  */
-function handleEnhancedWriterStatus(Request $request): array
+function handleEnhancedWriterStatus(Context $ctx): array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $body = $ctx->jsonBody() ?? [];
     $bookFile = $body['book'] ?? '';
     
     if (empty($bookFile)) {
@@ -1723,9 +1732,10 @@ function handleEnhancedWriterStatus(Request $request): array
 /**
  * 增强版续写（使用 Context Cache + Few-shot）
  */
-function handleStreamEnhancedContinue(TcpConnection $connection, Request $request): ?array
+function handleStreamEnhancedContinue(Context $ctx): ?array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $connection = $ctx->connection();
+    $body = $ctx->jsonBody() ?? [];
     $bookFile = $body['book'] ?? '';
     $prompt = $body['prompt'] ?? '';
     $customInstructions = $body['custom_instructions'] ?? '';
@@ -1870,9 +1880,10 @@ function handleStreamEnhancedContinue(TcpConnection $connection, Request $reques
 /**
  * 分析书籍人物
  */
-function handleStreamAnalyzeCharacters(TcpConnection $connection, Request $request): ?array
+function handleStreamAnalyzeCharacters(Context $ctx): ?array
 {
-    $body = json_decode($request->rawBody(), true) ?? [];
+    $connection = $ctx->connection();
+    $body = $ctx->jsonBody() ?? [];
     $bookFile = $body['book'] ?? '';
     $model = $body['model'] ?? 'gemini-2.5-flash';
     

@@ -47,8 +47,8 @@ Router::group('/api', function() {
     
     // 书籍管理
     Router::get('/books', fn($ctx) => handleGetBooks());
-    Router::post('/books/select', fn($ctx) => handleSelectBook($ctx->request()));
-    Router::post('/books/index', fn($ctx) => handleIndexBook($ctx->connection(), $ctx->request()));
+    Router::post('/books/select', fn($ctx) => handleSelectBook($ctx));
+    Router::post('/books/index', fn($ctx) => handleIndexBook($ctx));
     
     // MCP 服务器
     Router::any('/mcp/servers', function($ctx) {
@@ -57,39 +57,39 @@ Router::group('/api', function() {
     Router::get('/mcp/status', fn($ctx) => ['enabled' => true, 'url' => 'http://' . MCP_SERVER_HOST . ':' . MCP_SERVER_PORT . '/mcp']);
     
     // 缓存
-    Router::get('/cache/stats', fn($ctx) => handleCacheStats($ctx->connection()));
+    Router::get('/cache/stats', fn($ctx) => handleCacheStats($ctx));
     
     // 问答 API
-    Router::post('/ask', fn($ctx) => handleAskWithCache($ctx->connection(), $ctx->request()));
-    Router::post('/chat', fn($ctx) => handleChat($ctx->request()));
-    Router::post('/continue', fn($ctx) => handleContinue($ctx->request()));
+    Router::post('/ask', fn($ctx) => handleAskWithCache($ctx));
+    Router::post('/chat', fn($ctx) => handleChat($ctx));
+    Router::post('/continue', fn($ctx) => handleContinue($ctx));
     
     // 流式 API
-    Router::post('/stream/ask', fn($ctx) => handleStreamAskAsync($ctx->connection(), $ctx->request()));
-    Router::post('/stream/chat', fn($ctx) => handleStreamChat($ctx->connection(), $ctx->request()));
-    Router::post('/stream/continue', fn($ctx) => handleStreamContinue($ctx->connection(), $ctx->request()));
-    Router::post('/stream/enhanced-continue', fn($ctx) => handleStreamEnhancedContinue($ctx->connection(), $ctx->request()));
-    Router::post('/stream/analyze-characters', fn($ctx) => handleStreamAnalyzeCharacters($ctx->connection(), $ctx->request()));
+    Router::post('/stream/ask', fn($ctx) => handleStreamAskAsync($ctx));
+    Router::post('/stream/chat', fn($ctx) => handleStreamChat($ctx));
+    Router::post('/stream/continue', fn($ctx) => handleStreamContinue($ctx));
+    Router::post('/stream/enhanced-continue', fn($ctx) => handleStreamEnhancedContinue($ctx));
+    Router::post('/stream/analyze-characters', fn($ctx) => handleStreamAnalyzeCharacters($ctx));
     
     // TTS 语音合成
-    Router::post('/tts/synthesize', fn($ctx) => handleTTSSynthesize($ctx->connection(), $ctx->request()));
+    Router::post('/tts/synthesize', fn($ctx) => handleTTSSynthesize($ctx));
     Router::get('/tts/voices', fn($ctx) => handleTTSVoices());
     Router::get('/tts/list-api-voices', fn($ctx) => handleTTSListAPIVoices());
     
     // ASR 语音识别
-    Router::post('/asr/recognize', fn($ctx) => handleASRRecognize($ctx->connection(), $ctx->request()));
+    Router::post('/asr/recognize', fn($ctx) => handleASRRecognize($ctx));
     Router::get('/asr/languages', fn($ctx) => handleASRLanguages());
     
     // Context Cache 管理
     Router::get('/context-cache/list', fn($ctx) => handleContextCacheList());
-    Router::post('/context-cache/create', fn($ctx) => handleContextCacheCreate($ctx->request()));
-    Router::post('/context-cache/create-for-book', fn($ctx) => handleContextCacheCreateForBook($ctx->request()));
-    Router::post('/context-cache/delete', fn($ctx) => handleContextCacheDelete($ctx->request()));
-    Router::post('/context-cache/get', fn($ctx) => handleContextCacheGet($ctx->request()));
+    Router::post('/context-cache/create', fn($ctx) => handleContextCacheCreate($ctx));
+    Router::post('/context-cache/create-for-book', fn($ctx) => handleContextCacheCreateForBook($ctx));
+    Router::post('/context-cache/delete', fn($ctx) => handleContextCacheDelete($ctx));
+    Router::post('/context-cache/get', fn($ctx) => handleContextCacheGet($ctx));
     
     // 增强版续写
-    Router::post('/enhanced-writer/prepare', fn($ctx) => handleEnhancedWriterPrepare($ctx->request()));
-    Router::post('/enhanced-writer/status', fn($ctx) => handleEnhancedWriterStatus($ctx->request()));
+    Router::post('/enhanced-writer/prepare', fn($ctx) => handleEnhancedWriterPrepare($ctx));
+    Router::post('/enhanced-writer/status', fn($ctx) => handleEnhancedWriterStatus($ctx));
     
     // ===================================
     // 动态路由示例（带类型验证和安全检查）
