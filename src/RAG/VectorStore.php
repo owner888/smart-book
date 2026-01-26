@@ -28,7 +28,7 @@ class VectorStore
         foreach ($chunks as $i => $chunk) $this->add($chunk, $embeddings[$i] ?? []);
     }
     
-    public function search(array $queryEmbedding, int $topK = 5): array
+    public function search(array $queryEmbedding, int $topK = 10): array
     {
         if (empty($this->embeddings)) return [];
         
@@ -48,7 +48,7 @@ class VectorStore
         return $results;
     }
     
-    public function hybridSearch(string $query, array $queryEmbedding, int $topK = 5, float $keywordWeight = 0.5): array
+    public function hybridSearch(string $query, array $queryEmbedding, int $topK = 10, float $keywordWeight = 0.5): array
     {
         if (empty($this->chunks)) return [];
         

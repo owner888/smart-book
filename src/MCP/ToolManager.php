@@ -6,6 +6,8 @@
 
 namespace SmartBook\MCP;
 
+use SmartBook\Http\Handlers\ConfigHandler;
+
 require_once dirname(__DIR__) . '/Logger.php';
 
 class ToolManager
@@ -299,7 +301,7 @@ class ToolManager
                 $query = $args['query'] ?? '';
                 $topK = $args['top_k'] ?? 5;
                 
-                $currentCache = getCurrentBookCache();
+                $currentCache = ConfigHandler::getCurrentBookCache();
                 if (!$currentCache) {
                     throw new \Exception('Book index not found');
                 }

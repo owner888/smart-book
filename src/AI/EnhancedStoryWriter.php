@@ -61,7 +61,7 @@ class EnhancedStoryWriter
      * @param int $topK 返回样本数量
      * @return array 语义相关的风格样本
      */
-    public function searchStyleSamples(string $userPrompt, string $bookFile, int $topK = 5): array
+    public function searchStyleSamples(string $userPrompt, string $bookFile, int $topK = 10): array
     {
         // 获取书籍索引缓存路径
         $booksDir = dirname(__DIR__, 2) . '/books';

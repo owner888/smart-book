@@ -141,7 +141,7 @@ class BookRAGAssistant
         \Logger::info("索引完成！共 {$this->vectorStore->count()} 个文档块");
     }
     
-    public function ask(string $question, int $topK = 5, bool $stream = true): string
+    public function ask(string $question, int $topK = 10, bool $stream = true): string
     {
         if ($this->vectorStore->isEmpty()) return '错误：请先加载书籍';
         
@@ -177,7 +177,7 @@ class BookRAGAssistant
     /**
      * 执行预定义操作
      */
-    public function executeAction(string $actionName, int $topK = 5, string $language = 'Chinese'): string
+    public function executeAction(string $actionName, int $topK = 10, string $language = 'Chinese'): string
     {
         $actions = $this->prompts['actions'] ?? [];
         
@@ -206,7 +206,7 @@ class BookRAGAssistant
         return $result;
     }
     
-    public function showRetrievedChunks(string $question, int $topK = 5): void
+    public function showRetrievedChunks(string $question, int $topK = 10): void
     {
         $queryEmbedding = $this->embedder->embedQuery($question);
         $results = $this->vectorStore->search($queryEmbedding, $topK);

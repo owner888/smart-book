@@ -8,6 +8,7 @@ namespace SmartBook\AI;
 use SmartBook\RAG\EmbeddingClient;
 use SmartBook\RAG\VectorStore;
 use SmartBook\RAG\BookRAGAssistant;
+use SmartBook\Http\Handlers\ConfigHandler;
 
 class AIService
 {
@@ -20,8 +21,8 @@ class AIService
         if (self::$ragAssistant === null) {
             self::$ragAssistant = new BookRAGAssistant(GEMINI_API_KEY);
             // 使用当前选中的书籍
-            $currentCache = getCurrentBookCache();
-            $currentPath = getCurrentBookPath();
+            $currentCache = ConfigHandler::getCurrentBookCache();
+            $currentPath = ConfigHandler::getCurrentBookPath();
             if ($currentCache && $currentPath) {
                 self::$ragAssistant->loadBook($currentPath, $currentCache);
             }
@@ -53,9 +54,9 @@ class AIService
     /**
      * RAG 问答（非流式）
      */
-    public static function askBook(string $question, int $topK = 8): array
+    public static function askBook(string $question, int $topK = 10): array
     {
-        $currentCache = getCurrentBookCache();
+        $currentCache = ConfigHandler::getCurrentBookCache();
         if (!$currentCache) {
             return ['success' => false, 'error' => 'No book index available'];
         }

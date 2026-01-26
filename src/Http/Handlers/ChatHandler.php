@@ -44,7 +44,7 @@ class ChatHandler
         $connection = $ctx->connection();
         $body = $ctx->jsonBody() ?? [];
         $question = $body['question'] ?? '';
-        $topK = $body['top_k'] ?? 8;
+        $topK = $body['top_k'] ?? 10;
         
         if (empty($question)) return ['error' => 'Missing question'];
         
