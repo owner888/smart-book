@@ -95,15 +95,38 @@ class ConfigHandler
                     // 获取定价信息
                     $inputPrice = $pricing[$modelId]['input'] ?? null;
                     $outputPrice = $pricing[$modelId]['output'] ?? null;
+                    $maxTokens = $model['inputTokenLimit'] ?? 0;
+                    
+                    // 构建简洁的描述信息（上下文 + 价格）
+                    $descParts = [];
+                    
+                    // 上下文大小
+                    if ($maxTokens > 0) {
+                        $tokenDisplay = $maxTokens >= 1000000 
+                            ? round($maxTokens / 1000000, 1) . 'M' 
+                            : round($maxTokens / 1000) . 'K';
+                        $descParts[] = "{$tokenDisplay} tokens";
+                    }
+                    
+                    // 价格
+                    if ($inputPrice !== null && $outputPrice !== null) {
+                        if ($inputPrice == 0 && $outputPrice == 0) {
+                            $descParts[] = 'Free';
+                        } else {
+                            $descParts[] = "\${$inputPrice}/\${$outputPrice}";
+                        }
+                    }
+                    
+                    $description = implode(' • ', $descParts);
                     
                     $models[] = [
                         'id' => $modelId,
                         'name' => $model['displayName'] ?? $modelId,
                         'provider' => 'google',
                         'rate' => $rate,
-                        'description' => $model['description'] ?? '',
+                        'description' => $description ?: 'Rate: ' . $rate,
                         // 使用 Swift 期望的字段名
-                        'max_tokens' => $model['inputTokenLimit'] ?? 0,
+                        'max_tokens' => $maxTokens,
                         'cost_per_1m_input' => $inputPrice,
                         'cost_per_1m_output' => $outputPrice,
                     ];
