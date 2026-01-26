@@ -28,7 +28,9 @@ const ChatBooks = {
     async loadBooks() {
         try {
             const response = await fetch(`${ChatConfig.API_BASE}/api/books`);
-            const data = await response.json();
+            const result = await response.json();
+            // 后端返回格式：{ success: true, data: { books: [...] } }
+            const data = result.data || result;
             this.books = data.books || [];
             this.currentBook = this.books.find(b => b.isSelected) || this.books[0];
         } catch (error) {

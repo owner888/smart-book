@@ -10,8 +10,10 @@ let currentModel = null;
 async function loadModels() {
     try {
         const response = await fetch(`${ChatConfig.API_BASE}/api/models`);
-        const data = await response.json();
+        const result = await response.json();
         
+        // 后端返回格式：{ success: true, data: { models: [...], default: '...' } }
+        const data = result.data || result;
         modelsList = data.models || [];
         
         // 优先从 localStorage 恢复上次选择的模型

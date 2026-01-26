@@ -19,7 +19,10 @@ function getDefaultAssistants() {
 async function loadAssistants() {
     try {
         const response = await fetch(`${ChatConfig.API_BASE}/api/assistants`);
-        const data = await response.json();
+        const result = await response.json();
+        
+        // 后端返回格式：{ success: true, data: {...} }
+        const data = result.data || result;
         
         // 转换后端格式为前端格式
         for (const [id, config] of Object.entries(data)) {
@@ -33,6 +36,8 @@ async function loadAssistants() {
                 useRAG: config.action === 'ask',
             };
         }
+        
+        console.log('✅ 助手配置加载成功:', Object.keys(assistants));
         
         // 更新初始界面
         const chatMessages = document.getElementById('chatMessages');
