@@ -53,7 +53,7 @@ class Context
     /**
      * 获取查询参数（GET）
      */
-    public function query(string $key = null, mixed $default = null): mixed
+    public function query(?string $key = null, mixed $default = null): mixed
     {
         if ($key === null) {
             return $this->request->get();
@@ -64,7 +64,7 @@ class Context
     /**
      * 获取 POST 数据
      */
-    public function post(string $key = null, mixed $default = null): mixed
+    public function post(?string $key = null, mixed $default = null): mixed
     {
         if ($key === null) {
             return $this->request->post();
@@ -84,7 +84,7 @@ class Context
     /**
      * 获取请求头
      */
-    public function header(string $key = null, mixed $default = null): mixed
+    public function header(?string $key = null, mixed $default = null): mixed
     {
         if ($key === null) {
             return $this->request->header();
