@@ -60,13 +60,26 @@ class ConfigHandler
             if ($response) {
                 $data = json_decode($response, true);
                 
+                // 价格表（美元/百万 tokens）- 2025年1月更新
                 $pricing = [
+                    // Gemini 2.5 系列
                     'gemini-2.5-pro' => ['input' => 2.5, 'output' => 15],
                     'gemini-2.5-flash' => ['input' => 0.3, 'output' => 2.5],
                     'gemini-2.5-flash-lite' => ['input' => 0.1, 'output' => 0.4],
+                    
+                    // Gemini 2.0 系列
                     'gemini-2.0-flash' => ['input' => 0, 'output' => 0],
+                    'gemini-2.0-flash-001' => ['input' => 0, 'output' => 0],
+                    'gemini-2.0-flash-lite' => ['input' => 0, 'output' => 0],
+                    'gemini-2.0-flash-lite-001' => ['input' => 0, 'output' => 0],
+                    
+                    // Gemini 1.5 系列
                     'gemini-1.5-pro' => ['input' => 3.5, 'output' => 10.5],
+                    'gemini-1.5-pro-001' => ['input' => 3.5, 'output' => 10.5],
+                    'gemini-1.5-pro-002' => ['input' => 3.5, 'output' => 10.5],
                     'gemini-1.5-flash' => ['input' => 0.075, 'output' => 0.3],
+                    'gemini-1.5-flash-001' => ['input' => 0.075, 'output' => 0.3],
+                    'gemini-1.5-flash-002' => ['input' => 0.075, 'output' => 0.3],
                 ];
                 
                 foreach ($data['models'] ?? [] as $model) {
