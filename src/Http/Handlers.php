@@ -899,11 +899,84 @@ function handleStreamChat(TcpConnection $connection, Request $request): ?array
     $engine = $body['engine'] ?? 'google';    // 默认使用 Google
     $model = $body['model'] ?? 'gemini-2.5-flash';  // 模型选择
     
+    // 接收 iOS 客户端传递的上下文参数
+    $clientSummary = $body['summary'] ?? null; // 之前对话的摘要（已经摘要的部分）
+    $clientHistory = $body['history'] ?? null; // 最近的未摘要消息（最近10条）
+    
     if (empty($message)) return ['error' => 'Missing message'];
     
     $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
     
-    // 获取对话上下文（包含摘要 + 最近消息）
+    // 如果客户端传递了上下文参数，直接使用；否则从 Redis 获取
+    if ($clientSummary !== null || $clientHistory !== null) {
+        // iOS 客户端已经处理好上下文，直接使用
+        $connection->send(new Response(200, $headers, ''));
+        
+        $prompts = $GLOBALS['config']['prompts'];
+        $sourceTexts = $prompts['source_texts'] ?? ['google' => 'AI 预训练知识 + Google Search', 'mcp' => 'AI 预训练知识 + MCP 工具', 'off' => 'AI 预训练知识（搜索已关闭）'];
+        sendSSE($connection, 'sources', json_encode([['text' => $sourceTexts[$engine] ?? $sourceTexts['off'], 'score' => 100]], JSON_UNESCAPED_UNICODE));
+        
+        $systemPrompt = $prompts['chat']['system'] ?? '你是一个友善、博学的 AI 助手，擅长回答各种问题并提供有价值的见解。请用中文回答。';
+        $messages = [['role' => 'system', 'content' => $systemPrompt]];
+        
+        // 添加客户端传递的摘要
+        if ($clientSummary) {
+            $historyLabel = $prompts['summarize']['history_label'] ?? '【对话历史摘要】';
+            $messages[0]['content'] .= "\n\n{$historyLabel}\n" . $clientSummary;
+            sendSSE($connection, 'summary_used', json_encode(['source' => 'ios_client', 'has_summary' => true], JSON_UNESCAPED_UNICODE));
+        }
+        
+        // 添加客户端传递的历史消息
+        if (is_array($clientHistory)) {
+            foreach ($clientHistory as $msg) {
+                if (isset($msg['role']) && isset($msg['content'])) {
+                    $messages[] = ['role' => $msg['role'], 'content' => $msg['content']];
+                }
+            }
+        }
+        
+        $messages[] = ['role' => 'user', 'content' => $message];
+        
+        $asyncGemini = AIService::getAsyncGemini($model);
+        $isConnectionAlive = true;
+        $requestId = $asyncGemini->chatStreamAsync(
+            $messages,
+            function ($text, $isThought) use ($connection, &$isConnectionAlive, &$requestId, $asyncGemini) {
+                if (!$isConnectionAlive) return;
+                if ($text) {
+                    if (!sendSSE($connection, $isThought ? 'thinking' : 'content', $text)) {
+                        $isConnectionAlive = false;
+                        if ($requestId) $asyncGemini->cancel($requestId);
+                    }
+                }
+            },
+            function ($fullContent, $usageMetadata = null, $usedModel = null) use ($connection, $model, &$isConnectionAlive) {
+                if (!$isConnectionAlive) return;
+                if ($usageMetadata) {
+                    $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
+                    sendSSE($connection, 'usage', json_encode([
+                        'tokens' => $costInfo['tokens'], 
+                        'cost' => $costInfo['cost'], 
+                        'cost_formatted' => TokenCounter::formatCost($costInfo['cost']), 
+                        'currency' => $costInfo['currency'], 
+                        'model' => $usedModel ?? $model
+                    ], JSON_UNESCAPED_UNICODE));
+                }
+                sendSSE($connection, 'done', ''); 
+                $connection->close(); 
+            },
+            function ($error) use ($connection, &$isConnectionAlive) {
+                if (!$isConnectionAlive) return;
+                sendSSE($connection, 'error', $error); 
+                $connection->close(); 
+            },
+            ['enableSearch' => $enableSearch && $engine === 'google', 'enableTools' => $engine === 'mcp']
+        );
+        
+        return null;
+    }
+    
+    // 获取对话上下文（包含摘要 + 最近消息）- 兼容 Web 客户端
     CacheService::getChatContext($chatId, function($context) use ($connection, $message, $chatId, $headers, $enableSearch, $engine, $model) {
         $connection->send(new Response(200, $headers, ''));
         
