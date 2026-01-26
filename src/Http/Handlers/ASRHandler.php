@@ -6,6 +6,7 @@
 namespace SmartBook\Http\Handlers;
 
 use SmartBook\Http\Context;
+use SmartBook\Http\ErrorHandler;
 use SmartBook\AI\GoogleASRClient;
 use Workerman\Protocols\Http\Response;
 
@@ -18,44 +19,49 @@ class ASRHandler
     {
         $connection = $ctx->connection();
         $body = $ctx->jsonBody() ?? [];
-        $audio = $body['audio'] ?? '';
+        
+        ErrorHandler::requireParams($body, ['audio']);
+        
+        $audio = $body['audio'];
         $encoding = $body['encoding'] ?? 'WEBM_OPUS';
         $sampleRate = intval($body['sample_rate'] ?? 48000);
         $language = $body['language'] ?? null;
         
-        if (empty($audio)) {
-            return ['error' => 'Missing audio data'];
+        \Logger::info('[ASR] 语音识别', [
+            'encoding' => $encoding,
+            'sample_rate' => $sampleRate,
+            'language' => $language
+        ]);
+        
+        $asrClient = new GoogleASRClient();
+        
+        if (!$language) {
+            $language = GoogleASRClient::getDefaultLanguage();
         }
         
-        try {
-            $asrClient = new GoogleASRClient();
-            
-            if (!$language) {
-                $language = GoogleASRClient::getDefaultLanguage();
-            }
-            
-            $result = $asrClient->recognize($audio, $encoding, $sampleRate, $language);
-            
-            $jsonHeaders = [
-                'Content-Type' => 'application/json; charset=utf-8',
-                'Access-Control-Allow-Origin' => '*',
-            ];
-            
-            $connection->send(new Response(200, $jsonHeaders, json_encode([
-                'success' => true,
-                'transcript' => $result['transcript'],
-                'confidence' => $result['confidence'],
-                'language' => $result['language'],
-                'duration' => $result['duration'] ?? 0,
-                'cost' => $result['cost'] ?? 0,
-                'costFormatted' => $result['costFormatted'] ?? '',
-            ], JSON_UNESCAPED_UNICODE)));
-            
-            return null;
-            
-        } catch (\Exception $e) {
-            return ['error' => $e->getMessage()];
-        }
+        $result = $asrClient->recognize($audio, $encoding, $sampleRate, $language);
+        
+        ErrorHandler::logOperation('ASR::recognize', 'success', [
+            'language' => $result['language'],
+            'confidence' => $result['confidence']
+        ]);
+        
+        $jsonHeaders = [
+            'Content-Type' => 'application/json; charset=utf-8',
+            'Access-Control-Allow-Origin' => '*',
+        ];
+        
+        $connection->send(new Response(200, $jsonHeaders, json_encode([
+            'success' => true,
+            'transcript' => $result['transcript'],
+            'confidence' => $result['confidence'],
+            'language' => $result['language'],
+            'duration' => $result['duration'] ?? 0,
+            'cost' => $result['cost'] ?? 0,
+            'costFormatted' => $result['costFormatted'] ?? '',
+        ], JSON_UNESCAPED_UNICODE)));
+        
+        return null;
     }
     
     /**
@@ -63,14 +69,13 @@ class ASRHandler
      */
     public static function getLanguages(): array
     {
-        try {
-            $asrClient = new GoogleASRClient();
-            return [
-                'languages' => $asrClient->getLanguages(),
-                'default' => GoogleASRClient::getDefaultLanguage(),
-            ];
-        } catch (\Exception $e) {
-            return ['error' => $e->getMessage()];
-        }
+        \Logger::info('[ASR] 获取语言列表');
+        
+        $asrClient = new GoogleASRClient();
+        
+        return [
+            'languages' => $asrClient->getLanguages(),
+            'default' => GoogleASRClient::getDefaultLanguage(),
+        ];
     }
 }

@@ -6,6 +6,7 @@
 namespace SmartBook\Http\Handlers;
 
 use SmartBook\Http\Context;
+use SmartBook\Http\ErrorHandler;
 use SmartBook\AI\GoogleTTSClient;
 use Workerman\Protocols\Http\Response;
 
@@ -18,46 +19,52 @@ class TTSHandler
     {
         $connection = $ctx->connection();
         $body = $ctx->jsonBody() ?? [];
-        $text = $body['text'] ?? '';
+        
+        ErrorHandler::requireParams($body, ['text']);
+        
+        $text = $body['text'];
         $voice = $body['voice'] ?? null;
         $rate = floatval($body['rate'] ?? 1.0);
         $pitch = floatval($body['pitch'] ?? 0.0);
         
-        if (empty($text)) {
-            return ['error' => 'Missing text'];
+        \Logger::info('[TTS] 语音合成', [
+            'text_length' => mb_strlen($text),
+            'voice' => $voice,
+            'rate' => $rate,
+            'pitch' => $pitch
+        ]);
+        
+        $ttsClient = new GoogleTTSClient();
+        
+        $languageCode = GoogleTTSClient::detectLanguage($text);
+        if (!$voice) {
+            $voice = GoogleTTSClient::getDefaultVoice($languageCode);
         }
         
-        try {
-            $ttsClient = new GoogleTTSClient();
-            
-            $languageCode = GoogleTTSClient::detectLanguage($text);
-            if (!$voice) {
-                $voice = GoogleTTSClient::getDefaultVoice($languageCode);
-            }
-            
-            $result = $ttsClient->synthesize($text, $voice, $languageCode, $rate, $pitch);
-            
-            $jsonHeaders = [
-                'Content-Type' => 'application/json; charset=utf-8',
-                'Access-Control-Allow-Origin' => '*',
-            ];
-            
-            $connection->send(new Response(200, $jsonHeaders, json_encode([
-                'success' => true,
-                'audio' => $result['audio'],
-                'format' => $result['format'],
-                'voice' => $voice,
-                'language' => $languageCode,
-                'charCount' => $result['charCount'] ?? 0,
-                'cost' => $result['cost'] ?? 0,
-                'costFormatted' => $result['costFormatted'] ?? '',
-            ], JSON_UNESCAPED_UNICODE)));
-            
-            return null;
-            
-        } catch (\Exception $e) {
-            return ['error' => $e->getMessage()];
-        }
+        $result = $ttsClient->synthesize($text, $voice, $languageCode, $rate, $pitch);
+        
+        ErrorHandler::logOperation('TTS::synthesize', 'success', [
+            'language' => $languageCode,
+            'char_count' => $result['charCount'] ?? 0
+        ]);
+        
+        $jsonHeaders = [
+            'Content-Type' => 'application/json; charset=utf-8',
+            'Access-Control-Allow-Origin' => '*',
+        ];
+        
+        $connection->send(new Response(200, $jsonHeaders, json_encode([
+            'success' => true,
+            'audio' => $result['audio'],
+            'format' => $result['format'],
+            'voice' => $voice,
+            'language' => $languageCode,
+            'charCount' => $result['charCount'] ?? 0,
+            'cost' => $result['cost'] ?? 0,
+            'costFormatted' => $result['costFormatted'] ?? '',
+        ], JSON_UNESCAPED_UNICODE)));
+        
+        return null;
     }
     
     /**
@@ -65,18 +72,17 @@ class TTSHandler
      */
     public static function getVoices(): array
     {
-        try {
-            $ttsClient = new GoogleTTSClient();
-            return [
-                'voices' => $ttsClient->getVoices(),
-                'default' => [
-                    'zh-CN' => GoogleTTSClient::getDefaultVoice('zh-CN'),
-                    'en-US' => GoogleTTSClient::getDefaultVoice('en-US'),
-                ],
-            ];
-        } catch (\Exception $e) {
-            return ['error' => $e->getMessage()];
-        }
+        \Logger::info('[TTS] 获取语音列表');
+        
+        $ttsClient = new GoogleTTSClient();
+        
+        return [
+            'voices' => $ttsClient->getVoices(),
+            'default' => [
+                'zh-CN' => GoogleTTSClient::getDefaultVoice('zh-CN'),
+                'en-US' => GoogleTTSClient::getDefaultVoice('en-US'),
+            ],
+        ];
     }
     
     /**

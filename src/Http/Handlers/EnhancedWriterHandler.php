@@ -6,6 +6,7 @@
 namespace SmartBook\Http\Handlers;
 
 use SmartBook\Http\Context;
+use SmartBook\Http\ErrorHandler;
 use SmartBook\AI\EnhancedStoryWriter;
 use SmartBook\AI\GeminiContextCache;
 use SmartBook\AI\TokenCounter;
@@ -19,38 +20,35 @@ class EnhancedWriterHandler
     public static function prepare(Context $ctx): array
     {
         $body = $ctx->jsonBody() ?? [];
-        $bookFile = $body['book'] ?? '';
+        ErrorHandler::requireParams($body, ['book']);
+        
+        $bookFile = $body['book'];
         $model = $body['model'] ?? 'gemini-2.5-flash';
         
-        if (empty($bookFile)) {
-            return ['success' => false, 'error' => 'Missing book parameter'];
-        }
+        \Logger::info('[EnhancedWriter] 准备续写环境', ['book' => $bookFile, 'model' => $model]);
         
         $booksDir = dirname(__DIR__, 3) . '/books';
         $bookPath = $booksDir . '/' . $bookFile;
         
-        if (!file_exists($bookPath)) {
-            return ['success' => false, 'error' => 'Book not found: ' . $bookFile];
+        ErrorHandler::requireFile($bookPath, '书籍文件');
+        
+        $ext = strtolower(pathinfo($bookFile, PATHINFO_EXTENSION));
+        if ($ext === 'epub') {
+            $content = \SmartBook\Parser\EpubParser::extractText($bookPath);
+        } else {
+            $content = file_get_contents($bookPath);
         }
         
-        try {
-            $ext = strtolower(pathinfo($bookFile, PATHINFO_EXTENSION));
-            if ($ext === 'epub') {
-                $content = \SmartBook\Parser\EpubParser::extractText($bookPath);
-            } else {
-                $content = file_get_contents($bookPath);
-            }
-            
-            if (empty($content)) {
-                return ['success' => false, 'error' => 'Failed to extract book content'];
-            }
-            
-            $writer = new EnhancedStoryWriter(GEMINI_API_KEY, $model);
-            return $writer->prepareForBook($bookFile, $content);
-            
-        } catch (\Exception $e) {
-            return ['success' => false, 'error' => $e->getMessage()];
+        if (empty($content)) {
+            throw new \Exception('Failed to extract book content');
         }
+        
+        $writer = new EnhancedStoryWriter(GEMINI_API_KEY, $model);
+        $result = $writer->prepareForBook($bookFile, $content);
+        
+        ErrorHandler::logOperation('EnhancedWriter::prepare', 'success', ['book' => $bookFile]);
+        
+        return $result;
     }
     
     /**
@@ -59,18 +57,14 @@ class EnhancedWriterHandler
     public static function getStatus(Context $ctx): array
     {
         $body = $ctx->jsonBody() ?? [];
-        $bookFile = $body['book'] ?? '';
+        ErrorHandler::requireParams($body, ['book']);
         
-        if (empty($bookFile)) {
-            return ['success' => false, 'error' => 'Missing book parameter'];
-        }
+        $bookFile = $body['book'];
         
-        try {
-            $writer = new EnhancedStoryWriter(GEMINI_API_KEY);
-            return $writer->getWriterStatus($bookFile);
-        } catch (\Exception $e) {
-            return ['success' => false, 'error' => $e->getMessage()];
-        }
+        \Logger::info('[EnhancedWriter] 获取续写状态', ['book' => $bookFile]);
+        
+        $writer = new EnhancedStoryWriter(GEMINI_API_KEY);
+        return $writer->getWriterStatus($bookFile);
     }
     
     /**

@@ -6,7 +6,6 @@
 namespace SmartBook\Http\Handlers;
 
 use Workerman\Connection\TcpConnection;
-use SmartBook\Logger;
 
 class StreamHelper
 {
@@ -22,7 +21,7 @@ class StreamHelper
     {
         // 检查连接状态
         if ($connection->getStatus() !== TcpConnection::STATUS_ESTABLISHED) {
-            Logger::info("[SSE] 连接已断开，停止发送事件: {$event}");
+            \Logger::info("[SSE] 连接已断开，停止发送事件: {$event}");
             return false;
         }
         
@@ -39,7 +38,7 @@ class StreamHelper
             $connection->send($message);
             return true;
         } catch (\Exception $e) {
-            Logger::error("[SSE] 发送失败: {$e->getMessage()}");
+            \Logger::error("[SSE] 发送失败: {$e->getMessage()}");
             return false;
         }
     }
