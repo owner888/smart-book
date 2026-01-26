@@ -203,11 +203,11 @@ class ContinuationHistory
         $context = "## 之前的续写内容\n\n";
         $context .= "以下是你之前为这本书生成的续写内容，请确保新续写与之保持连贯：\n\n";
         
-        // 从最近的开始添加所有续写历史
+        // 从最近的开始添加所有续写历史（使用完整内容）
         foreach (array_reverse($continuations) as $i => $cont) {
             $entry = "### 续写 " . ($i + 1) . "\n";
             $entry .= "**用户要求**: {$cont['prompt']}\n\n";
-            $entry .= "**续写内容**:\n{$cont['summary']}\n\n";
+            $entry .= "**续写内容**:\n{$cont['content']}\n\n";  // 使用完整内容而不是摘要
             
             $context .= $entry;
         }
