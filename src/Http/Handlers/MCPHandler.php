@@ -5,6 +5,7 @@
 
 namespace SmartBook\Http\Handlers;
 
+use SmartBook\Http\ErrorHandler;
 use Workerman\Protocols\Http\Request;
 
 class MCPHandler
@@ -14,10 +15,13 @@ class MCPHandler
      */
     public static function getServers(): array
     {
+        \Logger::info('[MCP] 获取服务器列表');
+        
         $configPath = dirname(__DIR__, 3) . '/config/mcp.json';
         
         if (!file_exists($configPath)) {
-            return ['servers' => []];
+            \Logger::warn('[MCP] 配置文件不存在');
+            return ErrorHandler::success(['servers' => []]);
         }
         
         $config = json_decode(file_get_contents($configPath), true) ?? [];
@@ -36,7 +40,8 @@ class MCPHandler
             ];
         }
         
-        return ['servers' => $servers];
+        ErrorHandler::logOperation('MCP::getServers', 'success', ['count' => count($servers)]);
+        return ErrorHandler::success(['servers' => $servers]);
     }
     
     /**
@@ -45,9 +50,16 @@ class MCPHandler
     public static function saveServers(Request $request): array
     {
         $body = json_decode($request->rawBody(), true) ?? [];
-        $servers = $body['servers'] ?? [];
+        ErrorHandler::requireParams($body, ['servers']);
+        
+        $servers = $body['servers'];
+        \Logger::info('[MCP] 保存服务器配置', ['count' => count($servers)]);
         
         $configPath = dirname(__DIR__, 3) . '/config/mcp.json';
+        $configDir = dirname($configPath);
+        
+        // 确保配置目录存在且可写
+        ErrorHandler::requireWritableDir($configDir);
         
         $config = [];
         if (file_exists($configPath)) {
@@ -79,9 +91,14 @@ class MCPHandler
         );
         
         if ($result === false) {
-            return ['success' => false, 'error' => 'Failed to save config'];
+            throw new \Exception('Failed to write config file');
         }
         
-        return ['success' => true, 'message' => 'MCP servers saved'];
+        ErrorHandler::logOperation('MCP::saveServers', 'success', [
+            'count' => count($mcpServers),
+            'file' => basename($configPath)
+        ]);
+        
+        return ErrorHandler::success([], 'MCP servers saved successfully');
     }
 }

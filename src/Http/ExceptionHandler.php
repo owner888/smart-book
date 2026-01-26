@@ -24,6 +24,14 @@ class ExceptionHandler
      */
     public function handle(Throwable $e, Context $ctx): void
     {
+        // 使用 ErrorHandler 记录错误日志（包含结构化信息）
+        $operationName = $this->getOperationName($ctx);
+        ErrorHandler::logError($e, $operationName, [
+            'method' => $ctx->method(),
+            'path' => $ctx->path(),
+            'ip' => $ctx->ip(),
+        ]);
+        
         // HTTP 异常 - 直接转换
         if ($e instanceof HttpException) {
             $this->handleHttpException($e, $ctx);
@@ -32,6 +40,24 @@ class ExceptionHandler
         
         // 其他异常 - 转换为 500
         $this->handleGenericException($e, $ctx);
+    }
+    
+    /**
+     * 获取操作名称（从路由路径推断）
+     */
+    private function getOperationName(Context $ctx): string
+    {
+        $path = trim($ctx->path(), '/');
+        $parts = explode('/', $path);
+        
+        // 转换路径为操作名称：api/context-cache/list -> ContextCache::list
+        if (count($parts) >= 2) {
+            $module = str_replace('-', '', ucwords($parts[count($parts) - 2], '-'));
+            $action = str_replace('-', '', ucwords($parts[count($parts) - 1], '-'));
+            return "{$module}::{$action}";
+        }
+        
+        return $path;
     }
     
     /**
