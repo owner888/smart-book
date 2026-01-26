@@ -1,6 +1,8 @@
 <?php
 /**
- * HTTP/WebSocket 请求处理函数
+ * HTTP/WebSocket 请求处理函数（入口文件）
+ * 
+ * 本文件作为兼容层，将请求转发到各个功能模块
  */
 
 use Workerman\Connection\TcpConnection;
@@ -9,6 +11,9 @@ use Workerman\Protocols\Http\Response;
 use SmartBook\Http\Context;
 use SmartBook\Http\RequestLogger;
 use SmartBook\Http\Router;
+use SmartBook\Http\Handlers\RequestHandler;
+use SmartBook\Http\Handlers\ConfigHandler;
+use SmartBook\Http\Handlers\StreamHelper;
 use SmartBook\AI\AIService;
 use SmartBook\AI\TokenCounter;
 use SmartBook\AI\GoogleTTSClient;
