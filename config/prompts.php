@@ -7,6 +7,15 @@
 
 return [
     // ===================================
+    // 简化版 RAG 系统提示词
+    // ===================================
+    'rag_simple' => [
+        'system_prompt' => '你是一个书籍分析助手。根据以下内容回答问题，使用中文：
+
+{context}',
+    ],
+
+    // ===================================
     // 通用聊天助手
     // ===================================
     'chat' => [
@@ -264,15 +273,6 @@ Note: No relevant passages were found in the book for this query. Please:
     'language' => [
         'instruction' => 'If you can speak in {language}, then respond in {language}.',
         'default' => 'Chinese',
-    ],
-    
-    // ===================================
-    // 简化版 RAG 系统提示词
-    // ===================================
-    'rag_simple' => [
-        'system' => '你是一个书籍分析助手。根据以下内容回答问题，使用中文：
-
-{context}',
     ],
     
     // ===================================

@@ -166,6 +166,7 @@ class ChatHandler
         $enableSearch = $body['search'] ?? true;
         $engine = $body['engine'] ?? 'google';
         $model = $body['model'] ?? 'gemini-2.5-flash';
+        $assistantId = $body['assistant_id'] ?? 'chat';  // 新增：获取助手 ID
         
         $clientSummary = $body['summary'] ?? null;
         $clientHistory = $body['history'] ?? null;
@@ -181,7 +182,8 @@ class ChatHandler
             $sourceTexts = $prompts['source_texts'] ?? ['google' => 'AI 预训练知识 + Google Search', 'mcp' => 'AI 预训练知识 + MCP 工具', 'off' => 'AI 预训练知识（搜索已关闭）'];
             StreamHelper::sendSSE($connection, 'sources', json_encode([['text' => $sourceTexts[$engine] ?? $sourceTexts['off'], 'score' => 100]], JSON_UNESCAPED_UNICODE));
             
-            $systemPrompt = $prompts['chat']['system'] ?? '';
+            // 根据助手类型获取系统提示词
+            $systemPrompt = self::getSystemPromptForAssistant($assistantId, $prompts);
             $messages = [['role' => 'system', 'content' => $systemPrompt]];
             
             if ($clientSummary) {
@@ -273,14 +275,15 @@ class ChatHandler
             return null;
         }
         
-        CacheService::getChatContext($chatId, function($context) use ($connection, $message, $chatId, $headers, $enableSearch, $engine, $model) {
+        CacheService::getChatContext($chatId, function($context) use ($connection, $message, $chatId, $headers, $enableSearch, $engine, $model, $assistantId) {
             $connection->send(new Response(200, $headers, ''));
             
             $prompts = $GLOBALS['config']['prompts'];
             $sourceTexts = $prompts['source_texts'] ?? ['google' => 'AI 预训练知识 + Google Search', 'mcp' => 'AI 预训练知识 + MCP 工具', 'off' => 'AI 预训练知识（搜索已关闭）'];
             StreamHelper::sendSSE($connection, 'sources', json_encode([['text' => $sourceTexts[$engine] ?? $sourceTexts['off'], 'score' => 100]], JSON_UNESCAPED_UNICODE));
             
-            $systemPrompt = $prompts['chat']['system'] ?? '你是一个友善、博学的 AI 助手，擅长回答各种问题并提供有价值的见解。请用中文回答。';
+            // 根据助手类型获取系统提示词
+            $systemPrompt = self::getSystemPromptForAssistant($assistantId, $prompts);
             $messages = [['role' => 'system', 'content' => $systemPrompt]];
             
             if ($context['summary']) {
@@ -461,6 +464,26 @@ class ChatHandler
         }
         
         return null;
+    }
+    
+    /**
+     * 根据助手 ID 获取系统提示词
+     */
+    private static function getSystemPromptForAssistant(string $assistantId, array $prompts): string
+    {
+        // 获取助手配置列表
+        $assistants = ConfigHandler::getAssistants();
+        $assistantsList = $assistants['list'] ?? [];
+        
+        // 查找匹配的助手
+        foreach ($assistantsList as $assistant) {
+            if ($assistant['id'] === $assistantId) {
+                return $assistant['system_prompt'] ?? '';
+            }
+        }
+        
+        // 如果没找到，返回通用聊天的系统提示词
+        return $prompts['chat']['system_prompt'] ?? '';
     }
     
     /**

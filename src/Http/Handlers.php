@@ -169,6 +169,22 @@ function handleWebSocketMessage(TcpConnection $connection, string $data): void
 // WebSocket 流式处理函数
 // ===================================
 
+// 流式聊天
+function streamChat(TcpConnection $connection, array $request): void
+{
+    $messages = $request['messages'] ?? [];
+    if (empty($messages)) { $connection->send(json_encode(['error' => 'Missing messages'])); return; }
+    
+    $gemini = AIService::getGemini();
+    $gemini->chatStream(
+        $messages,
+        function ($text, $chunk, $isThought) use ($connection) { if (!$isThought && $text) $connection->send(json_encode(['type' => 'content', 'content' => $text])); },
+        ['enableSearch' => false]
+    );
+    $connection->send(json_encode(['type' => 'done']));
+}
+
+// 流式书籍问答助手
 function streamAsk(TcpConnection $connection, array $request): void
 {
     $question = $request['question'] ?? '';
@@ -193,9 +209,7 @@ function streamAsk(TcpConnection $connection, array $request): void
         $context .= "{$label}\n" . $result['chunk']['text'] . "\n\n";
     }
     
-    $ragSimplePrompt = $GLOBALS['config']['prompts']['rag_simple']['system'] ?? '你是一个书籍分析助手。根据以下内容回答问题，使用中文：
-
-{context}';
+    $ragSimplePrompt = $GLOBALS['config']['prompts']['rag_simple']['system_prompt'] ?? '';
     $systemPrompt = str_replace('{context}', $context, $ragSimplePrompt);
     
     $gemini = AIService::getGemini();
@@ -207,20 +221,7 @@ function streamAsk(TcpConnection $connection, array $request): void
     $connection->send(json_encode(['type' => 'done']));
 }
 
-function streamChat(TcpConnection $connection, array $request): void
-{
-    $messages = $request['messages'] ?? [];
-    if (empty($messages)) { $connection->send(json_encode(['error' => 'Missing messages'])); return; }
-    
-    $gemini = AIService::getGemini();
-    $gemini->chatStream(
-        $messages,
-        function ($text, $chunk, $isThought) use ($connection) { if (!$isThought && $text) $connection->send(json_encode(['type' => 'content', 'content' => $text])); },
-        ['enableSearch' => false]
-    );
-    $connection->send(json_encode(['type' => 'done']));
-}
-
+// 流式续写小说
 function streamContinue(TcpConnection $connection, array $request): void
 {
     $prompt = $request['prompt'] ?? '';
