@@ -97,11 +97,22 @@ class ConfigHandler
                     'gemini-2.0-flash-lite-001' => ['input' => 0, 'output' => 0],
                 ];
                 
+                // 首先添加固定的4个模型（用于iOS的Heavy/Expert/Fast/Auto按钮）
+                $fixedModels = [
+                    'gemini-2.5-pro',           // Heavy
+                    'gemini-2.5-flash',         // Expert
+                    'gemini-2.5-flash-lite',    // Fast
+                    'gemini-2.0-flash',         // Auto
+                ];
+                
                 foreach ($data['models'] ?? [] as $model) {
                     $modelId = str_replace('models/', '', $model['name']);
                     
-                    // 只保留 Gemini 3 系列的 preview 模型
-                    if (!in_array($modelId, ['gemini-3-pro-preview', 'gemini-3-flash-preview'])) {
+                    // 只保留固定的4个模型 + Gemini 3 系列
+                    $isFixed = in_array($modelId, $fixedModels);
+                    $isGemini3 = in_array($modelId, ['gemini-3-pro-preview', 'gemini-3-flash-preview']);
+                    
+                    if (!$isFixed && !$isGemini3) {
                         continue;
                     }
                     
