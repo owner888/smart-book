@@ -15,29 +15,9 @@ use SmartBook\Logger;
 use Workerman\Protocols\Http\Response;
 
 class ChatHandler
-{
+{   
     /**
-     * 通用聊天（非流式）
-     */
-    public static function chat(Context $ctx): array
-    {
-        $body = $ctx->jsonBody() ?? [];
-        $messages = $body['messages'] ?? [];
-        if (empty($messages)) return ['error' => 'Missing messages'];
-        return AIService::chat($messages);
-    }
-    
-    /**
-     * 续写小说（非流式）
-     */
-    public static function continue(Context $ctx): array
-    {
-        $body = $ctx->jsonBody() ?? [];
-        return AIService::continueStory($body['prompt'] ?? '');
-    }
-    
-    /**
-     * 流式书籍问答（SSE）
+     * 流式书籍问答助手（SSE）
      */
     public static function streamAskAsync(Context $ctx): ?array
     {
@@ -175,7 +155,7 @@ class ChatHandler
     }
     
     /**
-     * 流式聊天（SSE）
+     * 流式通用聊天（SSE）
      */
     public static function streamChat(Context $ctx): ?array
     {
@@ -340,7 +320,7 @@ class ChatHandler
                     if (!$isConnectionAlive) return;
                     if ($chatId) {
                         CacheService::addToChatHistory($chatId, ['role' => 'assistant', 'content' => $fullContent]);
-                        ChatHandler::triggerSummarizationIfNeeded($chatId, $context);
+                        self::triggerSummarizationIfNeeded($chatId, $context);
                     }
                     if ($usageMetadata) {
                         $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
@@ -368,7 +348,7 @@ class ChatHandler
     }
     
     /**
-     * 流式续写（SSE）
+     * 流式续写小说（SSE）
      */
     public static function streamContinue(Context $ctx): ?array
     {

@@ -68,10 +68,6 @@ Router::group('/api', function() {
     // 缓存
     Router::get('/cache/stats', fn($ctx) => CacheHandler::getStats($ctx));
     
-    // 问答 API
-    Router::post('/chat', fn($ctx) => ChatHandler::chat($ctx));
-    Router::post('/continue', fn($ctx) => ChatHandler::continue($ctx));
-    
     // 流式 API
     Router::post('/stream/ask', fn($ctx) => ChatHandler::streamAskAsync($ctx));
     Router::post('/stream/chat', fn($ctx) => ChatHandler::streamChat($ctx));

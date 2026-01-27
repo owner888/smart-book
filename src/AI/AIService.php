@@ -5,8 +5,6 @@
 
 namespace SmartBook\AI;
 
-use SmartBook\RAG\EmbeddingClient;
-use SmartBook\RAG\VectorStore;
 use SmartBook\RAG\BookRAGAssistant;
 use SmartBook\Http\Handlers\ConfigHandler;
 
@@ -49,47 +47,5 @@ class AIService
             self::$asyncGemini = new AsyncGeminiClient(GEMINI_API_KEY);
         }
         return self::$asyncGemini;
-    }
-    
-    /**
-     * 通用聊天（非流式）
-     */
-    public static function chat(array $messages): array
-    {
-        $gemini = self::getGemini();
-        $response = $gemini->chat($messages);
-        
-        $answer = '';
-        foreach ($response['candidates'] ?? [] as $candidate) {
-            foreach ($candidate['content']['parts'] ?? [] as $part) {
-                if (!($part['thought'] ?? false)) $answer .= $part['text'] ?? '';
-            }
-        }
-        
-        return ['success' => true, 'answer' => $answer];
-    }
-    
-    /**
-     * 续写章节（非流式）
-     */
-    public static function continueStory(string $prompt = ''): array
-    {
-        $systemPrompt = $GLOBALS['config']['prompts']['continue']['system'] ?? '';
-        $userPrompt = $prompt ?: ($GLOBALS['config']['prompts']['continue']['default_prompt'] ?? '');
-        
-        $gemini = self::getGemini();
-        $response = $gemini->chat([
-            ['role' => 'system', 'content' => $systemPrompt],
-            ['role' => 'user', 'content' => $userPrompt],
-        ]);
-        
-        $story = '';
-        foreach ($response['candidates'] ?? [] as $candidate) {
-            foreach ($candidate['content']['parts'] ?? [] as $part) {
-                if (!($part['thought'] ?? false)) $story .= $part['text'] ?? '';
-            }
-        }
-        
-        return ['success' => true, 'story' => $story];
     }
 }
