@@ -28,6 +28,7 @@ use SmartBook\AI\AsyncCurlManager;
 use SmartBook\Cache\CacheService;
 use SmartBook\MCP\ToolManager;
 use SmartBook\Http\Handlers\StreamHelper;
+use SmartBook\MCP\StreamableHttpServer;
 
 // 注意: Workerman Task Worker 需要 5.x 版本
 // 当前使用文件持久化来存储任务状态，支持服务器重启后恢复
@@ -82,12 +83,19 @@ $mcpWorker = new Worker('tcp://' . MCP_SERVER_LISTEN . ':' . MCP_SERVER_PORT);
 $mcpWorker->count = 1;
 $mcpWorker->name = 'MCP-Server';
 
+// 初始化 MCP 服务器
+$mcpServer = null;
+
+$mcpWorker->onWorkerStart = function() use (&$mcpServer) {
+    $mcpServer = new StreamableHttpServer(__DIR__ . '/books', false);
+};
+
 // 手动处理 HTTP/SSE 请求
-$mcpWorker->onMessage = function (TcpConnection $connection, string $data) {
+$mcpWorker->onMessage = function (TcpConnection $connection, string $data) use (&$mcpServer) {
     // 解析 HTTP 请求
     $request = StreamHelper::parseHttpRequest($data, $connection);
-    if ($request) {
-        handleMCPRequest($connection, $request);
+    if ($request && $mcpServer) {
+        $mcpServer->handleRequest($connection, $request);
     }
 };
 

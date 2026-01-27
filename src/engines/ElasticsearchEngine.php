@@ -142,3 +142,36 @@ class ElasticsearchEngine implements LoggerEngineInterface
     /**
      * 获取当前配置
      */
+    public function getConfig(): array
+    {
+        return [
+            'host' => $this->host,
+            'port' => $this->port,
+            'index' => $this->index,
+            'sessionId' => $this->sessionId,
+            'enabled' => $this->enabled,
+        ];
+    }
+
+    /**
+     * 获取基础 URL
+     */
+    private function getBaseUrl(): string
+    {
+        return "http://{$this->host}:{$this->port}";
+    }
+
+    /**
+     * 构建 Elasticsearch 文档
+     */
+    private function buildDocument(string $level, string $message, array $context): array
+    {
+        return array_merge([
+            '@timestamp' => date('c'),
+            'level' => strtoupper($level),
+            'message' => $message,
+            'session_id' => $this->sessionId,
+            'context' => $context,
+        ], $this->extraFields);
+    }
+}
