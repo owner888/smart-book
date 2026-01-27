@@ -256,25 +256,18 @@ class BookHandler
                 return ['success' => false, 'error' => '目标目录不可写'];
             }
             
-            Logger::info("💾 移动文件: {$tmpPath} -> {$destPath}");
+            Logger::info("💾 保存文件: {$tmpPath} -> {$destPath}");
             Logger::info("📂 目录权限: " . substr(sprintf('%o', fileperms(BOOKS_DIR)), -4));
             Logger::info("📄 临时文件大小: " . filesize($tmpPath) . " bytes");
             
-            // 移动文件
-            if (!move_uploaded_file($tmpPath, $destPath)) {
-                $error = error_get_last();
-                Logger::error("❌ 文件保存失败: " . json_encode($error));
-                
-                // 尝试使用 copy 作为备选方案
-                Logger::info("🔄 尝试使用 copy 方法...");
-                if (copy($tmpPath, $destPath)) {
-                    @unlink($tmpPath);
-                    Logger::info("✅ 使用 copy 方法成功");
-                } else {
-                    Logger::error("❌ copy 方法也失败");
-                    return ['success' => false, 'error' => '文件保存失败'];
-                }
+            // Workerman 使用 copy 而不是 move_uploaded_file
+            if (!copy($tmpPath, $destPath)) {
+                Logger::error("❌ 文件保存失败");
+                return ['success' => false, 'error' => '文件保存失败'];
             }
+            
+            @unlink($tmpPath);
+            Logger::info("✅ 文件保存成功");
             
             Logger::info("✅ 书籍上传成功: {$originalName}");
             
