@@ -5,6 +5,7 @@
 
 namespace SmartBook\Http\Handlers;
 
+use SmartBook\Logger;
 use SmartBook\Http\Context;
 use SmartBook\Http\ErrorHandler;
 use SmartBook\AI\GeminiContextCache;
@@ -18,7 +19,7 @@ class ContextCacheHandler
      */
     public static function list(): array
     {
-        \Logger::info('[ContextCache] 列出所有缓存');
+        Logger::info('[ContextCache] 列出所有缓存');
         
         $cache = new GeminiContextCache(GEMINI_API_KEY);
         $result = $cache->listCaches();
@@ -43,7 +44,7 @@ class ContextCacheHandler
         $ttl = intval($body['ttl'] ?? GeminiContextCache::DEFAULT_TTL);
         $model = $body['model'] ?? 'gemini-2.5-flash';
         
-        \Logger::info("[ContextCache] 创建缓存", ['model' => $model, 'ttl' => $ttl]);
+        Logger::info("[ContextCache] 创建缓存", ['model' => $model, 'ttl' => $ttl]);
         
         $cache = new GeminiContextCache(GEMINI_API_KEY, $model);
         
@@ -51,7 +52,7 @@ class ContextCacheHandler
         if (!$cache->meetsMinTokens($content)) {
             $estimatedTokens = GeminiContextCache::estimateTokens($content);
             $minRequired = GeminiContextCache::MIN_TOKENS[$model] ?? 1024;
-            \Logger::warn("[ContextCache] 内容太短", [
+            Logger::warn("[ContextCache] 内容太短", [
                 'estimated' => $estimatedTokens,
                 'required' => $minRequired
             ]);
@@ -81,7 +82,7 @@ class ContextCacheHandler
         $ttl = intval($body['ttl'] ?? GeminiContextCache::DEFAULT_TTL);
         $model = $body['model'] ?? 'gemini-2.5-flash';
         
-        \Logger::info("[ContextCache] 为书籍创建缓存", [
+        Logger::info("[ContextCache] 为书籍创建缓存", [
             'book' => $bookFile,
             'model' => $model,
             'ttl' => $ttl
@@ -106,7 +107,7 @@ class ContextCacheHandler
             throw new \Exception('Failed to extract book content');
         }
         
-        \Logger::info("[ContextCache] 书籍内容提取完成", [
+        Logger::info("[ContextCache] 书籍内容提取完成", [
             'length' => mb_strlen($content),
             'time_ms' => round($extractTime, 2)
         ]);
@@ -117,7 +118,7 @@ class ContextCacheHandler
         if (!$cache->meetsMinTokens($content)) {
             $estimatedTokens = GeminiContextCache::estimateTokens($content);
             $minRequired = GeminiContextCache::MIN_TOKENS[$model] ?? 1024;
-            \Logger::warn("[ContextCache] 书籍内容太短", [
+            Logger::warn("[ContextCache] 书籍内容太短", [
                 'estimated' => $estimatedTokens,
                 'required' => $minRequired
             ]);
@@ -149,7 +150,7 @@ class ContextCacheHandler
         ErrorHandler::requireParams($body, ['name']);
         
         $cacheName = $body['name'];
-        \Logger::info("[ContextCache] 删除缓存", ['name' => $cacheName]);
+        Logger::info("[ContextCache] 删除缓存", ['name' => $cacheName]);
         
         $cache = new GeminiContextCache(GEMINI_API_KEY);
         $result = $cache->delete($cacheName);
@@ -170,7 +171,7 @@ class ContextCacheHandler
         ErrorHandler::requireParams($body, ['name']);
         
         $cacheName = $body['name'];
-        \Logger::info("[ContextCache] 获取缓存详情", ['name' => $cacheName]);
+        Logger::info("[ContextCache] 获取缓存详情", ['name' => $cacheName]);
         
         $cache = new GeminiContextCache(GEMINI_API_KEY);
         $result = $cache->get($cacheName);
@@ -180,7 +181,7 @@ class ContextCacheHandler
             return ErrorHandler::success(['cache' => $result]);
         }
         
-        \Logger::warn("[ContextCache] 缓存未找到", ['name' => $cacheName]);
+        Logger::warn("[ContextCache] 缓存未找到", ['name' => $cacheName]);
         throw new \Exception('Cache not found: ' . $cacheName);
     }
 }

@@ -5,6 +5,7 @@
 
 namespace SmartBook\Http\Handlers;
 
+use SmartBook\Logger;
 use SmartBook\Http\Context;
 use SmartBook\Http\ErrorHandler;
 use SmartBook\AI\GoogleASRClient;
@@ -27,7 +28,7 @@ class ASRHandler
         $sampleRate = intval($body['sample_rate'] ?? 48000);
         $language = $body['language'] ?? null;
         
-        \Logger::info('[ASR] 语音识别', [
+        Logger::info('[ASR] 语音识别', [
             'encoding' => $encoding,
             'sample_rate' => $sampleRate,
             'language' => $language
@@ -69,7 +70,7 @@ class ASRHandler
      */
     public static function getLanguages(): array
     {
-        \Logger::info('[ASR] 获取语言列表');
+        Logger::info('[ASR] 获取语言列表');
         
         $asrClient = new GoogleASRClient();
         

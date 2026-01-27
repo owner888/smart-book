@@ -5,6 +5,7 @@
 
 namespace SmartBook\Http\Handlers;
 
+use SmartBook\Logger;
 use SmartBook\Http\Context;
 use SmartBook\Http\ErrorHandler;
 use SmartBook\AI\GoogleTTSClient;
@@ -27,7 +28,7 @@ class TTSHandler
         $rate = floatval($body['rate'] ?? 1.0);
         $pitch = floatval($body['pitch'] ?? 0.0);
         
-        \Logger::info('[TTS] 语音合成', [
+        Logger::info('[TTS] 语音合成', [
             'text_length' => mb_strlen($text),
             'voice' => $voice,
             'rate' => $rate,
@@ -72,7 +73,7 @@ class TTSHandler
      */
     public static function getVoices(): array
     {
-        \Logger::info('[TTS] 获取语音列表');
+        Logger::info('[TTS] 获取语音列表');
         
         $ttsClient = new GoogleTTSClient();
         

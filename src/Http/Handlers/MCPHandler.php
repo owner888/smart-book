@@ -5,6 +5,7 @@
 
 namespace SmartBook\Http\Handlers;
 
+use SmartBook\Logger;
 use SmartBook\Http\ErrorHandler;
 use Workerman\Protocols\Http\Request;
 
@@ -15,12 +16,12 @@ class MCPHandler
      */
     public static function getServers(): array
     {
-        \Logger::info('[MCP] 获取服务器列表');
+        Logger::info('[MCP] 获取服务器列表');
         
         $configPath = dirname(__DIR__, 3) . '/config/mcp.json';
         
         if (!file_exists($configPath)) {
-            \Logger::warn('[MCP] 配置文件不存在');
+            Logger::warn('[MCP] 配置文件不存在');
             return ErrorHandler::success(['servers' => []]);
         }
         
@@ -53,7 +54,7 @@ class MCPHandler
         ErrorHandler::requireParams($body, ['servers']);
         
         $servers = $body['servers'];
-        \Logger::info('[MCP] 保存服务器配置', ['count' => count($servers)]);
+        Logger::info('[MCP] 保存服务器配置', ['count' => count($servers)]);
         
         $configPath = dirname(__DIR__, 3) . '/config/mcp.json';
         $configDir = dirname($configPath);

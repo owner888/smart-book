@@ -7,6 +7,7 @@
 
 namespace SmartBook\Http;
 
+use SmartBook\Logger;
 use Exception;
 use Throwable;
 
@@ -52,11 +53,11 @@ class ErrorHandler
         ];
         
         // 记录到日志
-        \Logger::error($context ? "{$context}: {$e->getMessage()}" : $e->getMessage(), $errorInfo);
+        Logger::error($context ? "{$context}: {$e->getMessage()}" : $e->getMessage(), $errorInfo);
         
         // 在开发模式下，记录堆栈跟踪
         if (defined('DEBUG') && constant('DEBUG')) {
-            \Logger::debug("Stack trace: " . $e->getTraceAsString());
+            Logger::debug("Stack trace: " . $e->getTraceAsString());
         }
     }
     
@@ -68,11 +69,11 @@ class ErrorHandler
         $message = "[{$operation}] {$status}";
         
         if ($status === 'success' || $status === '成功') {
-            \Logger::info($message, $details);
+            Logger::info($message, $details);
         } elseif ($status === 'warning' || $status === '警告') {
-            \Logger::warn($message, $details);
+            Logger::warn($message, $details);
         } else {
-            \Logger::error($message, $details);
+            Logger::error($message, $details);
         }
     }
     
@@ -199,9 +200,9 @@ class ErrorHandler
         
         // 超过1秒的操作记录为警告
         if ($duration > 1000) {
-            \Logger::warn($message, $metrics);
+            Logger::warn($message, $metrics);
         } else {
-            \Logger::info($message, $metrics);
+            Logger::info($message, $metrics);
         }
     }
     

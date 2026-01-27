@@ -5,6 +5,7 @@
 
 namespace SmartBook\Http\Handlers;
 
+use SmartBook\Logger;
 use SmartBook\Http\Context;
 use SmartBook\Http\ErrorHandler;
 use SmartBook\Cache\CacheService;
@@ -17,7 +18,7 @@ class CacheHandler
      */
     public static function getStats(Context $ctx): ?array
     {
-        \Logger::info('[Cache] 获取缓存统计信息');
+        Logger::info('[Cache] 获取缓存统计信息');
         
         $connection = $ctx->connection();
         $jsonHeaders = [

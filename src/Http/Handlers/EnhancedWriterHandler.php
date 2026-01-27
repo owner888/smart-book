@@ -5,6 +5,7 @@
 
 namespace SmartBook\Http\Handlers;
 
+use SmartBook\Logger;
 use SmartBook\Http\Context;
 use SmartBook\Http\ErrorHandler;
 use SmartBook\AI\EnhancedStoryWriter;
@@ -25,7 +26,7 @@ class EnhancedWriterHandler
         $bookFile = $body['book'];
         $model = $body['model'] ?? 'gemini-2.5-flash';
         
-        \Logger::info('[EnhancedWriter] 准备续写环境', ['book' => $bookFile, 'model' => $model]);
+        Logger::info('[EnhancedWriter] 准备续写环境', ['book' => $bookFile, 'model' => $model]);
         
         $booksDir = dirname(__DIR__, 3) . '/books';
         $bookPath = $booksDir . '/' . $bookFile;
@@ -61,7 +62,7 @@ class EnhancedWriterHandler
         
         $bookFile = $body['book'];
         
-        \Logger::info('[EnhancedWriter] 获取续写状态', ['book' => $bookFile]);
+        Logger::info('[EnhancedWriter] 获取续写状态', ['book' => $bookFile]);
         
         $writer = new EnhancedStoryWriter(GEMINI_API_KEY);
         return $writer->getWriterStatus($bookFile);
