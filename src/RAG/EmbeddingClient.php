@@ -19,7 +19,7 @@ class EmbeddingClient
     {
         $this->apiKey = $apiKey;
         $this->model = $model;
-        $this->baseUrl = 'https://generativelanguage.googleapis.com/v1';
+        $this->baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
     }
     
     public function embedQuery(string $text): array
@@ -44,7 +44,6 @@ class EmbeddingClient
             CURLOPT_POST => true,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Cache-Control: no-cache'],
             CURLOPT_POSTFIELDS => json_encode([
-                'model' => "models/{$this->model}",
                 'content' => ['parts' => [['text' => $text . $nonce]]],
                 'taskType' => $taskType,
             ], JSON_UNESCAPED_UNICODE),
@@ -70,7 +69,6 @@ class EmbeddingClient
         $url = "{$this->baseUrl}/models/{$this->model}:batchEmbedContents?key={$this->apiKey}";
         
         $requests = array_map(fn($text) => [
-            'model' => "models/{$this->model}",
             'content' => ['parts' => [['text' => $text]]],
             'taskType' => 'RETRIEVAL_DOCUMENT',
         ], $texts);
