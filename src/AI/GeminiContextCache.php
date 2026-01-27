@@ -141,8 +141,11 @@ class GeminiContextCache
      */
     public function createForBook(string $bookFile, string $bookContent, int $ttl = self::DEFAULT_TTL): array
     {
+        // 使用文件内容 MD5 作为唯一标识，避免中文文件名问题
+        $contentMd5 = md5($bookContent);
+        
         // 检查是否已有有效缓存
-        $existing = $this->getBookCache($bookFile);
+        $existing = $this->getBookCache($contentMd5);
         if ($existing && $existing['expireAt'] > time()) {
             return [
                 'success' => true,
@@ -152,14 +155,14 @@ class GeminiContextCache
             ];
         }
         
-        $displayName = "book:{$bookFile}";
+        $displayName = "book:{$contentMd5}";
         $systemInstruction = "你是一个专业的书籍分析助手。以下是书籍《{$bookFile}》的完整内容，请基于书籍内容回答用户问题。";
         
         $result = $this->create($bookContent, $displayName, $systemInstruction, $ttl);
         
         if ($result['success']) {
             // 关联书籍和缓存
-            $this->associateBookCache($bookFile, $result['name']);
+            $this->associateBookCache($contentMd5, $result['name']);
         }
         
         return $result;
@@ -299,12 +302,13 @@ class GeminiContextCache
     
     /**
      * 关联书籍和缓存
+     * @param string $bookKey 书籍标识（通常是文件内容的 MD5）
      */
-    private function associateBookCache(string $bookFile, string $cacheName): void
+    private function associateBookCache(string $bookKey, string $cacheName): void
     {
         $redis = CacheService::getRedis();
         if ($redis) {
-            $key = "gemini:book_cache:{$bookFile}";
+            $key = "gemini:book_cache:{$bookKey}";
             $redis->set($key, $cacheName);
         }
     }
@@ -313,10 +317,11 @@ class GeminiContextCache
      * 获取书籍关联的缓存
      * 
      * 直接从 Gemini API 查询，通过 displayName 匹配书籍
+     * @param string $bookKey 书籍标识（通常是文件内容的 MD5）
      */
-    public function getBookCache(string $bookFile): ?array
+    public function getBookCache(string $bookKey): ?array
     {
-        $displayName = "book:{$bookFile}";
+        $displayName = "book:{$bookKey}";
         
         // 从 Gemini API 获取缓存列表
         $list = $this->listCaches();
@@ -359,11 +364,15 @@ class GeminiContextCache
     
     /**
      * 获取或创建书籍缓存
+     * @param string $bookFile 书籍文件名（用于显示）
+     * @param string $bookContent 书籍内容
      */
-    public function getOrCreateBookCache(string $bookFile, callable $getContent, int $ttl = self::DEFAULT_TTL): array
+    public function getOrCreateBookCache(string $bookFile, string $bookContent, int $ttl = self::DEFAULT_TTL): array
     {
+        $contentMd5 = md5($bookContent);
+        
         // 先检查本地缓存
-        $existing = $this->getBookCache($bookFile);
+        $existing = $this->getBookCache($contentMd5);
         if ($existing && $existing['expireAt'] > time()) {
             return [
                 'success' => true,
@@ -372,13 +381,7 @@ class GeminiContextCache
             ];
         }
         
-        // 获取内容并创建缓存
-        $content = $getContent();
-        if (!$content) {
-            return ['success' => false, 'error' => 'Failed to get book content'];
-        }
-        
-        return $this->createForBook($bookFile, $content, $ttl);
+        return $this->createForBook($bookFile, $bookContent, $ttl);
     }
     
     /**

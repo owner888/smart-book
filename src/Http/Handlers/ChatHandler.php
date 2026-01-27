@@ -560,9 +560,13 @@ class ChatHandler
             return ['error' => 'Missing question'];
         }
         
-        if (empty($bookId)) {
-            return ['error' => 'Missing book_id'];
+        // 获取当前选中的书籍路径
+        $bookPath = ConfigHandler::getCurrentBookPath();
+        if (!$bookPath) {
+            return ['error' => '请先选择一本书籍'];
         }
+        
+        $bookFileName = basename($bookPath);
         
         $headers = [
             'Content-Type' => 'text/event-stream',
@@ -572,56 +576,29 @@ class ChatHandler
         $connection->send(new Response(200, $headers, ''));
         
         try {
+            // 获取书籍内容用于计算 MD5
+            $ext = strtolower(pathinfo($bookPath, PATHINFO_EXTENSION));
+            if ($ext === 'epub') {
+                $content = \SmartBook\Parser\EpubParser::extractText($bookPath);
+            } else {
+                $content = file_get_contents($bookPath);
+            }
+            
+            if (empty($content)) {
+                StreamHelper::sendSSE($connection, 'error', "无法读取书籍内容");
+                $connection->close();
+                return null;
+            }
+            
+            $contentMd5 = md5($content);
+            
             $cacheClient = new GeminiContextCache(GEMINI_API_KEY, $model);
-            $bookCache = $cacheClient->getBookCache($bookId);
+            $bookCache = $cacheClient->getBookCache($contentMd5);
             
             if (!$bookCache) {
-                // 创建 Context Cache
-                StreamHelper::sendSSE($connection, 'sources', json_encode([
-                    ['text' => "正在为《{$bookId}》创建 Context Cache...", 'score' => 0]
-                ], JSON_UNESCAPED_UNICODE));
-                
-                $booksDir = dirname(__DIR__, 3) . '/books';
-                $bookPath = $booksDir . '/' . $bookId;
-                
-                if (!file_exists($bookPath)) {
-                    StreamHelper::sendSSE($connection, 'error', "书籍文件不存在: {$bookId}");
-                    $connection->close();
-                    return null;
-                }
-                
-                $ext = strtolower(pathinfo($bookId, PATHINFO_EXTENSION));
-                if ($ext === 'epub') {
-                    $content = \SmartBook\Parser\EpubParser::extractText($bookPath);
-                } else {
-                    $content = file_get_contents($bookPath);
-                }
-                
-                if (empty($content)) {
-                    StreamHelper::sendSSE($connection, 'error', "无法提取书籍内容");
-                    $connection->close();
-                    return null;
-                }
-                
-                $createResult = $cacheClient->createForBook($bookId, $content, 7200);
-                
-                if (!$createResult['success']) {
-                    StreamHelper::sendSSE($connection, 'error', "创建缓存失败: " . ($createResult['error'] ?? '未知错误'));
-                    $connection->close();
-                    return null;
-                }
-                
-                $bookCache = $cacheClient->getBookCache($bookId);
-                
-                if (!$bookCache) {
-                    StreamHelper::sendSSE($connection, 'error', "创建缓存后仍无法获取");
-                    $connection->close();
-                    return null;
-                }
-                
-                StreamHelper::sendSSE($connection, 'sources', json_encode([
-                    ['text' => "✅ Context Cache 创建成功！", 'score' => 100]
-                ], JSON_UNESCAPED_UNICODE));
+                StreamHelper::sendSSE($connection, 'error', "Context Cache 不存在，请重新选择书籍");
+                $connection->close();
+                return null;
             }
             
             $cacheModel = str_replace('models/', '', $bookCache['model'] ?? '');
@@ -644,8 +621,7 @@ class ChatHandler
             $asyncGemini = AIService::getAsyncGemini($cacheModel);
             $isConnectionAlive = true;
             
-            $asyncGemini->chatStreamAsyncWithCache(
-                $bookCache['name'],
+            $asyncGemini->chatStreamAsync(
                 [['role' => 'user', 'content' => $question]],
                 function ($text, $isThought) use ($connection, &$isConnectionAlive) {
                     if (!$isConnectionAlive) return;
@@ -674,7 +650,11 @@ class ChatHandler
                     if (!$isConnectionAlive) return;
                     StreamHelper::sendSSE($connection, 'error', $error);
                     $connection->close();
-                }
+                },
+                [
+                    'cachedContent' => $bookCache['name'],
+                    'model' => $cacheModel
+                ]
             );
             
         } catch (\Exception $e) {
