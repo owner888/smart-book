@@ -30,6 +30,25 @@ class ConfigHandler
     
     /**
      * 获取可用模型列表
+       {
+            "name": "models\/gemini-2.5-pro",
+            "version": "2.5",
+            "displayName": "Gemini 2.5 Pro",
+            "description": "Stable release (June 17th, 2025) of Gemini 2.5 Pro",
+            "inputTokenLimit": 1048576,
+            "outputTokenLimit": 65536,
+            "supportedGenerationMethods": [
+                "generateContent",
+                "countTokens",
+                "createCachedContent",
+                "batchGenerateContent"
+            ],
+            "temperature": 1,
+            "topP": 0.95,
+            "topK": 64,
+            "maxTemperature": 2,
+            "thinking": true
+        }
      */
     public static function getModels(): array
     {
@@ -62,6 +81,10 @@ class ConfigHandler
                 
                 // 价格表（美元/百万 tokens）- 2025年1月更新
                 $pricing = [
+                    // Gemini 3.0 系列
+                    'gemini-3-pro-preview' => ['input' => 2.5, 'output' => 15],
+                    'gemini-3-flash-preview' => ['input' => 0.3, 'output' => 2.5],
+
                     // Gemini 2.5 系列
                     'gemini-2.5-pro' => ['input' => 2.5, 'output' => 15],
                     'gemini-2.5-flash' => ['input' => 0.3, 'output' => 2.5],
@@ -72,21 +95,13 @@ class ConfigHandler
                     'gemini-2.0-flash-001' => ['input' => 0, 'output' => 0],
                     'gemini-2.0-flash-lite' => ['input' => 0, 'output' => 0],
                     'gemini-2.0-flash-lite-001' => ['input' => 0, 'output' => 0],
-                    
-                    // Gemini 1.5 系列
-                    'gemini-1.5-pro' => ['input' => 3.5, 'output' => 10.5],
-                    'gemini-1.5-pro-001' => ['input' => 3.5, 'output' => 10.5],
-                    'gemini-1.5-pro-002' => ['input' => 3.5, 'output' => 10.5],
-                    'gemini-1.5-flash' => ['input' => 0.075, 'output' => 0.3],
-                    'gemini-1.5-flash-001' => ['input' => 0.075, 'output' => 0.3],
-                    'gemini-1.5-flash-002' => ['input' => 0.075, 'output' => 0.3],
                 ];
                 
                 foreach ($data['models'] ?? [] as $model) {
                     $modelId = str_replace('models/', '', $model['name']);
                     
+                    // 只保留 Gemini 模型，不做其他过滤
                     if (!str_starts_with($modelId, 'gemini')) continue;
-                    if (str_contains($modelId, 'preview') || str_contains($modelId, 'exp')) continue;
                     
                     $basePrice = $pricing['gemini-2.5-pro']['output'];
                     $modelPrice = $pricing[$modelId]['output'] ?? 2.5;
@@ -125,14 +140,11 @@ class ConfigHandler
                         'provider' => 'google',
                         'rate' => $rate,
                         'description' => $description ?: 'Rate: ' . $rate,
-                        // 使用 Swift 期望的字段名
                         'max_tokens' => $maxTokens,
                         'cost_per_1m_input' => $inputPrice,
                         'cost_per_1m_output' => $outputPrice,
                     ];
                 }
-                
-                // 保持 Gemini API 原始返回的顺序，不再排序
             }
         } catch (\Exception $e) {
             // Fallback
