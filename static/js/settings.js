@@ -292,11 +292,6 @@ function manageModels(providerId) {
                             <input type="checkbox" checked> gemini-2.5-pro
                         </label>
                     </div>
-                    <div style="padding: 12px; background: #2d2d2d; border-radius: 8px; margin-bottom: 8px;">
-                        <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                            <input type="checkbox"> gemini-1.5-flash
-                        </label>
-                    </div>
                 </div>
             </div>
         `

@@ -27,6 +27,7 @@ use SmartBook\RAG\BookIndexer;
 use SmartBook\AI\AsyncCurlManager;
 use SmartBook\Cache\CacheService;
 use SmartBook\MCP\ToolManager;
+use SmartBook\Http\Handlers\StreamHelper;
 
 // 注意: Workerman Task Worker 需要 5.x 版本
 // 当前使用文件持久化来存储任务状态，支持服务器重启后恢复
@@ -84,7 +85,7 @@ $mcpWorker->name = 'MCP-Server';
 // 手动处理 HTTP/SSE 请求
 $mcpWorker->onMessage = function (TcpConnection $connection, string $data) {
     // 解析 HTTP 请求
-    $request = parseHttpRequest($data, $connection);
+    $request = StreamHelper::parseHttpRequest($data, $connection);
     if ($request) {
         handleMCPRequest($connection, $request);
     }
