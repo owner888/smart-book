@@ -5,13 +5,13 @@
 
 namespace SmartBook\Http\Handlers;
 
-use SmartBook\Http\Context;
+use SmartBook\Logger;
 use SmartBook\AI\AIService;
+use SmartBook\AI\TokenCounter;
 use SmartBook\Cache\CacheService;
+use SmartBook\Http\Context;
 use SmartBook\RAG\EmbeddingClient;
 use SmartBook\RAG\VectorStore;
-use SmartBook\AI\TokenCounter;
-use SmartBook\Logger;
 use Workerman\Protocols\Http\Response;
 
 class ChatHandler

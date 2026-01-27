@@ -221,6 +221,7 @@ class ConfigHandler
             }
         }
         
+        // 构建书籍问答的系统提示词
         $bookSystemPrompt = $libraryPrompts['book_intro'] 
             . str_replace(['{which}', '{title}', '{authors}'], ['', $bookTitle, $bookAuthors], $libraryPrompts['book_template']) 
             . $libraryPrompts['separator']
@@ -228,37 +229,36 @@ class ConfigHandler
             . ($libraryPrompts['unknown_single'] ?? '')
             . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
         
-        $bookDescription = str_replace('{title}', $bookTitle, $prompts['book']['description'] ?? '我是书籍问答助手');
+        // 从配置读取助手列表
+        $assistantConfigs = ['chat', 'book', 'continue'];
+        $assistants = [];
         
-        $assistants = [
-            [
-                'id' => 'chat',
-                'name' => '通用聊天',
-                'avatar' => '💬',
-                'color' => '#2196f3',
-                'description' => '像 ChatGPT 一样自由对话',
-                'systemPrompt' => '',
-                'action' => 'chat',
-            ],
-            [
-                'id' => 'book',
-                'name' => '书籍问答',
-                'avatar' => '📚',
-                'color' => '#4caf50',
-                'description' => $bookDescription,
-                'systemPrompt' => $bookSystemPrompt,
-                'action' => 'ask',
-            ],
-            [
-                'id' => 'continue',
-                'name' => '续写小说',
-                'avatar' => '✍️',
-                'color' => '#ff9800',
-                'description' => str_replace('{title}', $bookTitle, $prompts['continue']['description'] ?? ''),
-                'systemPrompt' => str_replace('{title}', $bookTitle, $prompts['continue']['system'] ?? ''),
-                'action' => 'continue',
-            ],
-        ];
+        foreach ($assistantConfigs as $assistantId) {
+            if (!isset($prompts[$assistantId])) continue;
+            
+            $config = $prompts[$assistantId];
+            
+            // 替换变量
+            $description = str_replace('{title}', $bookTitle, $config['description'] ?? '');
+            $systemPrompt = $config['system'] ?? '';
+            
+            // 特殊处理：书籍问答使用构建的系统提示词
+            if ($assistantId === 'book') {
+                $systemPrompt = $bookSystemPrompt;
+            } else {
+                $systemPrompt = str_replace('{title}', $bookTitle, $systemPrompt);
+            }
+            
+            $assistants[] = [
+                'id' => $assistantId,
+                'name' => $config['name'] ?? ucfirst($assistantId),
+                'avatar' => $config['avatar'] ?? '🤖',
+                'color' => $config['color'] ?? '#2196f3',
+                'description' => $description,
+                'system_prompt' => $systemPrompt,
+                'action' => $config['action'] ?? 'chat',
+            ];
+        }
         
         return ['list' => $assistants, 'default' => 'chat'];
     }
