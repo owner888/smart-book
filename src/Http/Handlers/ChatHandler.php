@@ -664,4 +664,133 @@ class ChatHandler
         
         return null;
     }
+    
+    /**
+     * 基于 Context Cache 的续写小说（无需 RAG）
+     */
+    public static function streamContinueWithCache(Context $ctx): ?array
+    {
+        $connection = $ctx->connection();
+        $body = $ctx->jsonBody() ?? [];
+        $prompt = $body['prompt'] ?? '';
+        $model = $body['model'] ?? 'gemini-2.0-flash';
+        $assistantId = $body['assistant_id'] ?? 'continue';
+        
+        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model} (Context Cache 续写)");
+        
+        if (empty($prompt)) {
+            return ['error' => 'Missing prompt'];
+        }
+        
+        // 获取当前选中的书籍路径
+        $bookPath = ConfigHandler::getCurrentBookPath();
+        if (!$bookPath) {
+            return ['error' => '请先选择一本书籍'];
+        }
+        
+        $bookFileName = basename($bookPath);
+        
+        $headers = [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache',
+            'Access-Control-Allow-Origin' => '*'
+        ];
+        $connection->send(new Response(200, $headers, ''));
+        
+        try {
+            // 获取书籍内容用于计算 MD5
+            $ext = strtolower(pathinfo($bookPath, PATHINFO_EXTENSION));
+            if ($ext === 'epub') {
+                $content = \SmartBook\Parser\EpubParser::extractText($bookPath);
+            } else {
+                $content = file_get_contents($bookPath);
+            }
+            
+            if (empty($content)) {
+                StreamHelper::sendSSE($connection, 'error', "无法读取书籍内容");
+                $connection->close();
+                return null;
+            }
+            
+            $contentMd5 = md5($content);
+            
+            $cacheClient = new GeminiContextCache(GEMINI_API_KEY, $model);
+            $bookCache = $cacheClient->getBookCache($contentMd5);
+            
+            if (!$bookCache) {
+                StreamHelper::sendSSE($connection, 'error', "Context Cache 不存在，请重新选择书籍");
+                $connection->close();
+                return null;
+            }
+            
+            $cacheModel = str_replace('models/', '', $bookCache['model'] ?? '');
+            if ($cacheModel !== $model) {
+                $errorMsg = "⚠️ 模型不匹配！\n\n" .
+                    "• 当前选择: {$model}\n" .
+                    "• 缓存要求: {$cacheModel}\n\n" .
+                    "请切换到 {$cacheModel} 模型后重试。";
+                StreamHelper::sendSSE($connection, 'error', $errorMsg);
+                $connection->close();
+                return null;
+            }
+            
+            $tokenCount = $bookCache['usageMetadata']['totalTokenCount'] ?? 0;
+            StreamHelper::sendSSE($connection, 'sources', json_encode([
+                ['text' => "Context Cache（{$tokenCount} tokens，无需 embedding）", 'score' => 100]
+            ], JSON_UNESCAPED_UNICODE));
+            
+            // 获取续写提示词配置
+            $prompts = $GLOBALS['config']['prompts'];
+            $continuePrompts = $prompts['continue'] ?? [];
+            
+            // 构建用户消息
+            $userMessage = $prompt;
+            
+            // 使用 Context Cache 进行续写
+            $asyncGemini = AIService::getAsyncGemini($cacheModel);
+            $isConnectionAlive = true;
+            
+            $asyncGemini->chatStreamAsync(
+                [['role' => 'user', 'content' => $userMessage]],
+                function ($text, $isThought) use ($connection, &$isConnectionAlive) {
+                    if (!$isConnectionAlive) return;
+                    if ($text && !$isThought) {
+                        if (!StreamHelper::sendSSE($connection, 'content', $text)) {
+                            $isConnectionAlive = false;
+                        }
+                    }
+                },
+                function ($fullAnswer, $usageMetadata = null, $usedModel = null) use ($connection, $cacheModel, &$isConnectionAlive) {
+                    if (!$isConnectionAlive) return;
+                    if ($usageMetadata) {
+                        $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $cacheModel);
+                        StreamHelper::sendSSE($connection, 'usage', json_encode([
+                            'tokens' => $costInfo['tokens'],
+                            'cost' => $costInfo['cost'],
+                            'cost_formatted' => TokenCounter::formatCost($costInfo['cost']),
+                            'currency' => $costInfo['currency'],
+                            'model' => $usedModel ?? $cacheModel
+                        ], JSON_UNESCAPED_UNICODE));
+                    }
+                    StreamHelper::sendSSE($connection, 'done', '');
+                    $connection->close();
+                },
+                function ($error) use ($connection, &$isConnectionAlive) {
+                    if (!$isConnectionAlive) return;
+                    StreamHelper::sendSSE($connection, 'error', $error);
+                    $connection->close();
+                },
+                [
+                    'cachedContent' => $bookCache['name'],
+                    'model' => $cacheModel
+                ]
+            );
+            
+        } catch (\Exception $e) {
+            StreamHelper::sendSSE($connection, 'error', $e->getMessage());
+            $connection->close();
+        }
+        
+        return null;
+    }
 }

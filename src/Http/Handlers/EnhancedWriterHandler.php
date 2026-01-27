@@ -99,35 +99,39 @@ class EnhancedWriterHandler
         $connection->send(new Response(200, $headers, ''));
         
         try {
+            // 获取书籍路径和内容
+            $booksDir = dirname(__DIR__, 3) . '/books';
+            $bookPath = $booksDir . '/' . $bookFile;
+            
+            if (!file_exists($bookPath)) {
+                StreamHelper::sendSSE($connection, 'error', "书籍文件不存在: {$bookFile}");
+                $connection->close();
+                return null;
+            }
+            
+            $ext = strtolower(pathinfo($bookFile, PATHINFO_EXTENSION));
+            if ($ext === 'epub') {
+                $content = \SmartBook\Parser\EpubParser::extractText($bookPath);
+            } else {
+                $content = file_get_contents($bookPath);
+            }
+            
+            if (empty($content)) {
+                StreamHelper::sendSSE($connection, 'error', "无法提取书籍内容");
+                $connection->close();
+                return null;
+            }
+            
+            // 使用文件内容 MD5 作为缓存 key
+            $contentMd5 = md5($content);
+            
             $cacheClient = new GeminiContextCache(GEMINI_API_KEY, $requestedModel);
-            $bookCache = $cacheClient->getBookCache($bookFile);
+            $bookCache = $cacheClient->getBookCache($contentMd5);
             
             if (!$bookCache) {
                 StreamHelper::sendSSE($connection, 'sources', json_encode([
                     ['text' => "正在为《{$bookFile}》创建 Context Cache，请稍候...", 'score' => 0]
                 ], JSON_UNESCAPED_UNICODE));
-                
-                $booksDir = dirname(__DIR__, 3) . '/books';
-                $bookPath = $booksDir . '/' . $bookFile;
-                
-                if (!file_exists($bookPath)) {
-                    StreamHelper::sendSSE($connection, 'error', "书籍文件不存在: {$bookFile}");
-                    $connection->close();
-                    return null;
-                }
-                
-                $ext = strtolower(pathinfo($bookFile, PATHINFO_EXTENSION));
-                if ($ext === 'epub') {
-                    $content = \SmartBook\Parser\EpubParser::extractText($bookPath);
-                } else {
-                    $content = file_get_contents($bookPath);
-                }
-                
-                if (empty($content)) {
-                    StreamHelper::sendSSE($connection, 'error', "无法提取书籍内容");
-                    $connection->close();
-                    return null;
-                }
                 
                 $createResult = $cacheClient->createForBook($bookFile, $content, 7200);
                 
@@ -137,7 +141,7 @@ class EnhancedWriterHandler
                     return null;
                 }
                 
-                $bookCache = $cacheClient->getBookCache($bookFile);
+                $bookCache = $cacheClient->getBookCache($contentMd5);
                 
                 if (!$bookCache) {
                     StreamHelper::sendSSE($connection, 'error', "创建缓存后仍无法获取");

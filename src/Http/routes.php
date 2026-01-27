@@ -72,7 +72,8 @@ Router::group('/api', function() {
     // Router::post('/stream/ask', fn($ctx) => ChatHandler::streamAskAsync($ctx));
     Router::post('/stream/ask', fn($ctx) => ChatHandler::streamAskWithCache($ctx)); // 基于 Context Cache（无需 RAG）
     Router::post('/stream/chat', fn($ctx) => ChatHandler::streamChat($ctx));
-    Router::post('/stream/continue', fn($ctx) => ChatHandler::streamContinue($ctx));
+    // Router::post('/stream/continue', fn($ctx) => ChatHandler::streamContinue($ctx)); // 旧的 RAG 方式
+    Router::post('/stream/continue', fn($ctx) => ChatHandler::streamContinueWithCache($ctx)); // 基于 Context Cache（无需 RAG）
     Router::post('/stream/enhanced-continue', fn($ctx) => EnhancedWriterHandler::streamContinue($ctx));
     Router::post('/stream/analyze-characters', fn($ctx) => EnhancedWriterHandler::analyzeCharacters($ctx));
     
