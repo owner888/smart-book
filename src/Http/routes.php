@@ -57,6 +57,7 @@ Router::group('/api', function() {
     // 书籍管理
     Router::get('/books', fn($ctx) => BookHandler::getBooks());
     Router::post('/books/select', fn($ctx) => BookHandler::selectBook($ctx));
+    Router::post('/books/upload', fn($ctx) => BookHandler::uploadBook($ctx));
     Router::post('/books/index', fn($ctx) => BookHandler::indexBook($ctx));
     
     // MCP 服务器

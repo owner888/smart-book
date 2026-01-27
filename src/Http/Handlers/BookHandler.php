@@ -190,6 +190,69 @@ class BookHandler
     }
     
     /**
+     * 上传书籍文件
+     */
+    public static function uploadBook(Context $ctx): array
+    {
+        try {
+            $request = $ctx->request();
+            $files = $request->file();
+            
+            if (empty($files) || !isset($files['file'])) {
+                return ['success' => false, 'error' => '没有上传文件'];
+            }
+            
+            $file = $files['file'];
+            $originalName = $file['name'];
+            $tmpPath = $file['tmp_name'];
+            $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+            
+            // 验证文件类型
+            if (!in_array($ext, ['epub', 'txt'])) {
+                return ['success' => false, 'error' => '不支持的文件格式，仅支持 EPUB 和 TXT'];
+            }
+            
+            // 保存到 books 目录
+            $booksDir = dirname(__DIR__, 3) . '/books';
+            if (!is_dir($booksDir)) {
+                mkdir($booksDir, 0755, true);
+            }
+            
+            $destPath = $booksDir . '/' . $originalName;
+            
+            // 如果文件已存在，直接返回成功
+            if (file_exists($destPath)) {
+                Logger::info("📚 书籍已存在: {$originalName}");
+                return [
+                    'success' => true,
+                    'message' => '书籍已存在',
+                    'file' => $originalName,
+                    'existed' => true
+                ];
+            }
+            
+            // 移动文件
+            if (!move_uploaded_file($tmpPath, $destPath)) {
+                return ['success' => false, 'error' => '文件保存失败'];
+            }
+            
+            Logger::info("✅ 书籍上传成功: {$originalName}");
+            
+            return [
+                'success' => true,
+                'message' => '书籍上传成功',
+                'file' => $originalName,
+                'path' => $destPath,
+                'size' => filesize($destPath)
+            ];
+            
+        } catch (\Exception $e) {
+            Logger::error("书籍上传失败: " . $e->getMessage());
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+    
+    /**
      * 为书籍创建向量索引（SSE 流式返回进度）
      */
     public static function indexBook(Context $ctx): ?array
