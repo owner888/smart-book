@@ -188,7 +188,7 @@ class ConfigHandler
             ];
         }
         
-        $cache = ['models' => $models, 'default' => $default, 'source' => 'gemini_api'];
+        $cache = ['list' => $models, 'default' => $default, 'source' => 'gemini_api'];
         $cacheTime = time();
         
         return $cache;
@@ -230,7 +230,7 @@ class ConfigHandler
         
         $bookDescription = str_replace('{title}', $bookTitle, $prompts['book']['description'] ?? '我是书籍问答助手');
         
-        return [
+        $assistants = [
             [
                 'id' => 'chat',
                 'name' => '通用聊天',
@@ -259,6 +259,8 @@ class ConfigHandler
                 'action' => 'continue',
             ],
         ];
+        
+        return ['list' => $assistants, 'default' => 'chat'];
     }
     
     /**

@@ -12,9 +12,9 @@ async function loadModels() {
         const response = await fetch(`${ChatConfig.API_BASE}/api/models`);
         const result = await response.json();
         
-        // 后端返回格式：{ success: true, data: { models: [...], default: '...' } }
+        // 后端返回格式：{ success: true, data: { list: [...], default: '...' } }
         const data = result.data || result;
-        modelsList = data.models || [];
+        modelsList = data.list || [];
         
         // 优先从 localStorage 恢复上次选择的模型
         const savedModelId = localStorage.getItem('selectedModel');

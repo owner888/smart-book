@@ -21,12 +21,14 @@ async function loadAssistants() {
         const response = await fetch(`${ChatConfig.API_BASE}/api/assistants`);
         const result = await response.json();
         
-        // 后端返回格式：{ success: true, data: {...} }
+        // 后端返回格式：{ success: true, data: { list: [...], default: '...' } }
         const data = result.data || result;
+        const assistantsList = data.list || [];
+        const defaultAssistant = data.default || 'chat';
         
-        // 转换后端格式为前端格式
-        for (const [id, config] of Object.entries(data)) {
-            assistants[id] = {
+        // 转换数组为对象格式
+        for (const config of assistantsList) {
+            assistants[config.id] = {
                 name: config.name,
                 avatar: config.avatar,
                 color: config.color,
@@ -37,7 +39,12 @@ async function loadAssistants() {
             };
         }
         
-        console.log('✅ 助手配置加载成功:', Object.keys(assistants));
+        // 如果还没有设置当前助手，使用API返回的默认值
+        if (!ChatState.currentAssistant && assistants[defaultAssistant]) {
+            ChatState.currentAssistant = defaultAssistant;
+        }
+        
+        console.log('✅ 助手配置加载成功:', Object.keys(assistants), '默认:', defaultAssistant);
         
         // 更新初始界面
         const chatMessages = document.getElementById('chatMessages');
