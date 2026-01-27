@@ -134,9 +134,9 @@ smart-book/
 
 ### MCP Server API (Streamable HTTP)
 
-MCP Server 运行在端口 8089，实现 [MCP 2025-11-25 Streamable HTTP Transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) 协议。
+MCP Server 运行在端口 8081，实现 [MCP 2025-11-25 Streamable HTTP Transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) 协议。
 
-**端点：** `http://localhost:8089/mcp`
+**端点：** `http://localhost:8081/mcp`
 
 | 方法 | 说明 |
 |------|------|
@@ -153,24 +153,24 @@ MCP Server 运行在端口 8089，实现 [MCP 2025-11-25 Streamable HTTP Transpo
 
 ```bash
 # 1. 初始化会话
-curl -X POST http://localhost:8089/mcp \
+curl -X POST http://localhost:8081/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"test","version":"1.0"}},"id":1}'
 
 # 2. 获取工具列表
-curl -X POST http://localhost:8089/mcp \
+curl -X POST http://localhost:8081/mcp \
   -H "Content-Type: application/json" \
   -H "Mcp-Session-Id: <session_id>" \
   -d '{"jsonrpc":"2.0","method":"tools/list","id":2}'
 
 # 3. 调用工具 - 列出书籍
-curl -X POST http://localhost:8089/mcp \
+curl -X POST http://localhost:8081/mcp \
   -H "Content-Type: application/json" \
   -H "Mcp-Session-Id: <session_id>" \
   -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"list_books","arguments":{}},"id":3}'
 
 # 4. 调用工具 - 搜索书籍
-curl -X POST http://localhost:8089/mcp \
+curl -X POST http://localhost:8081/mcp \
   -H "Content-Type: application/json" \
   -H "Mcp-Session-Id: <session_id>" \
   -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"search_book","arguments":{"query":"孙悟空"}},"id":4}'

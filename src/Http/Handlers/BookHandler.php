@@ -195,10 +195,15 @@ class BookHandler
     public static function uploadBook(Context $ctx): array
     {
         try {
+            Logger::info("📥 收到书籍上传请求");
+            
             $request = $ctx->request();
             $files = $request->file();
             
+            Logger::info("📋 上传文件信息: " . json_encode($files));
+            
             if (empty($files) || !isset($files['file'])) {
+                Logger::error("❌ 没有找到上传文件");
                 return ['success' => false, 'error' => '没有上传文件'];
             }
             
@@ -207,14 +212,18 @@ class BookHandler
             $tmpPath = $file['tmp_name'];
             $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
             
+            Logger::info("📚 文件名: {$originalName}, 临时路径: {$tmpPath}");
+            
             // 验证文件类型
             if (!in_array($ext, ['epub', 'txt'])) {
+                Logger::error("❌ 不支持的文件格式: {$ext}");
                 return ['success' => false, 'error' => '不支持的文件格式，仅支持 EPUB 和 TXT'];
             }
             
             // 保存到 books 目录
             $booksDir = dirname(__DIR__, 3) . '/books';
             if (!is_dir($booksDir)) {
+                Logger::info("📁 创建 books 目录: {$booksDir}");
                 mkdir($booksDir, 0755, true);
             }
             
@@ -231,8 +240,18 @@ class BookHandler
                 ];
             }
             
+            // 检查临时文件是否存在
+            if (!file_exists($tmpPath)) {
+                Logger::error("❌ 临时文件不存在: {$tmpPath}");
+                return ['success' => false, 'error' => '临时文件不存在'];
+            }
+            
+            Logger::info("💾 移动文件: {$tmpPath} -> {$destPath}");
+            
             // 移动文件
             if (!move_uploaded_file($tmpPath, $destPath)) {
+                $error = error_get_last();
+                Logger::error("❌ 文件保存失败: " . json_encode($error));
                 return ['success' => false, 'error' => '文件保存失败'];
             }
             
