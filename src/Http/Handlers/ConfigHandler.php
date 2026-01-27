@@ -100,8 +100,10 @@ class ConfigHandler
                 foreach ($data['models'] ?? [] as $model) {
                     $modelId = str_replace('models/', '', $model['name']);
                     
-                    // 只保留 Gemini 模型，不做其他过滤
-                    if (!str_starts_with($modelId, 'gemini')) continue;
+                    // 只保留 Gemini 3 系列的 preview 模型
+                    if (!in_array($modelId, ['gemini-3-pro-preview', 'gemini-3-flash-preview'])) {
+                        continue;
+                    }
                     
                     $basePrice = $pricing['gemini-2.5-pro']['output'];
                     $modelPrice = $pricing[$modelId]['output'] ?? 2.5;
