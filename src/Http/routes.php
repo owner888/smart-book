@@ -69,7 +69,6 @@ Router::group('/api', function() {
     Router::get('/cache/stats', fn($ctx) => CacheHandler::getStats($ctx));
     
     // 问答 API
-    Router::post('/ask', fn($ctx) => ChatHandler::askWithCache($ctx));
     Router::post('/chat', fn($ctx) => ChatHandler::chat($ctx));
     Router::post('/continue', fn($ctx) => ChatHandler::continue($ctx));
     

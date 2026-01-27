@@ -52,60 +52,6 @@ class AIService
     }
     
     /**
-     * RAG 问答（非流式）
-     */
-    public static function askBook(string $question, int $topK = DEFAULT_TOP_K): array
-    {
-        $currentCache = ConfigHandler::getCurrentBookCache();
-        if (!$currentCache) {
-            return ['success' => false, 'error' => 'No book index available'];
-        }
-        
-        $embedder = new EmbeddingClient(GEMINI_API_KEY);
-        $queryEmbedding = $embedder->embedQuery($question);
-        
-        $vectorStore = new VectorStore($currentCache);
-        $results = $vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
-        
-        // 使用配置文件中的片段标签
-        $chunkLabel = $GLOBALS['config']['prompts']['chunk_label'] ?? '【片段 {index}】';
-        $context = "";
-        foreach ($results as $i => $result) {
-            $label = str_replace('{index}', $i + 1, $chunkLabel);
-            $context .= "{$label}\n" . $result['chunk']['text'] . "\n\n";
-        }
-        
-        // 使用配置文件中的提示词
-        $ragSimplePrompt = $GLOBALS['config']['prompts']['rag_simple']['system'] ?? '你是一个书籍分析助手。根据以下内容回答问题，使用中文：
-
-{context}';
-        $systemPrompt = str_replace('{context}', $context, $ragSimplePrompt);
-        
-        $gemini = self::getGemini();
-        $response = $gemini->chat([
-            ['role' => 'system', 'content' => $systemPrompt],
-            ['role' => 'user', 'content' => $question],
-        ]);
-        
-        $answer = '';
-        foreach ($response['candidates'] ?? [] as $candidate) {
-            foreach ($candidate['content']['parts'] ?? [] as $part) {
-                if (!($part['thought'] ?? false)) $answer .= $part['text'] ?? '';
-            }
-        }
-        
-        return [
-            'success' => true,
-            'question' => $question,
-            'answer' => $answer,
-            'sources' => array_map(fn($r) => [
-                'text' => mb_substr($r['chunk']['text'], 0, 200) . '...',
-                'score' => round($r['score'] * 100, 1),
-            ], $results),
-        ];
-    }
-    
-    /**
      * 通用聊天（非流式）
      */
     public static function chat(array $messages): array

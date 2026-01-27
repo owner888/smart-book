@@ -37,36 +37,6 @@ class ChatHandler
     }
     
     /**
-     * 书籍问答（带缓存，非流式）
-     */
-    public static function askWithCache(Context $ctx): ?array
-    {
-        $connection = $ctx->connection();
-        $body = $ctx->jsonBody() ?? [];
-        $question = $body['question'] ?? '';
-        $topK = $body['top_k'] ?? DEFAULT_TOP_K;
-        
-        if (empty($question)) return ['error' => 'Missing question'];
-        
-        $cacheKey = CacheService::makeKey('ask', $question . ':' . $topK);
-        $jsonHeaders = ['Content-Type' => 'application/json; charset=utf-8', 'Access-Control-Allow-Origin' => '*'];
-        
-        CacheService::get($cacheKey, function($cached) use ($connection, $question, $topK, $cacheKey, $jsonHeaders) {
-            if ($cached) {
-                $cached['cached'] = true;
-                $connection->send(new Response(200, $jsonHeaders, json_encode($cached, JSON_UNESCAPED_UNICODE)));
-                return;
-            }
-            $result = AIService::askBook($question, $topK);
-            $result['cached'] = false;
-            CacheService::set($cacheKey, $result);
-            $connection->send(new Response(200, $jsonHeaders, json_encode($result, JSON_UNESCAPED_UNICODE)));
-        });
-        
-        return null;
-    }
-    
-    /**
      * 流式书籍问答（SSE）
      */
     public static function streamAskAsync(Context $ctx): ?array
@@ -231,7 +201,7 @@ class ChatHandler
             $sourceTexts = $prompts['source_texts'] ?? ['google' => 'AI 预训练知识 + Google Search', 'mcp' => 'AI 预训练知识 + MCP 工具', 'off' => 'AI 预训练知识（搜索已关闭）'];
             StreamHelper::sendSSE($connection, 'sources', json_encode([['text' => $sourceTexts[$engine] ?? $sourceTexts['off'], 'score' => 100]], JSON_UNESCAPED_UNICODE));
             
-            $systemPrompt = $prompts['chat']['system'] ?? '你是一个友善、博学的 AI 助手，擅长回答各种问题并提供有价值的见解。请用中文回答。';
+            $systemPrompt = $prompts['chat']['system'] ?? '';
             $messages = [['role' => 'system', 'content' => $systemPrompt]];
             
             if ($clientSummary) {
