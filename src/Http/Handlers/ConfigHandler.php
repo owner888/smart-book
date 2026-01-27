@@ -60,7 +60,7 @@ class ConfigHandler
         }
         
         $models = [];
-        $default = 'gemini-2.5-flash';
+        $default = 'gemini-2.0-flash';  // 默认使用免费的Auto模型
         
         try {
             $apiKey = GEMINI_API_KEY;
