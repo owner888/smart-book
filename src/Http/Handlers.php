@@ -22,6 +22,7 @@ use SmartBook\AI\AIService;
 use SmartBook\RAG\EmbeddingClient;
 use SmartBook\RAG\VectorStore;
 use SmartBook\Http\Handlers\ConfigHandler;
+use SmartBook\Logger;
 
 // 加载路由定义
 require_once __DIR__ . '/routes.php';
@@ -151,7 +152,16 @@ function handleWebSocketMessage(TcpConnection $connection, string $data): void
         return;
     }
     
+    // 🐛 调试：输出接收到的请求
     $action = $request['action'] ?? '';
+    $assistantId = $request['assistant_id'] ?? 'unknown';
+    
+    Logger::info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    Logger::info("📥 WebSocket 请求");
+    Logger::info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    Logger::info("🎯 Action: {$action}");
+    Logger::info("🤖 Assistant ID: {$assistantId}");
+    Logger::info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     
     try {
         match ($action) {
