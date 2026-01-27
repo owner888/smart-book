@@ -69,7 +69,8 @@ Router::group('/api', function() {
     Router::get('/cache/stats', fn($ctx) => CacheHandler::getStats($ctx));
     
     // 流式 API
-    Router::post('/stream/ask', fn($ctx) => ChatHandler::streamAskAsync($ctx));
+    // Router::post('/stream/ask', fn($ctx) => ChatHandler::streamAskAsync($ctx));
+    Router::post('/stream/ask', fn($ctx) => ChatHandler::streamAskWithCache($ctx)); // 基于 Context Cache（无需 RAG）
     Router::post('/stream/chat', fn($ctx) => ChatHandler::streamChat($ctx));
     Router::post('/stream/continue', fn($ctx) => ChatHandler::streamContinue($ctx));
     Router::post('/stream/enhanced-continue', fn($ctx) => EnhancedWriterHandler::streamContinue($ctx));
