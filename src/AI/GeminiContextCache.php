@@ -137,15 +137,16 @@ class GeminiContextCache
      * @param string $bookFile 书籍文件名
      * @param string $bookContent 书籍内容
      * @param int $ttl 缓存有效期（秒）
+     * @param string|null $fileMd5 文件 MD5（可选，不传则用内容 MD5）
      * @return array{success: bool, name?: string, error?: string}
      */
-    public function createForBook(string $bookFile, string $bookContent, int $ttl = self::DEFAULT_TTL): array
+    public function createForBook(string $bookFile, string $bookContent, int $ttl = self::DEFAULT_TTL, ?string $fileMd5 = null): array
     {
-        // 使用文件内容 MD5 作为唯一标识，避免中文文件名问题
-        $contentMd5 = md5($bookContent);
+        // 使用文件 MD5 作为唯一标识（如果提供），否则用内容 MD5
+        $cacheMd5 = $fileMd5 ?? md5($bookContent);
         
         // 检查是否已有有效缓存
-        $existing = $this->getBookCache($contentMd5);
+        $existing = $this->getBookCache($cacheMd5);
         if ($existing && $existing['expireAt'] > time()) {
             return [
                 'success' => true,
@@ -155,14 +156,14 @@ class GeminiContextCache
             ];
         }
         
-        $displayName = "book:{$contentMd5}";
+        $displayName = "book:{$cacheMd5}";
         $systemInstruction = "你是一个专业的书籍分析助手。以下是书籍《{$bookFile}》的完整内容，请基于书籍内容回答用户问题。";
         
         $result = $this->create($bookContent, $displayName, $systemInstruction, $ttl);
         
         if ($result['success']) {
             // 关联书籍和缓存
-            $this->associateBookCache($contentMd5, $result['name']);
+            $this->associateBookCache($cacheMd5, $result['name']);
         }
         
         return $result;

@@ -566,8 +566,6 @@ class ChatHandler
             return ['error' => '请先选择一本书籍'];
         }
         
-        $bookFileName = basename($bookPath);
-        
         $headers = [
             'Content-Type' => 'text/event-stream',
             'Cache-Control' => 'no-cache',
@@ -576,21 +574,14 @@ class ChatHandler
         $connection->send(new Response(200, $headers, ''));
         
         try {
-            // 获取书籍内容用于计算 MD5
-            $ext = strtolower(pathinfo($bookPath, PATHINFO_EXTENSION));
-            if ($ext === 'epub') {
-                $content = \SmartBook\Parser\EpubParser::extractText($bookPath);
-            } else {
-                $content = file_get_contents($bookPath);
-            }
+            // 使用缓存的 MD5（在选择书籍时已计算好，避免每次重新读取书籍）
+            $contentMd5 = $GLOBALS['selected_book']['content_md5'] ?? null;
             
-            if (empty($content)) {
-                StreamHelper::sendSSE($connection, 'error', "无法读取书籍内容");
+            if (!$contentMd5) {
+                StreamHelper::sendSSE($connection, 'error', "MD5 未缓存，请重新选择书籍");
                 $connection->close();
                 return null;
             }
-            
-            $contentMd5 = md5($content);
             
             $cacheClient = new GeminiContextCache(GEMINI_API_KEY, $model);
             $bookCache = $cacheClient->getBookCache($contentMd5);
@@ -688,8 +679,6 @@ class ChatHandler
             return ['error' => '请先选择一本书籍'];
         }
         
-        $bookFileName = basename($bookPath);
-        
         $headers = [
             'Content-Type' => 'text/event-stream',
             'Cache-Control' => 'no-cache',
@@ -698,21 +687,14 @@ class ChatHandler
         $connection->send(new Response(200, $headers, ''));
         
         try {
-            // 获取书籍内容用于计算 MD5
-            $ext = strtolower(pathinfo($bookPath, PATHINFO_EXTENSION));
-            if ($ext === 'epub') {
-                $content = \SmartBook\Parser\EpubParser::extractText($bookPath);
-            } else {
-                $content = file_get_contents($bookPath);
-            }
+            // 使用缓存的 MD5（在选择书籍时已计算好，避免每次重新读取书籍）
+            $contentMd5 = $GLOBALS['selected_book']['content_md5'] ?? null;
             
-            if (empty($content)) {
-                StreamHelper::sendSSE($connection, 'error', "无法读取书籍内容");
+            if (!$contentMd5) {
+                StreamHelper::sendSSE($connection, 'error', "MD5 未缓存，请重新选择书籍");
                 $connection->close();
                 return null;
             }
-            
-            $contentMd5 = md5($content);
             
             $cacheClient = new GeminiContextCache(GEMINI_API_KEY, $model);
             $bookCache = $cacheClient->getBookCache($contentMd5);

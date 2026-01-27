@@ -109,14 +109,18 @@ class BookHandler
         $baseName = pathinfo($bookFile, PATHINFO_FILENAME);
         $indexPath = BOOKS_DIR . '/' . $baseName . '_index.json';
         
+        // 直接用文件 MD5 作为 key（快速，无需提前读取内容）
+        $fileMd5 = md5_file($bookPath) ?: null;
+        
         $GLOBALS['selected_book'] = [
             'path' => $bookPath,
             'cache' => $indexPath,
             'hasIndex' => file_exists($indexPath),
+            'content_md5' => $fileMd5,  // 缓存文件 MD5
         ];
         
         // 检查并创建 Context Cache
-        $cacheStatus = self::ensureContextCache($bookFile, $bookPath, $model);
+        $cacheStatus = self::ensureContextCache($bookFile, $bookPath, $model, $fileMd5);
         
         return [
             'success' => true,
@@ -133,10 +137,33 @@ class BookHandler
     /**
      * 确保书籍的 Context Cache 存在
      */
-    private static function ensureContextCache(string $bookFile, string $bookPath, string $model): array
+    private static function ensureContextCache(string $bookFile, string $bookPath, string $model, ?string $fileMd5 = null): array
     {
         try {
-            // 先提取内容，用于计算 MD5
+            if (!$fileMd5) {
+                $fileMd5 = md5_file($bookPath) ?: null;
+            }
+            
+            if (!$fileMd5) {
+                Logger::error("无法计算文件 MD5: {$bookFile}");
+                return ['exists' => false, 'created' => false, 'error' => '无法计算文件 MD5'];
+            }
+            
+            $cacheClient = new GeminiContextCache(GEMINI_API_KEY, $model);
+            $bookCache = $cacheClient->getBookCache($fileMd5);
+            
+            if ($bookCache) {
+                Logger::info("✅ Context Cache 已存在: {$bookFile} (MD5: {$fileMd5})");
+                return [
+                    'exists' => true,
+                    'created' => false,
+                    'tokenCount' => $bookCache['usageMetadata']['totalTokenCount'] ?? 0,
+                ];
+            }
+            
+            // 缓存不存在，创建新缓存（按需提取内容）
+            Logger::info("🔄 创建 Context Cache: {$bookFile} (MD5: {$fileMd5})");
+            
             $ext = strtolower(pathinfo($bookPath, PATHINFO_EXTENSION));
             if ($ext === 'epub') {
                 $content = \SmartBook\Parser\EpubParser::extractText($bookPath);
@@ -149,28 +176,10 @@ class BookHandler
                 return ['exists' => false, 'created' => false, 'error' => '无法提取书籍内容'];
             }
             
-            // 使用文件内容 MD5 作为唯一标识
-            $contentMd5 = md5($content);
-            
-            $cacheClient = new GeminiContextCache(GEMINI_API_KEY, $model);
-            $bookCache = $cacheClient->getBookCache($contentMd5);
-            
-            if ($bookCache) {
-                Logger::info("✅ Context Cache 已存在: {$bookFile} (MD5: {$contentMd5})");
-                return [
-                    'exists' => true,
-                    'created' => false,
-                    'tokenCount' => $bookCache['usageMetadata']['totalTokenCount'] ?? 0,
-                ];
-            }
-            
-            // 缓存不存在，创建新缓存
-            Logger::info("🔄 创建 Context Cache: {$bookFile} (MD5: {$contentMd5})");
-            
-            $createResult = $cacheClient->createForBook($bookFile, $content, 7200);
+            $createResult = $cacheClient->createForBook($bookFile, $content, 7200, $fileMd5);
             
             if ($createResult['success']) {
-                $newCache = $cacheClient->getBookCache($contentMd5);
+                $newCache = $cacheClient->getBookCache($fileMd5);
                 Logger::info("✅ Context Cache 创建成功: {$bookFile}");
                 return [
                     'exists' => true,
