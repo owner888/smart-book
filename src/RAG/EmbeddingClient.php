@@ -19,7 +19,7 @@ class EmbeddingClient
     {
         $this->apiKey = $apiKey;
         $this->model = $model;
-        $this->baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+        $this->baseUrl = 'https://generativelanguage.googleapis.com/v1';
     }
     
     public function embedQuery(string $text): array
