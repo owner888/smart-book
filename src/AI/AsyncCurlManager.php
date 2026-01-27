@@ -1,12 +1,9 @@
 <?php
+namespace SmartBook\AI;
 /**
  * curl_multi 异步管理器
  */
-
-namespace SmartBook\AI;
-
-require_once dirname(__DIR__) . '/Logger.php';
-
+use SmartBook\Logger;
 class AsyncCurlManager
 {
     private static $multiHandle = null;
@@ -19,7 +16,7 @@ class AsyncCurlManager
         
         self::$multiHandle = curl_multi_init();
         self::$timerId = \Workerman\Timer::add(0.01, fn() => self::poll());
-        \Logger::info("AsyncCurlManager 已初始化");
+        Logger::info("AsyncCurlManager 已初始化");
     }
     
     public static function request(string $url, array $options, callable $onData, callable $onComplete): string

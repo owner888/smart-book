@@ -1,5 +1,6 @@
 <?php
 
+namespace SmartBook\Engines;
 require_once __DIR__ . '/../LoggerEngineInterface.php';
 
 /**

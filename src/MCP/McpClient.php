@@ -1,4 +1,5 @@
 <?php
+namespace SmartBook\MCP;
 /**
  * MCP Client - PHP 版本
  * 支持 Streamable HTTP 协议连接 MCP 服务器
@@ -6,11 +7,7 @@
  * @see https://modelcontextprotocol.io/specification/2025-03-26/basic/transports
  * Protocol Revision: 2025-03-26
  */
-
-namespace SmartBook\MCP;
-
-require_once __DIR__ . '/../../Logger.php';
-
+use SmartBook\Logger;
 class McpClient
 {
     private string $serverUrl;
@@ -68,7 +65,7 @@ class McpClient
         // 发送 initialized 通知
         $this->sendNotification('notifications/initialized');
         
-        \Logger::info("Connected to MCP server: " . ($this->serverInfo['name'] ?? 'Unknown') . ", Protocol: " . ($result['protocolVersion'] ?? 'Unknown'));
+        Logger::info("Connected to MCP server: " . ($this->serverInfo['name'] ?? 'Unknown') . ", Protocol: " . ($result['protocolVersion'] ?? 'Unknown'));
         
         return $result;
     }
@@ -83,7 +80,7 @@ class McpClient
             try {
                 $this->httpDelete();
             } catch (\Exception $e) {
-                \Logger::warn("Disconnect warning: " . $e->getMessage());
+                Logger::warn("Disconnect warning: " . $e->getMessage());
             }
         }
         
@@ -91,7 +88,7 @@ class McpClient
         $this->isConnected = false;
         $this->tools = [];
         $this->resources = [];
-        \Logger::info("Disconnected from MCP server");
+        Logger::info("Disconnected from MCP server");
     }
     
     /**
@@ -112,7 +109,7 @@ class McpClient
         
         $result = $response['result'] ?? [];
         $this->tools = $result['tools'] ?? [];
-        \Logger::info("Found " . count($this->tools) . " tools from MCP server");
+        Logger::info("Found " . count($this->tools) . " tools from MCP server");
         
         // 处理分页
         if (!empty($result['nextCursor'])) {
@@ -137,7 +134,7 @@ class McpClient
             throw new \Exception('Tool call failed: ' . ($response['error']['message'] ?? 'Unknown error'));
         }
         
-        \Logger::info("Tool '{$name}' called successfully");
+        Logger::info("Tool '{$name}' called successfully");
         
         return $response['result'] ?? [];
     }
@@ -269,7 +266,7 @@ class McpClient
         $jsonBody = json_encode($payload, JSON_UNESCAPED_UNICODE);
         
         if ($this->debug) {
-            \Logger::debug("MCP Request: {$jsonBody}");
+            Logger::debug("MCP Request: {$jsonBody}");
         }
         
         // 根据规范必须同时支持 JSON 和 SSE
@@ -310,7 +307,7 @@ class McpClient
         // 提取 session ID（服务器在初始化响应中返回）
         if (preg_match('/mcp-session-id:\s*([^\r\n]+)/i', $headerStr, $matches)) {
             $this->sessionId = trim($matches[1]);
-            \Logger::info("MCP Session ID: {$this->sessionId}");
+            Logger::info("MCP Session ID: {$this->sessionId}");
         }
         
         // 检查 Content-Type
@@ -320,7 +317,7 @@ class McpClient
         }
         
         if ($this->debug) {
-            \Logger::debug("MCP Response (HTTP {$httpCode}, {$contentType}): " . substr($body, 0, 500));
+            Logger::debug("MCP Response (HTTP {$httpCode}, {$contentType}): " . substr($body, 0, 500));
         }
         
         // 处理通知响应 (202 Accepted)
@@ -380,7 +377,7 @@ class McpClient
         
         // 405 表示服务器不支持客户端终止会话，这是允许的
         if ($httpCode !== 200 && $httpCode !== 405) {
-            \Logger::warn("MCP DELETE returned HTTP {$httpCode}");
+            Logger::warn("MCP DELETE returned HTTP {$httpCode}");
         }
     }
     

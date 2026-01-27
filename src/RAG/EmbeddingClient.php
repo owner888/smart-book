@@ -1,11 +1,11 @@
 <?php
+
+namespace SmartBook\RAG;
 /**
  * 向量嵌入客户端 - 使用 Google Gemini Embedding API
  */
 
-namespace SmartBook\RAG;
-
-require_once dirname(__DIR__) . '/Logger.php';
+use SmartBook\Logger;
 
 class EmbeddingClient
 {
@@ -58,7 +58,7 @@ class EmbeddingClient
         
         $result = json_decode($response, true);
         if (isset($result['error'])) {
-            \Logger::error("Embedding API 错误: " . ($result['error']['message'] ?? 'Unknown'));
+            Logger::error("Embedding API 错误: " . ($result['error']['message'] ?? 'Unknown'));
             return [];
         }
         

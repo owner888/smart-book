@@ -1,6 +1,6 @@
 <?php
 
-require_once __DIR__ . '/LoggerEngineInterface.php';
+namespace SmartBook;
 
 /**
  * Logger - 彩色日志工具类
@@ -98,7 +98,7 @@ class Logger
             if ($engine instanceof LoggerEngineInterface && $engine->isAvailable()) {
                 try {
                     $engine->send($level, $message, $context);
-                } catch (Exception $e) {
+                } catch (\Exception $e) {
                     // 静默忽略引擎错误
                     error_log("Logger Engine Error: " . $e->getMessage());
                 }
@@ -262,5 +262,5 @@ class Logger
     }
 }
 
-// 初始化
+// 自动初始化
 Logger::init();

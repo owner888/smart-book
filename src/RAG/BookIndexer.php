@@ -1,14 +1,10 @@
 <?php
+namespace SmartBook\RAG;
 /**
  * 书籍索引器 - 负责检查和创建书籍向量索引
  */
-
-namespace SmartBook\RAG;
-
-require_once dirname(__DIR__) . '/Logger.php';
-
+use SmartBook\Logger;
 use SmartBook\Parser\EpubParser;
-
 class BookIndexer
 {
     private string $booksDir;
@@ -26,27 +22,27 @@ class BookIndexer
     public function checkAndIndexAll(): void
     {
         if (!is_dir($this->booksDir)) {
-            \Logger::warn("books 目录不存在，跳过索引检查");
+            Logger::warn("books 目录不存在，跳过索引检查");
             return;
         }
         
         $needIndex = $this->findBooksNeedingIndex();
         
         if (empty($needIndex)) {
-            \Logger::info("所有书籍已有索引");
+            Logger::info("所有书籍已有索引");
             return;
         }
         
-        \Logger::info("发现 " . count($needIndex) . " 本书籍需要创建索引");
+        Logger::info("发现 " . count($needIndex) . " 本书籍需要创建索引");
         foreach ($needIndex as $book) {
-            \Logger::info("  - {$book['file']}");
+            Logger::info("  - {$book['file']}");
         }
         
         foreach ($needIndex as $book) {
             $this->createIndex($book['file'], $book['path'], $book['ext']);
         }
         
-        \Logger::info("所有书籍索引创建完成");
+        Logger::info("所有书籍索引创建完成");
     }
     
     /**
@@ -86,33 +82,33 @@ class BookIndexer
         $baseName = pathinfo($file, PATHINFO_FILENAME);
         $indexPath = $this->booksDir . '/' . $baseName . '_index.json';
         
-        \Logger::info("正在处理: {$baseName}");
+        Logger::info("正在处理: {$baseName}");
         
         try {
             // 提取文本
             $text = $this->extractText($path, $ext);
             $textLength = mb_strlen($text);
-            \Logger::info("  提取文本: {$textLength} 字符");
+            Logger::info("  提取文本: {$textLength} 字符");
             
             // 分块
             $chunker = new DocumentChunker(chunkSize: 800, chunkOverlap: 150);
             $chunks = $chunker->chunk($text);
             $chunkCount = count($chunks);
-            \Logger::info("  分块处理: {$chunkCount} 个块");
+            Logger::info("  分块处理: {$chunkCount} 个块");
             
             // 生成向量嵌入
-            \Logger::info("  生成向量嵌入...");
+            Logger::info("  生成向量嵌入...");
             $this->generateEmbeddings($chunks, $indexPath);
             
             // 输出结果
             $indexSize = number_format(filesize($indexPath) / 1024, 2);
-            \Logger::info("  索引大小: {$indexSize} KB");
-            \Logger::info("  完成: {$baseName}");
+            Logger::info("  索引大小: {$indexSize} KB");
+            Logger::info("  完成: {$baseName}");
             
             return true;
             
         } catch (\Exception $e) {
-            \Logger::error("  失败: {$e->getMessage()}");
+            Logger::error("  失败: {$e->getMessage()}");
             return false;
         }
     }
@@ -147,7 +143,7 @@ class BookIndexer
             
             $currentBatch = floor($i / $batchSize) + 1;
             $progress = round(($currentBatch / $totalBatches) * 100);
-            \Logger::debug("  进度: {$currentBatch}/{$totalBatches} ({$progress}%)");
+            Logger::debug("  进度: {$currentBatch}/{$totalBatches} ({$progress}%)");
         }
         
         $vectorStore->save($indexPath);

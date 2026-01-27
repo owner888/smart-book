@@ -1,5 +1,6 @@
 <?php
 
+namespace SmartBook;
 /**
  * Requests - 简洁的 HTTP 客户端
  * 

@@ -1,14 +1,10 @@
 <?php
+namespace SmartBook\Cache;
 /**
  * Redis 缓存服务
  */
-
-namespace SmartBook\Cache;
-
-require_once dirname(__DIR__) . '/Logger.php';
-
+use SmartBook\Logger;
 use Workerman\Redis\Client as RedisClient;
-
 class CacheService
 {
     private static ?RedisClient $redis = null;
@@ -19,7 +15,7 @@ class CacheService
         if (self::$redis !== null) return;
         self::$redis = new RedisClient('redis://' . REDIS_HOST . ':' . REDIS_PORT);
         self::$connected = true;
-        \Logger::info("Redis 连接成功");
+        Logger::info("Redis 连接成功");
     }
     
     public static function getRedis(): ?RedisClient { return self::$redis; }

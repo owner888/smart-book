@@ -1,15 +1,11 @@
 <?php
+namespace SmartBook\MCP;
 /**
  * MCP 工具管理器
  * 从 config/mcp.json 加载配置（兼容 Cline 格式）
  */
-
-namespace SmartBook\MCP;
-
+use SmartBook\Logger;
 use SmartBook\Http\Handlers\ConfigHandler;
-
-require_once dirname(__DIR__) . '/Logger.php';
-
 class ToolManager
 {
     private static array $tools = [];
@@ -158,15 +154,15 @@ class ToolManager
                         $enabledTools[] = "{$serverName}:{$toolName}";
                     }
                     
-                    \Logger::info("MCP 服务器 '{$serverName}' 已连接，" . count($tools) . " 个工具");
+                    Logger::info("MCP 服务器 '{$serverName}' 已连接，" . count($tools) . " 个工具");
                 } catch (\Exception $e) {
-                    \Logger::warn("MCP 服务器 '{$serverName}' 连接失败: " . $e->getMessage());
+                    Logger::warn("MCP 服务器 '{$serverName}' 连接失败: " . $e->getMessage());
                 }
             }
         }
         
         if (!empty($enabledTools)) {
-            \Logger::info("MCP 工具已加载: " . implode(', ', $enabledTools));
+            Logger::info("MCP 工具已加载: " . implode(', ', $enabledTools));
         }
     }
     

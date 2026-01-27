@@ -1,5 +1,7 @@
 <?php
 
+namespace SmartBook;
+
 /**
  * Logger Engine Interface
  * 
