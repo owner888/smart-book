@@ -221,16 +221,8 @@ class ConfigHandler
             }
         }
         
-        // 构建书籍问答的系统提示词
-        $bookSystemPrompt = $libraryPrompts['book_intro'] 
-            . str_replace(['{which}', '{title}', '{authors}'], ['', $bookTitle, $bookAuthors], $libraryPrompts['book_template']) 
-            . $libraryPrompts['separator']
-            . $libraryPrompts['markdown_instruction']
-            . ($libraryPrompts['unknown_single'] ?? '')
-            . ' ' . str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
-        
         // 从配置读取助手列表
-        $assistantConfigs = ['chat', 'book', 'continue'];
+        $assistantConfigs = ['chat', 'ask', 'continue'];
         $assistants = [];
         
         foreach ($assistantConfigs as $assistantId) {
@@ -240,14 +232,31 @@ class ConfigHandler
             
             // 替换变量
             $description = str_replace('{title}', $bookTitle, $config['description'] ?? '');
-            $systemPrompt = $config['system'] ?? '';
             
-            // 特殊处理：书籍问答使用构建的系统提示词
-            if ($assistantId === 'book') {
-                $systemPrompt = $bookSystemPrompt;
-            } else {
+            // 构建系统提示词
+            $systemPrompt = $config['system_prompt'] ?? '';
+            
+            if ($assistantId === 'ask') {
+                // 书籍问答：system_prompt 是模板，需要动态构建
+                $languageInstruction = str_replace('{language}', $prompts['language']['default'], $prompts['language']['instruction']);
+                
+                $systemPrompt = str_replace(
+                    ['{book_intro}', '{book_template}', '{separator}', '{markdown_instruction}', '{unknown_single}', '{language_instruction}'],
+                    [
+                        $libraryPrompts['book_intro'],
+                        str_replace(['{which}', '{title}', '{authors}'], ['', $bookTitle, $bookAuthors], $libraryPrompts['book_template']),
+                        $libraryPrompts['separator'],
+                        $libraryPrompts['markdown_instruction'],
+                        $libraryPrompts['unknown_single'] ?? '',
+                        $languageInstruction
+                    ],
+                    $systemPrompt
+                );
+            } elseif ($assistantId === 'continue') {
+                // 续写助手：替换变量 {title}
                 $systemPrompt = str_replace('{title}', $bookTitle, $systemPrompt);
             }
+            // chat 助手：不需要处理（system_prompt 为空字符串）
             
             $assistants[] = [
                 'id' => $assistantId,
