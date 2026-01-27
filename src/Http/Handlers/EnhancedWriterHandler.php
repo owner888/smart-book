@@ -79,6 +79,9 @@ class EnhancedWriterHandler
         $prompt = $body['prompt'] ?? '';
         $customInstructions = $body['custom_instructions'] ?? '';
         $requestedModel = $body['model'] ?? 'gemini-2.5-flash';
+        $assistantId = $body['assistant_id'] ?? 'continue';
+        
+        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$requestedModel} | 📚 Book: {$bookFile}");
         
         if (empty($bookFile)) {
             return ['error' => 'Missing book parameter'];

@@ -30,6 +30,10 @@ class ChatHandler
         $ragEnabled = $body['rag'] ?? true;
         $keywordWeight = floatval($body['keyword_weight'] ?? 0.5);
         $model = $body['model'] ?? 'gemini-2.5-flash';
+        $assistantId = $body['assistant_id'] ?? 'ask';
+        $bookId = $body['book_id'] ?? '';
+        
+        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model}" . ($bookId ? " | 📚 Book: {$bookId}" : ''));
         
         if (empty($question)) return ['error' => 'Missing question'];
         
@@ -167,6 +171,8 @@ class ChatHandler
         $engine = $body['engine'] ?? 'google';
         $model = $body['model'] ?? 'gemini-2.5-flash';
         $assistantId = $body['assistant_id'] ?? 'chat';  // 新增：获取助手 ID
+        
+        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model}");
         
         $clientSummary = $body['summary'] ?? null;
         $clientHistory = $body['history'] ?? null;
