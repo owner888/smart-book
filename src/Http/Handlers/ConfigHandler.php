@@ -206,7 +206,8 @@ class ConfigHandler
         $bookDescription = str_replace('{title}', $bookTitle, $prompts['book']['description'] ?? '我是书籍问答助手');
         
         return [
-            'chat' => [
+            [
+                'id' => 'chat',
                 'name' => '通用聊天',
                 'avatar' => '💬',
                 'color' => '#2196f3',
@@ -214,7 +215,8 @@ class ConfigHandler
                 'systemPrompt' => '',
                 'action' => 'chat',
             ],
-            'book' => [
+            [
+                'id' => 'book',
                 'name' => '书籍问答',
                 'avatar' => '📚',
                 'color' => '#4caf50',
@@ -222,7 +224,8 @@ class ConfigHandler
                 'systemPrompt' => $bookSystemPrompt,
                 'action' => 'ask',
             ],
-            'continue' => [
+            [
+                'id' => 'continue',
                 'name' => '续写小说',
                 'avatar' => '✍️',
                 'color' => '#ff9800',
