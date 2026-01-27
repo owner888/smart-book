@@ -179,7 +179,7 @@ class BookHandler
             // 检查内容长度（粗略估算 tokens，中文约 1.5 字符/token，英文约 4 字符/token）
             $estimatedTokens = intval(mb_strlen($content) / 2);
             if ($estimatedTokens < 4096) {
-                Logger::warning("书籍内容过短，无法创建 Context Cache: {$bookFile} (估算 {$estimatedTokens} tokens < 4096 最低要求)");
+                Logger::info("书籍内容过短，无法创建 Context Cache: {$bookFile} (估算 {$estimatedTokens} tokens < 4096 最低要求)");
                 return ['exists' => false, 'created' => false, 'error' => "书籍内容过短（约 {$estimatedTokens} tokens），Context Cache 最低要求 4096 tokens"];
             }
             

@@ -586,9 +586,78 @@ class ChatHandler
             $cacheClient = new GeminiContextCache(GEMINI_API_KEY, $model);
             $bookCache = $cacheClient->getBookCache($contentMd5);
             
+            // 如果 Context Cache 不存在，提取书籍内容直接问答（适用于小书籍）
             if (!$bookCache) {
-                StreamHelper::sendSSE($connection, 'error', "Context Cache 不存在，请重新选择书籍");
-                $connection->close();
+                Logger::info("Context Cache 不存在，使用直接问答模式（书籍可能过小）");
+                
+                // 提取书籍内容
+                $ext = strtolower(pathinfo($bookPath, PATHINFO_EXTENSION));
+                if ($ext === 'epub') {
+                    $bookContent = \SmartBook\Parser\EpubParser::extractText($bookPath);
+                } else {
+                    $bookContent = file_get_contents($bookPath);
+                }
+                
+                if (empty($bookContent)) {
+                    StreamHelper::sendSSE($connection, 'error', "无法读取书籍内容");
+                    $connection->close();
+                    return null;
+                }
+                
+                // 获取书名
+                $bookTitle = pathinfo($bookPath, PATHINFO_FILENAME);
+                if ($ext === 'epub') {
+                    $metadata = \SmartBook\Parser\EpubParser::extractMetadata($bookPath);
+                    if (!empty($metadata['title'])) {
+                        $bookTitle = $metadata['title'];
+                    }
+                }
+                
+                StreamHelper::sendSSE($connection, 'sources', json_encode([
+                    ['text' => "书籍全文（内容过短，无法使用 Context Cache）", 'score' => 100]
+                ], JSON_UNESCAPED_UNICODE));
+                
+                // 构建系统提示词
+                $systemPrompt = "你是一个专业的书籍分析助手。以下是书籍《{$bookTitle}》的完整内容：\n\n{$bookContent}\n\n请基于以上书籍内容，准确回答用户的问题。";
+                
+                $asyncGemini = AIService::getAsyncGemini($model);
+                $isConnectionAlive = true;
+                
+                $asyncGemini->chatStreamAsync(
+                    [
+                        ['role' => 'system', 'content' => $systemPrompt],
+                        ['role' => 'user', 'content' => $question]
+                    ],
+                    function ($text, $isThought) use ($connection, &$isConnectionAlive) {
+                        if (!$isConnectionAlive) return;
+                        if ($text) {
+                            if (!StreamHelper::sendSSE($connection, $isThought ? 'thinking' : 'content', $text)) {
+                                $isConnectionAlive = false;
+                            }
+                        }
+                    },
+                    function ($fullAnswer, $usageMetadata = null, $usedModel = null) use ($connection, $model, &$isConnectionAlive) {
+                        if (!$isConnectionAlive) return;
+                        if ($usageMetadata) {
+                            $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
+                            StreamHelper::sendSSE($connection, 'usage', json_encode([
+                                'tokens' => $costInfo['tokens'],
+                                'cost' => $costInfo['cost'],
+                                'cost_formatted' => TokenCounter::formatCost($costInfo['cost']),
+                                'currency' => $costInfo['currency'],
+                                'model' => $usedModel ?? $model
+                            ], JSON_UNESCAPED_UNICODE));
+                        }
+                        StreamHelper::sendSSE($connection, 'done', '');
+                        $connection->close();
+                    },
+                    function ($error) use ($connection, &$isConnectionAlive) {
+                        if (!$isConnectionAlive) return;
+                        StreamHelper::sendSSE($connection, 'error', $error);
+                        $connection->close();
+                    }
+                );
+                
                 return null;
             }
             
@@ -699,9 +768,81 @@ class ChatHandler
             $cacheClient = new GeminiContextCache(GEMINI_API_KEY, $model);
             $bookCache = $cacheClient->getBookCache($contentMd5);
             
+            // 如果 Context Cache 不存在，提取书籍内容直接续写（适用于小书籍）
             if (!$bookCache) {
-                StreamHelper::sendSSE($connection, 'error', "Context Cache 不存在，请重新选择书籍");
-                $connection->close();
+                Logger::info("Context Cache 不存在，使用直接续写模式（书籍可能过小）");
+                
+                // 提取书籍内容
+                $ext = strtolower(pathinfo($bookPath, PATHINFO_EXTENSION));
+                if ($ext === 'epub') {
+                    $bookContent = \SmartBook\Parser\EpubParser::extractText($bookPath);
+                } else {
+                    $bookContent = file_get_contents($bookPath);
+                }
+                
+                if (empty($bookContent)) {
+                    StreamHelper::sendSSE($connection, 'error', "无法读取书籍内容");
+                    $connection->close();
+                    return null;
+                }
+                
+                // 获取书名
+                $bookTitle = pathinfo($bookPath, PATHINFO_FILENAME);
+                if ($ext === 'epub') {
+                    $metadata = \SmartBook\Parser\EpubParser::extractMetadata($bookPath);
+                    if (!empty($metadata['title'])) {
+                        $bookTitle = $metadata['title'];
+                    }
+                }
+                
+                StreamHelper::sendSSE($connection, 'sources', json_encode([
+                    ['text' => "书籍全文（内容过短，无法使用 Context Cache）", 'score' => 100]
+                ], JSON_UNESCAPED_UNICODE));
+                
+                // 构建系统提示词 - 续写风格
+                $prompts = $GLOBALS['config']['prompts'];
+                $continuePrompts = $prompts['continue'] ?? [];
+                $baseSystemPrompt = str_replace('{title}', $bookTitle, $continuePrompts['system'] ?? '');
+                $systemPrompt = $baseSystemPrompt . "\n\n以下是书籍《{$bookTitle}》的完整内容：\n\n{$bookContent}\n\n请基于以上书籍的风格和内容进行续写。";
+                
+                $asyncGemini = AIService::getAsyncGemini($model);
+                $isConnectionAlive = true;
+                
+                $asyncGemini->chatStreamAsync(
+                    [
+                        ['role' => 'system', 'content' => $systemPrompt],
+                        ['role' => 'user', 'content' => $prompt]
+                    ],
+                    function ($text, $isThought) use ($connection, &$isConnectionAlive) {
+                        if (!$isConnectionAlive) return;
+                        if ($text && !$isThought) {
+                            if (!StreamHelper::sendSSE($connection, 'content', $text)) {
+                                $isConnectionAlive = false;
+                            }
+                        }
+                    },
+                    function ($fullAnswer, $usageMetadata = null, $usedModel = null) use ($connection, $model, &$isConnectionAlive) {
+                        if (!$isConnectionAlive) return;
+                        if ($usageMetadata) {
+                            $costInfo = TokenCounter::calculateCost($usageMetadata, $usedModel ?? $model);
+                            StreamHelper::sendSSE($connection, 'usage', json_encode([
+                                'tokens' => $costInfo['tokens'],
+                                'cost' => $costInfo['cost'],
+                                'cost_formatted' => TokenCounter::formatCost($costInfo['cost']),
+                                'currency' => $costInfo['currency'],
+                                'model' => $usedModel ?? $model
+                            ], JSON_UNESCAPED_UNICODE));
+                        }
+                        StreamHelper::sendSSE($connection, 'done', '');
+                        $connection->close();
+                    },
+                    function ($error) use ($connection, &$isConnectionAlive) {
+                        if (!$isConnectionAlive) return;
+                        StreamHelper::sendSSE($connection, 'error', $error);
+                        $connection->close();
+                    }
+                );
+                
                 return null;
             }
             
