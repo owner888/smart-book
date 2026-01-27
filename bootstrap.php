@@ -64,6 +64,9 @@ define('GEMINI_API_KEY', $GLOBALS['config']['app']['ai']['gemini']['api_key']);
 define('DEFAULT_BOOK_CACHE', $GLOBALS['config']['app']['books']['default']['cache']);
 define('DEFAULT_BOOK_PATH', $GLOBALS['config']['app']['books']['default']['path']);
 
+// 书籍目录常量
+define('BOOKS_DIR', __DIR__ . '/books');
+
 // 搜索配置常量
 define('DEFAULT_TOP_K', $GLOBALS['config']['app']['search']['default_top_k']);  // 默认搜索返回数量
 

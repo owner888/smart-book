@@ -28,8 +28,7 @@ class EnhancedWriterHandler
         
         Logger::info('[EnhancedWriter] 准备续写环境', ['book' => $bookFile, 'model' => $model]);
         
-        $booksDir = dirname(__DIR__, 3) . '/books';
-        $bookPath = $booksDir . '/' . $bookFile;
+        $bookPath = BOOKS_DIR . '/' . $bookFile;
         
         ErrorHandler::requireFile($bookPath, '书籍文件');
         
@@ -100,8 +99,7 @@ class EnhancedWriterHandler
         
         try {
             // 获取书籍路径和内容
-            $booksDir = dirname(__DIR__, 3) . '/books';
-            $bookPath = $booksDir . '/' . $bookFile;
+            $bookPath = BOOKS_DIR . '/' . $bookFile;
             
             if (!file_exists($bookPath)) {
                 StreamHelper::sendSSE($connection, 'error', "书籍文件不存在: {$bookFile}");

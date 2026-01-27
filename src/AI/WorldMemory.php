@@ -41,8 +41,7 @@ class WorldMemory
      */
     private function getStoragePath(string $bookFile): string
     {
-        $booksDir = dirname(__DIR__, 2) . '/books';
-        return $booksDir . '/' . pathinfo($bookFile, PATHINFO_FILENAME) . '.world.json';
+        return BOOKS_DIR . '/' . pathinfo($bookFile, PATHINFO_FILENAME) . '.world.json';
     }
     
     /**

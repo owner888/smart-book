@@ -88,8 +88,7 @@ class ContextCacheHandler
             'ttl' => $ttl
         ]);
         
-        $booksDir = dirname(__DIR__, 3) . '/books';
-        $bookPath = $booksDir . '/' . $bookFile;
+        $bookPath = BOOKS_DIR . '/' . $bookFile;
         
         ErrorHandler::requireFile($bookPath, '书籍文件');
         

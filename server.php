@@ -34,7 +34,7 @@ use SmartBook\MCP\StreamableHttpServer;
 // 当前使用文件持久化来存储任务状态，支持服务器重启后恢复
 
 // 启动前检查并自动创建书籍索引
-$indexer = new BookIndexer(__DIR__ . '/books', GEMINI_API_KEY);
+$indexer = new BookIndexer(BOOKS_DIR, GEMINI_API_KEY);
 $indexer->checkAndIndexAll();
 
 // ===================================
@@ -87,7 +87,7 @@ $mcpWorker->name = 'MCP-Server';
 $mcpServer = null;
 
 $mcpWorker->onWorkerStart = function() use (&$mcpServer) {
-    $mcpServer = new StreamableHttpServer(__DIR__ . '/books', false);
+    $mcpServer = new StreamableHttpServer(BOOKS_DIR, false);
 };
 
 // 手动处理 HTTP/SSE 请求

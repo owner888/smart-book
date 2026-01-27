@@ -64,8 +64,7 @@ class EnhancedStoryWriter
     public function searchStyleSamples(string $userPrompt, string $bookFile, int $topK = DEFAULT_TOP_K): array
     {
         // 获取书籍索引缓存路径
-        $booksDir = dirname(__DIR__, 2) . '/books';
-        $indexPath = $booksDir . '/' . pathinfo($bookFile, PATHINFO_FILENAME) . '.index.json';
+        $indexPath = BOOKS_DIR . '/' . pathinfo($bookFile, PATHINFO_FILENAME) . '.index.json';
         
         if (!file_exists($indexPath)) {
             // 如果没有索引，返回空数组（回退到随机样本）

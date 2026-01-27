@@ -20,7 +20,7 @@ class BookHandler
      */
     public static function getBooks(): array
     {
-        $booksDir = dirname(__DIR__, 3) . '/books';
+        $booksDir = BOOKS_DIR;
         $books = [];
         $currentBook = null;
         
@@ -100,15 +100,14 @@ class BookHandler
             return ['error' => 'Missing book parameter'];
         }
         
-        $booksDir = dirname(__DIR__, 3) . '/books';
-        $bookPath = $booksDir . '/' . $bookFile;
+        $bookPath = BOOKS_DIR . '/' . $bookFile;
         
         if (!file_exists($bookPath)) {
             return ['error' => 'Book not found: ' . $bookFile];
         }
         
         $baseName = pathinfo($bookFile, PATHINFO_FILENAME);
-        $indexPath = $booksDir . '/' . $baseName . '_index.json';
+        $indexPath = BOOKS_DIR . '/' . $baseName . '_index.json';
         
         $GLOBALS['selected_book'] = [
             'path' => $bookPath,
@@ -221,13 +220,12 @@ class BookHandler
             }
             
             // 保存到 books 目录
-            $booksDir = dirname(__DIR__, 3) . '/books';
-            if (!is_dir($booksDir)) {
-                Logger::info("📁 创建 books 目录: {$booksDir}");
-                mkdir($booksDir, 0755, true);
+            if (!is_dir(BOOKS_DIR)) {
+                Logger::info("📁 创建 books 目录: " . BOOKS_DIR);
+                mkdir(BOOKS_DIR, 0755, true);
             }
             
-            $destPath = $booksDir . '/' . $originalName;
+            $destPath = BOOKS_DIR . '/' . $originalName;
             
             // 如果文件已存在，直接返回成功
             if (file_exists($destPath)) {
@@ -246,13 +244,36 @@ class BookHandler
                 return ['success' => false, 'error' => '临时文件不存在'];
             }
             
+            // 检查临时文件是否可读
+            if (!is_readable($tmpPath)) {
+                Logger::error("❌ 临时文件不可读: {$tmpPath}");
+                return ['success' => false, 'error' => '临时文件不可读'];
+            }
+            
+            // 检查目标目录是否可写
+            if (!is_writable(BOOKS_DIR)) {
+                Logger::error("❌ 目标目录不可写: " . BOOKS_DIR);
+                return ['success' => false, 'error' => '目标目录不可写'];
+            }
+            
             Logger::info("💾 移动文件: {$tmpPath} -> {$destPath}");
+            Logger::info("📂 目录权限: " . substr(sprintf('%o', fileperms(BOOKS_DIR)), -4));
+            Logger::info("📄 临时文件大小: " . filesize($tmpPath) . " bytes");
             
             // 移动文件
             if (!move_uploaded_file($tmpPath, $destPath)) {
                 $error = error_get_last();
                 Logger::error("❌ 文件保存失败: " . json_encode($error));
-                return ['success' => false, 'error' => '文件保存失败'];
+                
+                // 尝试使用 copy 作为备选方案
+                Logger::info("🔄 尝试使用 copy 方法...");
+                if (copy($tmpPath, $destPath)) {
+                    @unlink($tmpPath);
+                    Logger::info("✅ 使用 copy 方法成功");
+                } else {
+                    Logger::error("❌ copy 方法也失败");
+                    return ['success' => false, 'error' => '文件保存失败'];
+                }
             }
             
             Logger::info("✅ 书籍上传成功: {$originalName}");
@@ -284,8 +305,7 @@ class BookHandler
             return ['error' => 'Missing book parameter'];
         }
         
-        $booksDir = dirname(__DIR__, 3) . '/books';
-        $bookPath = $booksDir . '/' . $bookFile;
+        $bookPath = BOOKS_DIR . '/' . $bookFile;
         
         if (!file_exists($bookPath)) {
             return ['error' => 'Book not found: ' . $bookFile];
@@ -293,7 +313,7 @@ class BookHandler
         
         $baseName = pathinfo($bookFile, PATHINFO_FILENAME);
         $ext = strtolower(pathinfo($bookFile, PATHINFO_EXTENSION));
-        $indexPath = $booksDir . '/' . $baseName . '_index.json';
+        $indexPath = BOOKS_DIR . '/' . $baseName . '_index.json';
         
         $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
         $connection->send(new Response(200, $headers, ''));
