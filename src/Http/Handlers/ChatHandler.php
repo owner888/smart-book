@@ -553,6 +553,8 @@ class ChatHandler
         $bookId = $body['book_id'] ?? '';
         $model = $body['model'] ?? 'gemini-2.0-flash';
         $assistantId = $body['assistant_id'] ?? 'ask';
+        $chatId = $body['chat_id'] ?? '';  // 新增：支持 chat_id
+        $clientHistory = $body['history'] ?? null;  // 新增：支持客户端传入历史
         
         Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model} | 📚 Book: {$bookId} (Context Cache)");
         
@@ -677,12 +679,27 @@ class ChatHandler
                 ['text' => "Context Cache（{$tokenCount} tokens，无需 embedding）", 'score' => 100]
             ], JSON_UNESCAPED_UNICODE));
             
+            // 构建消息列表（包含对话历史）
+            $messages = [];
+            
+            // 如果客户端传入了历史，直接使用
+            if (is_array($clientHistory)) {
+                foreach ($clientHistory as $msg) {
+                    if (isset($msg['role']) && isset($msg['content'])) {
+                        $messages[] = ['role' => $msg['role'], 'content' => $msg['content']];
+                    }
+                }
+            }
+            
+            // 添加当前问题
+            $messages[] = ['role' => 'user', 'content' => $question];
+            
             // 使用 Context Cache 直接问答
             $asyncGemini = AIService::getAsyncGemini($cacheModel);
             $isConnectionAlive = true;
             
             $asyncGemini->chatStreamAsync(
-                [['role' => 'user', 'content' => $question]],
+                $messages,
                 function ($text, $isThought) use ($connection, &$isConnectionAlive) {
                     if (!$isConnectionAlive) return;
                     if ($text) {
