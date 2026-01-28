@@ -694,6 +694,13 @@ class ChatHandler
             // 添加当前问题
             $messages[] = ['role' => 'user', 'content' => $question];
             
+            // 📊 输出完整的请求数据
+            Logger::info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Logger::info("📤 发送给 Gemini 的完整请求数据");
+            Logger::info("Model: {$cacheModel} | Cache: {$bookCache['name']} | Tokens: {$tokenCount}");
+            Logger::info(print_r($messages, true));
+            Logger::info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            
             // 使用 Context Cache 直接问答
             $asyncGemini = AIService::getAsyncGemini($cacheModel);
             $isConnectionAlive = true;
