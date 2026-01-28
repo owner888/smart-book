@@ -45,59 +45,101 @@ Router::middleware(new ResponseMiddleware(true, [
 
 Router::group('/api', function() {
     
-    // 基础信息
+    // ===================================
+    // 基础 API
+    // ===================================
     Router::get('', fn($ctx) => ['status' => 'ok', 'message' => 'Smart Book AI API']);
     Router::get('/health', fn($ctx) => ['status' => 'ok', 'timestamp' => date('Y-m-d H:i:s'), 'redis' => \SmartBook\Cache\CacheService::isConnected()]);
-    Router::get('/config', fn($ctx) => ConfigHandler::getConfig());
     
-    // 模型和助手
-    Router::get('/models', fn($ctx) => ConfigHandler::getModels());
-    Router::get('/assistants', fn($ctx) => ConfigHandler::getAssistants());
-    
-    // 书籍管理
-    Router::get('/books', fn($ctx) => BookHandler::getBooks());
-    Router::post('/books/select', fn($ctx) => BookHandler::selectBook($ctx));
-    Router::post('/books/upload', fn($ctx) => BookHandler::uploadBook($ctx));
-    Router::post('/books/index', fn($ctx) => BookHandler::indexBook($ctx));
-    
-    // MCP 服务器
-    Router::any('/mcp/servers', function($ctx) {
-        return $ctx->method() === 'POST' ? MCPHandler::saveServers($ctx->request()) : MCPHandler::getServers();
+    // ===================================
+    // 配置管理 (/api/config/*)
+    // ===================================
+    Router::group('/config', function() {
+        Router::get('', fn($ctx) => ConfigHandler::getConfig());
+        Router::get('/models', fn($ctx) => ConfigHandler::getModels());
+        Router::get('/assistants', fn($ctx) => ConfigHandler::getAssistants());
     });
-    Router::get('/mcp/status', fn($ctx) => ['enabled' => true, 'url' => 'http://' . MCP_SERVER_HOST . ':' . MCP_SERVER_PORT . '/mcp']);
     
-    // 缓存
-    Router::get('/cache/stats', fn($ctx) => CacheHandler::getStats($ctx));
+    // ===================================
+    // 书籍管理 (/api/books/*)
+    // ===================================
+    Router::group('/books', function() {
+        Router::get('', fn($ctx) => BookHandler::getBooks());
+        Router::post('/select', fn($ctx) => BookHandler::selectBook($ctx));
+        Router::post('/upload', fn($ctx) => BookHandler::uploadBook($ctx));
+        Router::post('/index', fn($ctx) => BookHandler::indexBook($ctx));
+    });
     
-    // 流式 API
-    // Router::post('/stream/ask', fn($ctx) => ChatHandler::streamAskAsync($ctx));
-    Router::post('/stream/ask', fn($ctx) => ChatHandler::streamAskWithCache($ctx)); // 基于 Context Cache（无需 RAG）
-    Router::post('/stream/chat', fn($ctx) => ChatHandler::streamChat($ctx));
-    // Router::post('/stream/continue', fn($ctx) => ChatHandler::streamContinue($ctx)); // 旧的 RAG 方式
-    Router::post('/stream/continue', fn($ctx) => ChatHandler::streamContinueWithCache($ctx)); // 基于 Context Cache（无需 RAG）
-    Router::post('/stream/enhanced-continue', fn($ctx) => EnhancedWriterHandler::streamContinue($ctx));
-    Router::post('/stream/analyze-characters', fn($ctx) => EnhancedWriterHandler::analyzeCharacters($ctx));
+    // ===================================
+    // 流式聊天 (/api/stream/*)
+    // ===================================
+    Router::group('/stream', function() {
+        // 书籍问答（基于 Context Cache）
+        Router::post('/ask', fn($ctx) => ChatHandler::streamAskWithCache($ctx));
+        
+        // 通用聊天
+        Router::post('/chat', fn($ctx) => ChatHandler::streamChat($ctx));
+        
+        // 小说续写（基于 Context Cache）
+        Router::post('/continue', fn($ctx) => ChatHandler::streamContinueWithCache($ctx));
+        
+        // 增强版续写
+        Router::post('/enhanced-continue', fn($ctx) => EnhancedWriterHandler::streamContinue($ctx));
+        Router::post('/analyze-characters', fn($ctx) => EnhancedWriterHandler::analyzeCharacters($ctx));
+    });
     
-    // TTS 语音合成
-    Router::post('/tts/synthesize', fn($ctx) => TTSHandler::synthesize($ctx));
-    Router::get('/tts/voices', fn($ctx) => TTSHandler::getVoices());
-    Router::get('/tts/list-api-voices', fn($ctx) => TTSHandler::listAPIVoices());
+    // ===================================
+    // 增强版续写 (/api/enhanced-writer/*)
+    // ===================================
+    Router::group('/enhanced-writer', function() {
+        Router::post('/prepare', fn($ctx) => EnhancedWriterHandler::prepare($ctx));
+        Router::post('/status', fn($ctx) => EnhancedWriterHandler::getStatus($ctx));
+    });
     
-    // ASR 语音识别
-    Router::post('/asr/recognize', fn($ctx) => ASRHandler::recognize($ctx));
-    Router::get('/asr/languages', fn($ctx) => ASRHandler::getLanguages());
+    // ===================================
+    // TTS 语音合成 (/api/tts/*)
+    // ===================================
+    Router::group('/tts', function() {
+        Router::post('/synthesize', fn($ctx) => TTSHandler::synthesize($ctx));
+        Router::get('/voices', fn($ctx) => TTSHandler::getVoices());
+        Router::get('/list-api-voices', fn($ctx) => TTSHandler::listAPIVoices());
+    });
     
-    // Context Cache 管理
-    Router::get('/context-cache/list', fn($ctx) => ContextCacheHandler::list());
-    Router::get('/context-cache/stats', fn($ctx) => BookHandler::getCacheStatistics($ctx));
-    Router::post('/context-cache/create', fn($ctx) => ContextCacheHandler::create($ctx));
-    Router::post('/context-cache/create-for-book', fn($ctx) => ContextCacheHandler::createForBook($ctx));
-    Router::post('/context-cache/delete', fn($ctx) => ContextCacheHandler::delete($ctx));
-    Router::post('/context-cache/get', fn($ctx) => ContextCacheHandler::get($ctx));
+    // ===================================
+    // ASR 语音识别 (/api/asr/*)
+    // ===================================
+    Router::group('/asr', function() {
+        Router::post('/recognize', fn($ctx) => ASRHandler::recognize($ctx));
+        Router::get('/languages', fn($ctx) => ASRHandler::getLanguages());
+    });
     
-    // 增强版续写
-    Router::post('/enhanced-writer/prepare', fn($ctx) => EnhancedWriterHandler::prepare($ctx));
-    Router::post('/enhanced-writer/status', fn($ctx) => EnhancedWriterHandler::getStatus($ctx));
+    // ===================================
+    // 缓存管理 (/api/cache/*)
+    // ===================================
+    Router::group('/cache', function() {
+        // Redis 缓存统计
+        Router::get('/stats', fn($ctx) => CacheHandler::getStats($ctx));
+        
+        // Context Cache 管理
+        Router::group('/context', function() {
+            Router::get('/list', fn($ctx) => ContextCacheHandler::list());
+            Router::get('/stats', fn($ctx) => BookHandler::getCacheStatistics($ctx));
+            Router::post('/create', fn($ctx) => ContextCacheHandler::create($ctx));
+            Router::post('/create-for-book', fn($ctx) => ContextCacheHandler::createForBook($ctx));
+            Router::post('/delete', fn($ctx) => ContextCacheHandler::delete($ctx));
+            Router::post('/get', fn($ctx) => ContextCacheHandler::get($ctx));
+        });
+    });
+    
+    // ===================================
+    // MCP 服务器管理 (/api/mcp/*)
+    // ===================================
+    Router::group('/mcp', function() {
+        Router::any('/servers', function($ctx) {
+            return $ctx->method() === 'POST' ? MCPHandler::saveServers($ctx->request()) : MCPHandler::getServers();
+        });
+        Router::get('/status', fn($ctx) => ['enabled' => true, 'url' => 'http://' . MCP_SERVER_HOST . ':' . MCP_SERVER_PORT . '/mcp']);
+    });
     
     // ===================================
     // 动态路由示例（带类型验证和安全检查）

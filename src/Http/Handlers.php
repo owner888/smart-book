@@ -118,6 +118,7 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
             return;
         }
         
+        // 路由分发
         $result = Router::dispatch($connection, $request);
         
         if ($result === null) {
