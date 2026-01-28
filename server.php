@@ -27,8 +27,8 @@ use SmartBook\RAG\BookIndexer;
 use SmartBook\AI\AsyncCurlManager;
 use SmartBook\Cache\CacheService;
 use SmartBook\MCP\ToolManager;
-use SmartBook\Http\Handlers\StreamHelper;
 use SmartBook\MCP\StreamableHttpServer;
+use SmartBook\Http\Handlers\StreamHelper;
 
 // 注意: Workerman Task Worker 需要 5.x 版本
 // 当前使用文件持久化来存储任务状态，支持服务器重启后恢复
@@ -58,20 +58,6 @@ $httpWorker->onWorkerStart = function ($worker) {
 $httpWorker->onMessage = function (TcpConnection $connection, Request $request) {
     handleHttpRequest($connection, $request);
 };
-
-// ===================================
-// WebSocket 服务器
-// ===================================
-
-$wsWorker = new Worker('websocket://' . WS_SERVER_LISTEN . ':' . WS_SERVER_PORT);
-$wsWorker->count = 1;
-$wsWorker->name = 'AI-WebSocket-Server';
-
-$wsWorker->onConnect = fn($conn) => null;
-$wsWorker->onMessage = function (TcpConnection $connection, $data) {
-    handleWebSocketMessage($connection, $data);
-};
-$wsWorker->onClose = fn($conn) => null;
 
 // ===================================
 // MCP Server (Streamable HTTP 协议 + SSE 支持)

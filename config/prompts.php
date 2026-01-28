@@ -7,15 +7,6 @@
 
 return [
     // ===================================
-    // 简化版 RAG 系统提示词
-    // ===================================
-    'rag_simple' => [
-        'system_prompt' => '你是一个书籍分析助手。根据以下内容回答问题，使用中文：
-
-{context}',
-    ],
-
-    // ===================================
     // 通用聊天助手
     // ===================================
     'chat' => [
@@ -103,6 +94,31 @@ return [
         'markdown_instruction' => ' When you answer the questions use markdown formatting for the answers wherever possible.',
         'unknown_single' => ' If the specified book is unknown to you instead of answering the following questions just say the book is unknown.',
         'unknown_multiple' => ' If any of the specified books are unknown to you, instead of answering the following questions, just say the books are unknown.',
+        
+        // 额外元数据模板（可选字段）
+        'metadata_fields' => [
+            'publisher' => ' Published by: {publisher}.',
+            'pubdate' => ' Publication date: {pubdate}.',
+            'rating' => ' Rating: {rating}/5.',
+            'identifiers' => ' Identifiers: {identifiers}.',
+            'comments' => "\nSome notes about this book:\n{comments}",
+        ],
+        
+        // 格式化说明（给开发者参考）
+        'formatting' => [
+            'authors' => 'Format: "Author1, Author2 & Author3"',
+            'tags' => 'Format: "Tag1, Tag2, Tag3"',
+            'comments' => 'Convert HTML to Markdown',
+        ],
+        
+        // 使用示例（给开发者参考，展示最终生成的 system prompt）
+        'examples' => [
+            'single_book' => "I wish to discuss the following book. The book is: The Trials of Empire by Richard Swan. It is in the series: The Justice of Kings. It is tagged with the following tags: Fantasy, Legal thriller. \n---------------\n\n When you answer the questions use markdown formatting for the answers wherever possible. If the specified book is unknown to you instead of answering the following questions just say the book is unknown.",
+            
+            'multiple_books' => "I wish to discuss the following books. The first book is: Foundation by Isaac Asimov. It is in the series: Foundation. \n---------------\n\n The next book is: I, Robot by Isaac Asimov. It is tagged with the following tags: Science Fiction, Robots. \n---------------\n\n When you answer the questions use markdown formatting for the answers wherever possible. If any of the specified books are unknown to you, instead of answering the following questions, just say the books are unknown.",
+            
+            'with_metadata' => "I wish to discuss the following book. The book is: The Name of the Wind by Patrick Rothfuss. It is in the series: The Kingkiller Chronicle. It is tagged with the following tags: Fantasy, Magic. Published by: DAW Books. Publication date: 2007-03-27. Rating: 5/5. Identifiers: ISBN: 9780756404079, ASIN: B0010SKUYM.\nSome notes about this book:\nThis is the first book in the Kingkiller Chronicle series, telling the story of Kvothe, a legendary figure who becomes an innkeeper. The book uses a frame narrative structure.\n---------------\n\n When you answer the questions use markdown formatting for the answers wherever possible. If the specified book is unknown to you instead of answering the following questions just say the book is unknown.",
+        ],
         
         // 预定义操作
         'actions' => [

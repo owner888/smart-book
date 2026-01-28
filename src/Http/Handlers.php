@@ -18,11 +18,6 @@ use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
 use SmartBook\Http\RequestLogger;
 use SmartBook\Http\Router;
-use SmartBook\AI\AIService;
-use SmartBook\RAG\EmbeddingClient;
-use SmartBook\RAG\VectorStore;
-use SmartBook\Http\Handlers\ConfigHandler;
-use SmartBook\Logger;
 
 // 加载路由定义
 require_once __DIR__ . '/routes.php';
@@ -141,124 +136,12 @@ function handleHttpRequest(TcpConnection $connection, Request $request): void
 }
 
 // ===================================
-// WebSocket 处理
-// ===================================
-
-function handleWebSocketMessage(TcpConnection $connection, string $data): void
-{
-    $request = json_decode($data, true);
-    if (!$request) {
-        $connection->send(json_encode(['error' => 'Invalid JSON']));
-        return;
-    }
-    
-    // 🐛 调试：输出接收到的请求
-    $action = $request['action'] ?? '';
-    $assistantId = $request['assistant_id'] ?? 'unknown';
-    
-    Logger::info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    Logger::info("📥 WebSocket 请求");
-    Logger::info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    Logger::info("🎯 Action: {$action}");
-    Logger::info("🤖 Assistant ID: {$assistantId}");
-    Logger::info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    
-    try {
-        match ($action) {
-            'ask' => streamAsk($connection, $request),
-            'chat' => streamChat($connection, $request),
-            'continue' => streamContinue($connection, $request),
-            default => $connection->send(json_encode(['error' => 'Unknown action']))
-        };
-    } catch (Exception $e) {
-        $connection->send(json_encode(['error' => $e->getMessage()]));
-    }
-}
-
-// ===================================
-// WebSocket 流式处理函数
-// ===================================
-
-// 流式聊天
-function streamChat(TcpConnection $connection, array $request): void
-{
-    $messages = $request['messages'] ?? [];
-    if (empty($messages)) { $connection->send(json_encode(['error' => 'Missing messages'])); return; }
-    
-    $gemini = AIService::getGemini();
-    $gemini->chatStream(
-        $messages,
-        function ($text, $chunk, $isThought) use ($connection) { if (!$isThought && $text) $connection->send(json_encode(['type' => 'content', 'content' => $text])); },
-        ['enableSearch' => false]
-    );
-    $connection->send(json_encode(['type' => 'done']));
-}
-
-// 流式书籍问答助手
-function streamAsk(TcpConnection $connection, array $request): void
-{
-    $question = $request['question'] ?? '';
-    $topK = $request['top_k'] ?? DEFAULT_TOP_K;
-    if (empty($question)) { $connection->send(json_encode(['error' => 'Missing question'])); return; }
-    
-    $currentCache = ConfigHandler::getCurrentBookCache();
-    if (!$currentCache) { $connection->send(json_encode(['error' => 'No book index available'])); return; }
-    
-    $embedder = new EmbeddingClient(GEMINI_API_KEY);
-    $queryEmbedding = $embedder->embedQuery($question);
-    
-    $vectorStore = new VectorStore($currentCache);
-    $results = $vectorStore->hybridSearch($question, $queryEmbedding, $topK, 0.6);
-    
-    $connection->send(json_encode(['type' => 'sources', 'sources' => array_map(fn($r) => ['text' => mb_substr($r['chunk']['text'], 0, 200) . '...', 'score' => round($r['score'] * 100, 1)], $results)]));
-    
-    $chunkLabel = $GLOBALS['config']['prompts']['chunk_label'] ?? '【片段 {index}】';
-    $context = "";
-    foreach ($results as $i => $result) {
-        $label = str_replace('{index}', $i + 1, $chunkLabel);
-        $context .= "{$label}\n" . $result['chunk']['text'] . "\n\n";
-    }
-    
-    $ragSimplePrompt = $GLOBALS['config']['prompts']['rag_simple']['system_prompt'] ?? '';
-    $systemPrompt = str_replace('{context}', $context, $ragSimplePrompt);
-    
-    $gemini = AIService::getGemini();
-    $gemini->chatStream(
-        [['role' => 'system', 'content' => $systemPrompt], ['role' => 'user', 'content' => $question]],
-        function ($text, $chunk, $isThought) use ($connection) { if (!$isThought && $text) $connection->send(json_encode(['type' => 'content', 'content' => $text])); },
-        ['enableSearch' => false]
-    );
-    $connection->send(json_encode(['type' => 'done']));
-}
-
-// 流式续写小说
-function streamContinue(TcpConnection $connection, array $request): void
-{
-    $prompt = $request['prompt'] ?? '';
-    $systemPrompt = $GLOBALS['config']['prompts']['continue']['system'] ?? '';
-    $userPrompt = $prompt ?: ($GLOBALS['config']['prompts']['continue']['default_prompt'] ?? '');
-    
-    $gemini = AIService::getGemini();
-    $gemini->chatStream(
-        [['role' => 'system', 'content' => $systemPrompt], ['role' => 'user', 'content' => $userPrompt]],
-        function ($text, $chunk, $isThought) use ($connection) { if (!$isThought && $text) $connection->send(json_encode(['type' => 'content', 'content' => $text])); },
-        ['enableSearch' => false]
-    );
-    $connection->send(json_encode(['type' => 'done']));
-}
-
-// ===================================
-// Cache Stats
-// ===================================
-
-
-// ===================================
 // 所有业务逻辑已迁移到专业模块
 // ===================================
 // 
 // 已迁移模块列表：
 // - ConfigHandler: 配置管理
-// - ChatHandler: 聊天功能
+// - ChatHandler: 聊天功能（HTTP SSE）
 // - BookHandler: 书籍管理
 // - TTSHandler: 语音合成
 // - ASRHandler: 语音识别
