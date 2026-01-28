@@ -409,4 +409,168 @@ class GeminiContextCache
         
         return $tokens >= $minRequired;
     }
+    
+    /**
+     * 获取缓存使用统计
+     * 
+     * @return array{
+     *   success: bool,
+     *   total_caches: int,
+     *   total_tokens: int,
+     *   estimated_storage_cost: float,
+     *   estimated_hourly_cost: float,
+     *   cache_limit: int,
+     *   usage_percentage: float,
+     *   caches?: array
+     * }
+     */
+    public function getStatistics(): array
+    {
+        $listResult = $this->listCaches();
+        
+        if (!$listResult['success']) {
+            return [
+                'success' => false,
+                'error' => $listResult['error'] ?? 'Failed to get statistics'
+            ];
+        }
+        
+        $caches = $listResult['caches'];
+        $totalCaches = count($caches);
+        $totalTokens = 0;
+        $cacheDetails = [];
+        
+        foreach ($caches as $cache) {
+            $tokens = $cache['usageMetadata']['totalTokenCount'] ?? 0;
+            $totalTokens += $tokens;
+            
+            $expireTime = $cache['expireTime'] ?? null;
+            $createTime = $cache['createTime'] ?? null;
+            $ttlSeconds = 0;
+            
+            if ($expireTime && $createTime) {
+                $expire = strtotime($expireTime);
+                $create = strtotime($createTime);
+                $ttlSeconds = max(0, $expire - time());
+            }
+            
+            $cacheDetails[] = [
+                'name' => $cache['name'] ?? 'Unknown',
+                'displayName' => $cache['displayName'] ?? 'N/A',
+                'tokens' => $tokens,
+                'model' => str_replace('models/', '', $cache['model'] ?? ''),
+                'ttl_remaining_hours' => round($ttlSeconds / 3600, 2),
+                'expire_time' => $expireTime,
+            ];
+        }
+        
+        // 成本估算（Gemini 2.0/2.5 Flash 定价参考）
+        // 缓存创建：$0.000001/token（一次性）
+        // 缓存存储：$0.00000025/token/小时
+        $storageHourlyCost = $totalTokens * 0.00000025;  // 每小时存储成本
+        
+        // 缓存限制
+        $cacheLimit = 1000;  // Gemini API 默认限制
+        $usagePercentage = ($totalCaches / $cacheLimit) * 100;
+        
+        return [
+            'success' => true,
+            'total_caches' => $totalCaches,
+            'total_tokens' => $totalTokens,
+            'estimated_storage_cost' => round($storageHourlyCost, 6),  // 每小时
+            'estimated_daily_cost' => round($storageHourlyCost * 24, 4),  // 每天
+            'estimated_monthly_cost' => round($storageHourlyCost * 24 * 30, 2),  // 每月
+            'cache_limit' => $cacheLimit,
+            'usage_percentage' => round($usagePercentage, 2),
+            'caches' => $cacheDetails,
+        ];
+    }
+    
+    /**
+     * 格式化统计信息为日志字符串
+     */
+    public function formatStatistics(array $stats): string
+    {
+        if (!$stats['success']) {
+            return "缓存统计获取失败: " . ($stats['error'] ?? 'Unknown error');
+        }
+        
+        $lines = [];
+        $lines[] = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+        $lines[] = "📊 Context Cache 使用统计";
+        $lines[] = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+        $lines[] = "📦 缓存数量: {$stats['total_caches']}/{$stats['cache_limit']} ({$stats['usage_percentage']}%)";
+        $lines[] = "🔢 总 Tokens: " . number_format($stats['total_tokens']);
+        $lines[] = "";
+        $lines[] = "💰 预估成本:";
+        $lines[] = "  • 每小时: $" . number_format($stats['estimated_storage_cost'], 6);
+        $lines[] = "  • 每天: $" . number_format($stats['estimated_daily_cost'], 4);
+        $lines[] = "  • 每月: $" . number_format($stats['estimated_monthly_cost'], 2) . " (约 ¥" . number_format($stats['estimated_monthly_cost'] * 7.2, 2) . ")";
+        
+        if ($stats['usage_percentage'] > 80) {
+            $lines[] = "";
+            $lines[] = "⚠️  警告: 缓存使用率超过 80%，建议清理旧缓存";
+        }
+        
+        $lines[] = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+        
+        return implode("\n", $lines);
+    }
+    
+    /**
+     * 清理过期或长期未使用的缓存
+     * 
+     * @param int $daysUnused 清理超过指定天数未使用的缓存
+     * @return array{deleted: int, errors: array}
+     */
+    public function cleanup(int $daysUnused = 7): array
+    {
+        $listResult = $this->listCaches();
+        
+        if (!$listResult['success']) {
+            return ['deleted' => 0, 'errors' => ['Failed to list caches']];
+        }
+        
+        $deleted = 0;
+        $errors = [];
+        $cutoffTime = time() - ($daysUnused * 86400);
+        
+        foreach ($listResult['caches'] as $cache) {
+            $cacheName = $cache['name'] ?? null;
+            if (!$cacheName) continue;
+            
+            // 检查是否应该删除
+            $shouldDelete = false;
+            
+            // 检查过期时间
+            if (isset($cache['expireTime'])) {
+                $expireTime = strtotime($cache['expireTime']);
+                if ($expireTime < time()) {
+                    $shouldDelete = true;
+                }
+            }
+            
+            // 检查创建时间（如果超过指定天数）
+            if (!$shouldDelete && isset($cache['createTime'])) {
+                $createTime = strtotime($cache['createTime']);
+                if ($createTime < $cutoffTime) {
+                    $shouldDelete = true;
+                }
+            }
+            
+            if ($shouldDelete) {
+                $result = $this->delete($cacheName);
+                if ($result['success']) {
+                    $deleted++;
+                } else {
+                    $errors[] = "Failed to delete {$cacheName}: " . ($result['error'] ?? 'Unknown');
+                }
+            }
+        }
+        
+        return [
+            'deleted' => $deleted,
+            'errors' => $errors,
+        ];
+    }
 }

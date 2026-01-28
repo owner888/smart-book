@@ -89,6 +89,7 @@ Router::group('/api', function() {
     
     // Context Cache 管理
     Router::get('/context-cache/list', fn($ctx) => ContextCacheHandler::list());
+    Router::get('/context-cache/stats', fn($ctx) => BookHandler::getCacheStatistics($ctx));
     Router::post('/context-cache/create', fn($ctx) => ContextCacheHandler::create($ctx));
     Router::post('/context-cache/create-for-book', fn($ctx) => ContextCacheHandler::createForBook($ctx));
     Router::post('/context-cache/delete', fn($ctx) => ContextCacheHandler::delete($ctx));

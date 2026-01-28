@@ -6,6 +6,7 @@
 namespace SmartBook\Http\Handlers;
 
 use SmartBook\Http\Context;
+use SmartBook\Http\ErrorHandler;
 use SmartBook\AI\GeminiContextCache;
 use SmartBook\Logger;
 use SmartBook\RAG\DocumentChunker;
@@ -121,6 +122,17 @@ class BookHandler
         
         // 检查并创建 Context Cache
         $cacheStatus = self::ensureContextCache($bookFile, $bookPath, $model, $fileMd5);
+        
+        // 记录缓存使用统计（每次选择书籍时）
+        try {
+            $cacheClient = new \SmartBook\AI\GeminiContextCache(GEMINI_API_KEY, $model);
+            $stats = $cacheClient->getStatistics();
+            if ($stats['success']) {
+                Logger::info($cacheClient->formatStatistics($stats));
+            }
+        } catch (\Exception $e) {
+            // 统计失败不影响主流程
+        }
         
         return [
             'success' => true,
@@ -406,5 +418,34 @@ class BookHandler
             return number_format($bytes / 1024, 2) . ' KB';
         }
         return $bytes . ' B';
+    }
+
+    /**
+     * 获取 Gemini Context Cache 使用统计
+     */
+    public static function getCacheStatistics(Context $ctx): array
+    {
+        $model = $ctx->query('model') ?? 'gemini-2.0-flash';
+        try {
+            $cacheClient = new \SmartBook\AI\GeminiContextCache(GEMINI_API_KEY, $model);
+            $stats = $cacheClient->getStatistics();
+            
+            if (!$stats['success']) {
+                return ErrorHandler::error($stats['error'] ?? 'Failed to get cache statistics');
+            }
+            
+            // 记录格式化的统计信息到日志
+            $log = $cacheClient->formatStatistics($stats);
+            Logger::info($log);
+            
+            // 移除 success 字段，因为 ResponseMiddleware 会自动添加
+            unset($stats['success']);
+            
+            // 将统计数据放入 data 字段
+            return ErrorHandler::success($stats);
+        } catch (\Exception $e) {
+            Logger::error('获取缓存统计失败: ' . $e->getMessage());
+            return ErrorHandler::error($e->getMessage(), 'CACHE_STATS_ERROR');
+        }
     }
 }
