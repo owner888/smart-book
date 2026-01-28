@@ -79,8 +79,10 @@ class EnhancedWriterHandler
         $customInstructions = $body['custom_instructions'] ?? '';
         $requestedModel = $body['model'] ?? 'gemini-2.5-flash';
         $assistantId = $body['assistant_id'] ?? 'continue';
+        $history = $body['history'] ?? [];
+        $summary = $body['summary'] ?? null;
         
-        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$requestedModel} | 📚 Book: {$bookFile}");
+        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$requestedModel} | 📚 Book: {$bookFile} | 📝 History: " . count($history) . " messages");
         
         if (empty($bookFile)) {
             return ['error' => 'Missing book parameter'];
@@ -207,6 +209,8 @@ class EnhancedWriterHandler
                 [
                     'custom_instructions' => $customInstructions,
                     'token_count' => $tokenCount,
+                    'history' => $history,          // 对话历史
+                    'summary' => $summary,          // 对话摘要
                 ]
             );
             

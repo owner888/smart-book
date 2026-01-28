@@ -157,7 +157,14 @@ class GeminiContextCache
         }
         
         $displayName = "book:{$cacheMd5}";
-        $systemInstruction = "你是一个专业的书籍分析助手。以下是书籍《{$bookFile}》的完整内容，请基于书籍内容回答用户问题。";
+        
+        // 使用多语言配置构建系统指令
+        $prompts = $GLOBALS['config']['prompts'] ?? [];
+        $languageConfig = $prompts['language'] ?? [];
+        $language = $languageConfig['default'] ?? 'Chinese';
+        $languageInstruction = str_replace('{language}', $language, $languageConfig['instruction'] ?? 'Respond in {language}.');
+        
+        $systemInstruction = "You are a professional book analysis assistant. Below is the complete content of the book \"{$bookFile}\". Please answer user questions based on the book content. {$languageInstruction}";
         
         $result = $this->create($bookContent, $displayName, $systemInstruction, $ttl);
         

@@ -345,11 +345,30 @@ class EnhancedStoryWriter
             }
         }
         
-        // 构建消息
+        // 构建消息（支持对话历史）
+        $history = $options['history'] ?? [];
+        $summary = $options['summary'] ?? null;
+        
         $messages = [
             ['role' => 'system', 'content' => $systemPrompt],
-            ['role' => 'user', 'content' => $prompt],
         ];
+        
+        // 如果有摘要，添加摘要
+        if ($summary) {
+            $messages[] = ['role' => 'system', 'content' => "【对话历史摘要】\n{$summary}\n"];
+        }
+        
+        // 添加历史消息（最近10条）
+        foreach ($history as $msg) {
+            $role = $msg['role'] ?? 'user';
+            $content = $msg['content'] ?? '';
+            if ($role && $content) {
+                $messages[] = ['role' => $role, 'content' => $content];
+            }
+        }
+        
+        // 添加当前用户问题
+        $messages[] = ['role' => 'user', 'content' => $prompt];
         
         // 调用 AI（使用 Context Cache）
         $this->gemini->chatStreamAsync(
