@@ -97,7 +97,6 @@ class DeepgramTTSClient
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
         
         if ($error) {
             throw new \Exception("Deepgram TTS 请求失败: {$error}");
