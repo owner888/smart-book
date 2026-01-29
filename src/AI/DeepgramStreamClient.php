@@ -144,14 +144,26 @@ class DeepgramStreamClient
     private function handleMessage(string $data): void
     {
         try {
+            // 记录原始消息
+            Logger::debug('[Deepgram Stream] 收到消息', [
+                'data' => substr($data, 0, 500) // 只记录前500字符
+            ]);
+            
             $message = json_decode($data, true);
             
             if (!$message) {
+                Logger::warn('[Deepgram Stream] 无法解析消息为 JSON', [
+                    'data' => substr($data, 0, 200)
+                ]);
                 return;
             }
             
+            // 记录消息类型
+            $messageType = $message['type'] ?? 'unknown';
+            Logger::debug('[Deepgram Stream] 消息类型', ['type' => $messageType]);
+            
             // 识别结果
-            if (isset($message['type']) && $message['type'] === 'Results') {
+            if ($messageType === 'Results') {
                 $channel = $message['channel'] ?? [];
                 $alternatives = $channel['alternatives'] ?? [];
                 
