@@ -23,7 +23,8 @@ class ASRStreamHandler
         
         Logger::info('[ASR Stream] 客户端连接', [
             'connection_id' => $connectionId,
-            'remote_ip' => $connection->getRemoteIp()
+            'remote_ip' => $connection->getRemoteIp(),
+            'remote_port' => $connection->getRemotePort()
         ]);
         
         // 初始化会话
@@ -32,6 +33,12 @@ class ASRStreamHandler
             'language' => 'zh-CN',
             'model' => 'nova-2'
         ];
+        
+        // 发送欢迎消息
+        $connection->send(json_encode([
+            'type' => 'connected',
+            'message' => 'WebSocket connected successfully'
+        ]));
     }
     
     /**
