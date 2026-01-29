@@ -13,39 +13,7 @@ use Workerman\Connection\TcpConnection;
 class ASRStreamHandler
 {
     private static array $sessions = [];
-    private static ?DeepgramStreamClient $sharedDeepgram = null;
-    
-    /**
-     * 初始化 Deepgram 连接池（服务器启动时调用）
-     */
-    public static function initDeepgramPool(): void
-    {
-        Logger::info('[ASR Stream] 初始化 Deepgram 连接池');
-        
-        try {
-            self::$sharedDeepgram = new DeepgramStreamClient();
-            
-            // 预连接到 Deepgram
-            self::$sharedDeepgram->connect(
-                'zh-CN',
-                'nova-2',
-                null,  // onTranscript 每个会话单独处理
-                function($error) {
-                    Logger::error('[ASR Stream] Deepgram 共享连接错误', ['error' => $error]);
-                },
-                function() {
-                    Logger::info('[ASR Stream] Deepgram 共享连接关闭');
-                }
-            );
-            
-            Logger::info('[ASR Stream] ✅ Deepgram 连接池初始化成功');
-        } catch (\Exception $e) {
-            Logger::error('[ASR Stream] Deepgram 连接池初始化失败', [
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-    
+
     /**
      * 处理 WebSocket 连接
      */
@@ -174,28 +142,11 @@ class ASRStreamHandler
     }
     
     /**
-     * 启动 Deepgram 连接（复用已有连接）
+     * 启动 Deepgram 连接（每次创建新连接）
      */
     private static function startDeepgram(TcpConnection $connection, string $language, string $model): void
     {
         $connectionId = spl_object_id($connection);
-        $session = self::$sessions[$connectionId] ?? null;
-        
-        // 如果已经有连接，复用它
-        if ($session && $session['deepgram'] && $session['deepgram']->isConnected()) {
-            Logger::info('[ASR Stream] 复用现有 Deepgram 连接', [
-                'connection_id' => $connectionId
-            ]);
-            
-            $connection->send(json_encode([
-                'type' => 'started',
-                'language' => $language,
-                'model' => $model,
-                'reused' => true
-            ]));
-            
-            return;
-        }
         
         try {
             $deepgram = new DeepgramStreamClient();
@@ -281,7 +232,7 @@ class ASRStreamHandler
     }
     
     /**
-     * 停止录音（保持 Deepgram 连接）
+     * 停止录音（主动断开 Deepgram 连接）
      */
     private static function stopDeepgram(TcpConnection $connection): void
     {
@@ -289,15 +240,23 @@ class ASRStreamHandler
         $session = self::$sessions[$connectionId] ?? null;
         
         if ($session && $session['deepgram']) {
-            // 不关闭 Deepgram 连接，保持长连接
-            // 只发送停止消息给客户端
-            $connection->send(json_encode([
-                'type' => 'stopped'
-            ]));
-            
-            Logger::info('[ASR Stream] 录音已停止（Deepgram 连接保持）', [
-                'connection_id' => $connectionId
-            ]);
+            try {
+                // 主动断开 Deepgram 连接，避免15秒无音频自动断开
+                $session['deepgram']->close();
+                self::$sessions[$connectionId]['deepgram'] = null;
+                
+                $connection->send(json_encode([
+                    'type' => 'stopped'
+                ]));
+                
+                Logger::info('[ASR Stream] 录音已停止，Deepgram 连接已关闭', [
+                    'connection_id' => $connectionId
+                ]);
+            } catch (\Exception $e) {
+                Logger::error('[ASR Stream] 停止 Deepgram 失败', [
+                    'error' => $e->getMessage()
+                ]);
+            }
         }
     }
     
