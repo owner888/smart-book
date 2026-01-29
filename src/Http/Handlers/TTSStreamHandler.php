@@ -30,7 +30,7 @@ class TTSStreamHandler
         self::$sessions[$connectionId] = [
             'deepgram' => null,
             'model' => 'aura-asteria-zh',
-            'encoding' => 'mp3',
+            'encoding' => 'linear16',  // WebSocket 流式只支持 linear16/mulaw/alaw
         ];
         
         // 发送欢迎消息
