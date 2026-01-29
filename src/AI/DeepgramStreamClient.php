@@ -17,11 +17,6 @@ class DeepgramStreamClient
     private $onError;
     private $onClose;
     private bool $isConnected = false;
-    private bool $shouldAutoReconnect = true;
-    private int $reconnectAttempts = 0;
-    private ?int $reconnectTimer = null;
-    private string $language = 'zh-CN';
-    private string $model = 'nova-2';
     
     public function __construct(?string $apiKey = null)
     {
@@ -42,8 +37,6 @@ class DeepgramStreamClient
         ?callable $onError = null,
         ?callable $onClose = null
     ): void {
-        $this->language = $language;
-        $this->model = $model;
         $this->onTranscript = $onTranscript;
         $this->onError = $onError;
         $this->onClose = $onClose;
@@ -126,9 +119,7 @@ class DeepgramStreamClient
             $this->isConnected = false;
             Logger::info('[Deepgram Stream] WebSocket 连接关闭');
             
-            // 触发自动重连
-            $this->startAutoReconnect();
-            
+            // 按需连接，不需要重连
             if ($this->onClose) {
                 call_user_func($this->onClose);
             }
@@ -255,78 +246,5 @@ class DeepgramStreamClient
     public function isConnected(): bool
     {
         return $this->isConnected;
-    }
-    
-    /**
-     * 启动自动重连
-     */
-    private function startAutoReconnect(): void
-    {
-        // 如果不允许自动重连，直接返回
-        if (!$this->shouldAutoReconnect) {
-            return;
-        }
-        
-        $this->reconnectAttempts++;
-        
-        // 计算重连延迟（指数退避，最大 30 秒）
-        $delay = min($this->reconnectAttempts * 2, 30);
-        
-        Logger::info("[Deepgram Stream] 🔄 将在 {$delay} 秒后重连（第 {$this->reconnectAttempts} 次）");
-        
-        // 取消之前的重连计时器
-        if ($this->reconnectTimer) {
-            \Workerman\Timer::del($this->reconnectTimer);
-        }
-        
-        // 创建新的重连计时器
-        $this->reconnectTimer = \Workerman\Timer::add($delay, function() {
-            Logger::info('[Deepgram Stream] 🔄 尝试重新连接...');
-            
-            try {
-                // 重新连接
-                $this->connect(
-                    $this->language,
-                    $this->model,
-                    $this->onTranscript,
-                    $this->onError,
-                    $this->onClose
-                );
-                
-                // 如果连接成功，重置重连计数
-                if ($this->isConnected) {
-                    $this->reconnectAttempts = 0;
-                    Logger::info('[Deepgram Stream] ✅ 重连成功');
-                }
-            } catch (\Exception $e) {
-                Logger::error('[Deepgram Stream] 重连失败', [
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }, [], false); // false 表示只执行一次
-    }
-    
-    /**
-     * 停止自动重连
-     */
-    public function stopAutoReconnect(): void
-    {
-        $this->shouldAutoReconnect = false;
-        
-        if ($this->reconnectTimer) {
-            \Workerman\Timer::del($this->reconnectTimer);
-            $this->reconnectTimer = null;
-        }
-        
-        Logger::info('[Deepgram Stream] ⏹️ 已停止自动重连');
-    }
-    
-    /**
-     * 启用自动重连
-     */
-    public function enableAutoReconnect(): void
-    {
-        $this->shouldAutoReconnect = true;
-        Logger::info('[Deepgram Stream] ▶️ 已启用自动重连');
     }
 }
