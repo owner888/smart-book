@@ -1,0 +1,208 @@
+<?php
+/**
+ * Deepgram 流式语音识别客户端
+ * 使用 WebSocket 实时接收语音并返回识别结果
+ */
+
+namespace SmartBook\AI;
+
+use SmartBook\Logger;
+use Workerman\Connection\AsyncTcpConnection;
+
+class DeepgramStreamClient
+{
+    private string $apiKey;
+    private ?AsyncTcpConnection $connection = null;
+    private $onTranscript;
+    private $onError;
+    private $onClose;
+    private bool $isConnected = false;
+    
+    public function __construct(string $apiKey = null)
+    {
+        $this->apiKey = $apiKey ?? $_ENV['DEEPGRAM_API_KEY'] ?? '';
+        
+        if (empty($this->apiKey)) {
+            throw new \Exception('Deepgram API key is required');
+        }
+    }
+    
+    /**
+     * 连接到 Deepgram WebSocket
+     */
+    public function connect(
+        string $language = 'zh-CN',
+        string $model = 'nova-2',
+        callable $onTranscript = null,
+        callable $onError = null,
+        callable $onClose = null
+    ): void {
+        $this->onTranscript = $onTranscript;
+        $this->onError = $onError;
+        $this->onClose = $onClose;
+        
+        // 构建 WebSocket URL
+        $params = http_build_query([
+            'model' => $model,
+            'language' => $language,
+            'encoding' => 'linear16',
+            'sample_rate' => 16000,
+            'channels' => 1,
+            'punctuate' => 'true',
+            'smart_format' => 'true',
+            'interim_results' => 'true',
+            'endpointing' => '300',  // 300ms 静音自动断句
+            'utterance_end_ms' => '1000',  // 1秒静音结束语句
+        ]);
+        
+        $wsUrl = "wss://api.deepgram.com/v1/listen?{$params}";
+        
+        Logger::info('[Deepgram Stream] 连接到 Deepgram WebSocket', [
+            'url' => $wsUrl,
+            'language' => $language,
+            'model' => $model
+        ]);
+        
+        // 创建 WebSocket 连接
+        $this->connection = new AsyncTcpConnection($wsUrl);
+        
+        // 设置 WebSocket 协议
+        $this->connection->transport = 'ssl';
+        
+        // 设置请求头
+        $this->connection->headers = [
+            'Authorization' => 'Token ' . $this->apiKey,
+            'Content-Type' => 'audio/raw',
+        ];
+        
+        // 连接成功
+        $this->connection->onConnect = function($connection) {
+            $this->isConnected = true;
+            Logger::info('[Deepgram Stream] WebSocket 连接成功');
+        };
+        
+        // 接收消息
+        $this->connection->onMessage = function($connection, $data) {
+            $this->handleMessage($data);
+        };
+        
+        // 连接错误
+        $this->connection->onError = function($connection, $code, $msg) {
+            Logger::error('[Deepgram Stream] WebSocket 错误', [
+                'code' => $code,
+                'message' => $msg
+            ]);
+            
+            if ($this->onError) {
+                call_user_func($this->onError, $msg);
+            }
+        };
+        
+        // 连接关闭
+        $this->connection->onClose = function($connection) {
+            $this->isConnected = false;
+            Logger::info('[Deepgram Stream] WebSocket 连接关闭');
+            
+            if ($this->onClose) {
+                call_user_func($this->onClose);
+            }
+        };
+        
+        // 开始连接
+        $this->connection->connect();
+    }
+    
+    /**
+     * 发送音频数据
+     */
+    public function sendAudio(string $audioData): void
+    {
+        if (!$this->isConnected || !$this->connection) {
+            throw new \Exception('WebSocket not connected');
+        }
+        
+        // 直接发送二进制音频数据
+        $this->connection->send($audioData, true);
+    }
+    
+    /**
+     * 处理接收到的消息
+     */
+    private function handleMessage(string $data): void
+    {
+        try {
+            $message = json_decode($data, true);
+            
+            if (!$message) {
+                return;
+            }
+            
+            // 识别结果
+            if (isset($message['type']) && $message['type'] === 'Results') {
+                $channel = $message['channel'] ?? [];
+                $alternatives = $channel['alternatives'] ?? [];
+                
+                if (!empty($alternatives)) {
+                    $alternative = $alternatives[0];
+                    $transcript = $alternative['transcript'] ?? '';
+                    $confidence = $alternative['confidence'] ?? 0;
+                    $isFinal = ($message['is_final'] ?? false) || ($message['speech_final'] ?? false);
+                    
+                    if (!empty($transcript)) {
+                        Logger::info('[Deepgram Stream] 识别结果', [
+                            'transcript' => $transcript,
+                            'confidence' => $confidence,
+                            'is_final' => $isFinal
+                        ]);
+                        
+                        if ($this->onTranscript) {
+                            call_user_func($this->onTranscript, [
+                                'transcript' => $transcript,
+                                'confidence' => $confidence,
+                                'is_final' => $isFinal,
+                                'words' => $alternative['words'] ?? []
+                            ]);
+                        }
+                    }
+                }
+            }
+            
+            // 错误消息
+            if (isset($message['type']) && $message['type'] === 'Error') {
+                $errorMsg = $message['description'] ?? 'Unknown error';
+                Logger::error('[Deepgram Stream] 错误消息', ['error' => $errorMsg]);
+                
+                if ($this->onError) {
+                    call_user_func($this->onError, $errorMsg);
+                }
+            }
+            
+        } catch (\Exception $e) {
+            Logger::error('[Deepgram Stream] 消息处理失败', [
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+    
+    /**
+     * 关闭连接
+     */
+    public function close(): void
+    {
+        if ($this->connection) {
+            // 发送关闭信号
+            $this->connection->send(json_encode(['type' => 'CloseStream']), true);
+            $this->connection->close();
+            $this->connection = null;
+            $this->isConnected = false;
+        }
+    }
+    
+    /**
+     * 检查连接状态
+     */
+    public function isConnected(): bool
+    {
+        return $this->isConnected;
+    }
+}

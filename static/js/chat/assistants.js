@@ -18,7 +18,7 @@ function getDefaultAssistants() {
 // 加载助手配置
 async function loadAssistants() {
     try {
-        const response = await fetch(`${ChatConfig.API_BASE}/api/assistants`);
+        const response = await fetch(`${ChatConfig.API_BASE}/api/config/assistants`);
         const result = await response.json();
         
         // 后端返回格式：{ success: true, data: { list: [...], default: '...' } }

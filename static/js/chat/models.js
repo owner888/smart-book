@@ -9,7 +9,7 @@ let currentModel = null;
 // 从后端加载模型列表
 async function loadModels() {
     try {
-        const response = await fetch(`${ChatConfig.API_BASE}/api/models`);
+        const response = await fetch(`${ChatConfig.API_BASE}/api/config/models`);
         const result = await response.json();
         
         // 后端返回格式：{ success: true, data: { list: [...], default: '...' } }

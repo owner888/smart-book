@@ -60,6 +60,30 @@ $httpWorker->onMessage = function (TcpConnection $connection, Request $request) 
 };
 
 // ===================================
+// WebSocket 服务器 (ASR 流式识别)
+// ===================================
+
+$wsWorker = new Worker('websocket://' . WEB_SERVER_LISTEN . ':9091');
+$wsWorker->count = 1;
+$wsWorker->name = 'ASR-WebSocket-Server';
+
+$wsWorker->onConnect = function(TcpConnection $connection) {
+    \SmartBook\Http\Handlers\ASRStreamHandler::onConnect($connection);
+};
+
+$wsWorker->onMessage = function(TcpConnection $connection, $data) {
+    \SmartBook\Http\Handlers\ASRStreamHandler::onMessage($connection, $data);
+};
+
+$wsWorker->onClose = function(TcpConnection $connection) {
+    \SmartBook\Http\Handlers\ASRStreamHandler::onClose($connection);
+};
+
+$wsWorker->onError = function(TcpConnection $connection, $code, $msg) {
+    \SmartBook\Http\Handlers\ASRStreamHandler::onError($connection, $code, $msg);
+};
+
+// ===================================
 // MCP Server (Streamable HTTP 协议 + SSE 支持)
 // ===================================
 
@@ -93,6 +117,9 @@ echo "=========================================\n";
 echo "   AI 书籍助手 Smart Book 服务\n";
 echo "=========================================\n";
 echo "🌐 Web UI:    http://" . WEB_SERVER_HOST . ":" . WEB_SERVER_PORT . "\n";
+echo "🎙️ ASR Stream: ws://" . WEB_SERVER_HOST . ":9091\n";
+echo "   └─ Protocol: WebSocket\n";
+echo "   └─ Real-time speech recognition\n";
 echo "🔌 MCP:       http://" . MCP_SERVER_HOST . ":" . MCP_SERVER_PORT . "/mcp\n";
 echo "   └─ Protocol: Streamable HTTP\n";
 echo "   └─ Methods: POST (JSON-RPC), GET, DELETE\n";

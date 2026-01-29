@@ -40,7 +40,7 @@ let assistants = {};
 // 加载助手配置
 async function loadAssistants() {
     try {
-        const response = await fetch(`${API_BASE}/api/assistants`);
+        const response = await fetch(`${API_BASE}/api/config/assistants`);
         const data = await response.json();
         
         // 转换后端格式为前端格式
