@@ -55,6 +55,7 @@ class DeepgramStreamClient
             'utterance_end_ms' => '1000',  // 1秒静音结束语句
         ]);
         
+        // 使用 websocket 协议（Workerman 会自动处理 SSL）
         $wsUrl = "wss://api.deepgram.com/v1/listen?{$params}";
         
         Logger::info('[Deepgram Stream] 连接到 Deepgram WebSocket', [
@@ -63,11 +64,13 @@ class DeepgramStreamClient
             'model' => $model
         ]);
         
-        // 创建 WebSocket 连接
-        $this->connection = new AsyncTcpConnection($wsUrl);
-        
-        // 设置 WebSocket 协议
-        $this->connection->transport = 'ssl';
+        // 创建 WebSocket 连接（使用 wss 协议）
+        $this->connection = new AsyncTcpConnection($wsUrl, [
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+            ]
+        ]);
         
         // 设置请求头
         $this->connection->headers = [
