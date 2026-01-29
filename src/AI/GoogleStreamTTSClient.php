@@ -126,6 +126,9 @@ class GoogleStreamTTSClient
                 'chunks' => ceil($totalSize / $chunkSize)
             ]);
             
+            // 发送完成后自动关闭
+            $this->close();
+            
         } catch (\Exception $e) {
             Logger::error('[Google TTS Stream] 合成失败', [
                 'error' => $e->getMessage()
