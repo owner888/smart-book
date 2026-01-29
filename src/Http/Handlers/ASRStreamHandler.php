@@ -209,9 +209,10 @@ class ASRStreamHandler
                 'model' => $model
             ]);
             
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Logger::error('[ASR Stream] Deepgram 启动失败', [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             
             $connection->send(json_encode([

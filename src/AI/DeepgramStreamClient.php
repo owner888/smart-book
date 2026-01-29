@@ -18,7 +18,7 @@ class DeepgramStreamClient
     private $onClose;
     private bool $isConnected = false;
     
-    public function __construct(string $apiKey = null)
+    public function __construct(?string $apiKey = null)
     {
         $this->apiKey = $apiKey ?? $_ENV['DEEPGRAM_API_KEY'] ?? '';
         
@@ -33,15 +33,15 @@ class DeepgramStreamClient
     public function connect(
         string $language = 'zh-CN',
         string $model = 'nova-2',
-        callable $onTranscript = null,
-        callable $onError = null,
-        callable $onClose = null
+        ?callable $onTranscript = null,
+        ?callable $onError = null,
+        ?callable $onClose = null
     ): void {
         $this->onTranscript = $onTranscript;
         $this->onError = $onError;
         $this->onClose = $onClose;
         
-        // 构建 WebSocket URL
+        // 构建 WebSocket URL，将 token 放在 URL 中
         $params = http_build_query([
             'model' => $model,
             'language' => $language,
@@ -53,35 +53,41 @@ class DeepgramStreamClient
             'interim_results' => 'true',
             'endpointing' => '300',  // 300ms 静音自动断句
             'utterance_end_ms' => '1000',  // 1秒静音结束语句
+            'token' => $this->apiKey,  // 通过 URL 参数传递 token
         ]);
         
-        // 使用 websocket 协议（Workerman 会自动处理 SSL）
-        $wsUrl = "wss://api.deepgram.com/v1/listen?{$params}";
+        // 按照官方文档的 wss 客户端方式：ws:// + port 443 + transport ssl
+        $wsUrl = "ws://api.deepgram.com:443/v1/listen?{$params}";
         
         Logger::info('[Deepgram Stream] 连接到 Deepgram WebSocket', [
-            'url' => $wsUrl,
             'language' => $language,
             'model' => $model
         ]);
         
-        // 创建 WebSocket 连接（使用 wss 协议）
-        $this->connection = new AsyncTcpConnection($wsUrl, [
+        // SSL context options
+        $context = [
             'ssl' => [
                 'verify_peer' => false,
                 'verify_peer_name' => false,
+                'allow_self_signed' => true,
             ]
-        ]);
-        
-        // 设置请求头
-        $this->connection->headers = [
-            'Authorization' => 'Token ' . $this->apiKey,
-            'Content-Type' => 'audio/raw',
         ];
         
-        // 连接成功
+        // 创建 WebSocket 连接
+        $this->connection = new AsyncTcpConnection($wsUrl, $context);
+        
+        // 设置为 SSL 传输（wss）
+        $this->connection->transport = 'ssl';
+        
+        // TCP 连接成功（三次握手完成）
         $this->connection->onConnect = function($connection) {
+            Logger::info('[Deepgram Stream] TCP 连接成功');
+        };
+        
+        // WebSocket 握手成功
+        $this->connection->onWebSocketConnect = function($connection, $response) {
             $this->isConnected = true;
-            Logger::info('[Deepgram Stream] WebSocket 连接成功');
+            Logger::info('[Deepgram Stream] WebSocket 握手成功');
         };
         
         // 接收消息
