@@ -30,7 +30,7 @@ class DeepgramTTSClient
             'aura-zeus-zh' => ['name' => 'Zeus (男声)', 'gender' => 'MALE', 'language' => 'Chinese'],
         ],
         'en' => [
-            'aura-asteria-en' => ['name' => 'Asteria (女声)', 'gender' => 'FEMALE', 'language' => 'English'],
+            'aura-2-asteria-en' => ['name' => 'Asteria (女声)', 'gender' => 'FEMALE', 'language' => 'English'],
             'aura-luna-en' => ['name' => 'Luna (女声)', 'gender' => 'FEMALE', 'language' => 'English'],
             'aura-stella-en' => ['name' => 'Stella (女声)', 'gender' => 'FEMALE', 'language' => 'English'],
             'aura-athena-en' => ['name' => 'Athena (女声)', 'gender' => 'FEMALE', 'language' => 'English'],
@@ -154,7 +154,7 @@ class DeepgramTTSClient
     {
         return match ($languageCode) {
             'zh', 'zh-CN', 'cmn-CN' => 'aura-asteria-zh',  // 中文女声（Asteria）
-            'en', 'en-US' => 'aura-asteria-en',  // 英文女声
+            'en', 'en-US' => 'aura-2-asteria-en',  // 英文女声
             default => 'aura-asteria-zh',
         };
     }

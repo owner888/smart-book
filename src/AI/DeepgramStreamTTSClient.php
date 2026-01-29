@@ -31,7 +31,7 @@ class DeepgramStreamTTSClient
      * 连接到 Deepgram TTS WebSocket
      */
     public function connect(
-        string $model = 'aura-asteria-zh',
+        string $model = 'aura-2-asteria-en',  // WebSocket 使用基础模型（不带语言后缀）
         string $encoding = 'linear16',  // WebSocket 流式只支持 linear16/mulaw/alaw
         int $sampleRate = 24000,
         ?callable $onAudio = null,

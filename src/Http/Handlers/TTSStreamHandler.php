@@ -29,7 +29,7 @@ class TTSStreamHandler
         // 初始化会话
         self::$sessions[$connectionId] = [
             'deepgram' => null,
-            'model' => 'aura-asteria-zh',
+            'model' => 'aura-2-asteria-en',  // WebSocket 使用基础模型
             'encoding' => 'linear16',  // WebSocket 流式只支持 linear16/mulaw/alaw
         ];
         
@@ -69,8 +69,8 @@ class TTSStreamHandler
             switch ($type) {
                 case 'start':
                     // 开始 TTS 会话
-                    $model = $message['model'] ?? 'aura-asteria-zh';
-                    $encoding = $message['encoding'] ?? 'mp3';
+                    $model = $message['model'] ?? 'aura-2-asteria-en';  // 英语女声（Deepgram 无中文）
+                    $encoding = $message['encoding'] ?? 'linear16';  // WebSocket 流式只支持 linear16
                     $sampleRate = intval($message['sample_rate'] ?? 24000);
                     
                     self::$sessions[$connectionId]['model'] = $model;
