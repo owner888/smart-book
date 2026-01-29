@@ -41,7 +41,7 @@ class DeepgramStreamClient
         $this->onError = $onError;
         $this->onClose = $onClose;
         
-        // 构建 WebSocket URL，将 token 放在 URL 中
+        // 构建 WebSocket URL（不包含 token）
         $params = http_build_query([
             'model' => $model,
             'language' => $language,
@@ -53,7 +53,6 @@ class DeepgramStreamClient
             'interim_results' => 'true',
             'endpointing' => '300',  // 300ms 静音自动断句
             'utterance_end_ms' => '1000',  // 1秒静音结束语句
-            'token' => $this->apiKey,  // 通过 URL 参数传递 token
         ]);
         
         // 按照官方文档的 wss 客户端方式：ws:// + port 443 + transport ssl
@@ -78,6 +77,11 @@ class DeepgramStreamClient
         
         // 设置为 SSL 传输（wss）
         $this->connection->transport = 'ssl';
+        
+        // 设置 Authorization header（虽然被标记为 deprecated，但 WebSocket 客户端仍需使用）
+        $this->connection->headers = [
+            'Authorization' => 'Token ' . $this->apiKey,
+        ];
         
         // TCP 连接成功（三次握手完成）
         $this->connection->onConnect = function($connection) {
