@@ -14,6 +14,7 @@ class DeepgramStreamTTSClient
     private string $apiKey;
     private ?AsyncTcpConnection $connection = null;
     private $onAudio;  // 音频数据回调
+    private $onReady;  // 就绪回调
     private $onError;
     private $onClose;
     private bool $isConnected = false;
@@ -35,10 +36,12 @@ class DeepgramStreamTTSClient
         string $encoding = 'linear16',  // WebSocket 流式只支持 linear16/mulaw/alaw
         int $sampleRate = 24000,
         ?callable $onAudio = null,
+        ?callable $onReady = null,  // 就绪回调
         ?callable $onError = null,
         ?callable $onClose = null
     ): void {
         $this->onAudio = $onAudio;
+        $this->onReady = $onReady;
         $this->onError = $onError;
         $this->onClose = $onClose;
         
@@ -180,7 +183,12 @@ class DeepgramStreamTTSClient
                         call_user_func($this->onError, $error);
                     }
                 } elseif ($message['type'] === 'Metadata') {
-                    Logger::info('[Deepgram TTS Stream] 收到 Metadata');
+                    Logger::info('[Deepgram TTS Stream] 收到 Metadata，连接已就绪');
+                    
+                    // 触发就绪回调
+                    if ($this->onReady) {
+                        call_user_func($this->onReady);
+                    }
                 }
             }
             return;

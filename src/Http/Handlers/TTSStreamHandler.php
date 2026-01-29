@@ -29,8 +29,9 @@ class TTSStreamHandler
         // 初始化会话
         self::$sessions[$connectionId] = [
             'deepgram' => null,
-            'model' => 'aura-2-asteria-en',  // WebSocket 使用基础模型
-            'encoding' => 'linear16',  // WebSocket 流式只支持 linear16/mulaw/alaw
+            'model' => 'aura-2-asteria-en',
+            'encoding' => 'linear16',
+            'text_buffer' => [],  // 文本缓冲区（握手前缓存）
         ];
         
         // 发送欢迎消息
@@ -149,6 +150,13 @@ class TTSStreamHandler
                         ]);
                     }
                 },
+                // onReady - Deepgram 就绪后发送缓存的文本
+                function() use ($connection, $connectionId) {
+                    Logger::info('[TTS Stream] Deepgram TTS 已就绪');
+                    
+                    // 发送缓存的文本
+                    self::sendBufferedText($connection);
+                },
                 // onError
                 function($error) use ($connection, $connectionId) {
                     Logger::error('[TTS Stream] Deepgram TTS 错误', [
@@ -204,13 +212,18 @@ class TTSStreamHandler
         $session = self::$sessions[$connectionId] ?? null;
         
         if (!$session || !$session['deepgram']) {
-            Logger::warn('[TTS Stream] Deepgram TTS 未初始化');
+            Logger::warn('[TTS Stream] Deepgram TTS 未初始化，缓存文本');
+            self::$sessions[$connectionId]['text_buffer'][] = $text;
             return;
         }
         
         // 检查 Deepgram TTS 连接状态
         if (!$session['deepgram']->isConnected()) {
-            Logger::warn('[TTS Stream] Deepgram TTS 未连接，忽略文本');
+            // 缓存文本，等待握手成功后发送
+            self::$sessions[$connectionId]['text_buffer'][] = $text;
+            Logger::debug('[TTS Stream] Deepgram TTS 未连接，缓存文本', [
+                'buffer_size' => count(self::$sessions[$connectionId]['text_buffer'])
+            ]);
             return;
         }
         
@@ -225,6 +238,30 @@ class TTSStreamHandler
             Logger::error('[TTS Stream] 发送文本失败', [
                 'error' => $e->getMessage()
             ]);
+        }
+    }
+    
+    /**
+     * 发送缓存的文本
+     */
+    private static function sendBufferedText(TcpConnection $connection): void
+    {
+        $connectionId = spl_object_id($connection);
+        $session = self::$sessions[$connectionId] ?? null;
+        
+        if (!$session || empty($session['text_buffer'])) {
+            return;
+        }
+        
+        $buffer = $session['text_buffer'];
+        self::$sessions[$connectionId]['text_buffer'] = [];
+        
+        Logger::info('[TTS Stream] 发送缓存的文本', [
+            'count' => count($buffer)
+        ]);
+        
+        foreach ($buffer as $text) {
+            self::synthesizeText($connection, $text);
         }
     }
     
