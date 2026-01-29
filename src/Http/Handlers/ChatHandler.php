@@ -9,6 +9,7 @@ use SmartBook\Logger;
 use SmartBook\AI\AIService;
 use SmartBook\AI\TokenCounter;
 use SmartBook\AI\GeminiContextCache;
+use SmartBook\AI\GoogleTTSClient;
 use SmartBook\Cache\CacheService;
 use SmartBook\Http\Context;
 use SmartBook\RAG\EmbeddingClient;

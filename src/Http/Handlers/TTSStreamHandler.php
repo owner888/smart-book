@@ -382,7 +382,13 @@ class TTSStreamHandler
         
         if ($session && $session['deepgram']) {
             $session['deepgram']->flush();
-            Logger::info('[TTS Stream] 已刷新 Deepgram TTS');
+            Logger::info('[TTS Stream] 已刷新 TTS');
+            
+            // 发送 stopped 消息给客户端，触发播放
+            $connection->send(json_encode([
+                'type' => 'stopped'
+            ]));
+            Logger::info('[TTS Stream] 已发送 stopped 消息');
         }
     }
     
