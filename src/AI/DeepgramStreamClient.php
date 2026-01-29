@@ -78,6 +78,9 @@ class DeepgramStreamClient
         // 设置为 SSL 传输（wss）
         $this->connection->transport = 'ssl';
         
+        // 设置 WebSocket 类型为二进制（ArrayBuffer）
+        $this->connection->websocketType = \Workerman\Protocols\Websocket::BINARY_TYPE_ARRAYBUFFER;
+        
         // 设置 Authorization header（虽然被标记为 deprecated，但 WebSocket 客户端仍需使用）
         $this->connection->headers = [
             'Authorization' => 'Token ' . $this->apiKey,
@@ -134,8 +137,14 @@ class DeepgramStreamClient
             throw new \Exception('WebSocket not connected');
         }
         
-        // 直接发送二进制音频数据
-        $this->connection->send($audioData, true);
+        // 发送二进制音频数据（WebSocket binary frame）
+        // Workerman: send($data) 默认发送文本帧
+        // 需要使用 send($data, false) 发送二进制帧，或者直接 send($data)
+        $this->connection->send($audioData);
+        
+        Logger::debug('[Deepgram Stream] 已发送音频数据', [
+            'size' => strlen($audioData)
+        ]);
     }
     
     /**
