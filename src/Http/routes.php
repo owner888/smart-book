@@ -111,6 +111,7 @@ Router::group('/api', function() {
     Router::group('/asr', function() {
         Router::post('/recognize', fn($ctx) => ASRHandler::recognize($ctx));
         Router::get('/languages', fn($ctx) => ASRHandler::getLanguages());
+        Router::get('/config', fn($ctx) => ASRHandler::getConfig());
     });
     
     // ===================================
