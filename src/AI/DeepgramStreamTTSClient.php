@@ -43,13 +43,20 @@ class DeepgramStreamTTSClient
         $this->onClose = $onClose;
         
         // 构建 WebSocket URL
-        $params = http_build_query([
+        // 注意：MP3 格式不支持 sample_rate 参数
+        $params = [
             'model' => $model,
             'encoding' => $encoding,
-            'sample_rate' => $sampleRate,
-        ]);
+        ];
         
-        $wsUrl = "ws://api.deepgram.com:443/v1/speak?{$params}";
+        // 只有非 MP3 格式才添加 sample_rate
+        if ($encoding !== 'mp3') {
+            $params['sample_rate'] = $sampleRate;
+        }
+        
+        $queryString = http_build_query($params);
+        
+        $wsUrl = "ws://api.deepgram.com:443/v1/speak?{$queryString}";
         
         Logger::info('[Deepgram TTS Stream] 连接到 Deepgram TTS WebSocket', [
             'model' => $model,

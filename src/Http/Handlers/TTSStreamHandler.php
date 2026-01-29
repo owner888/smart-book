@@ -208,6 +208,12 @@ class TTSStreamHandler
             return;
         }
         
+        // 检查 Deepgram TTS 连接状态
+        if (!$session['deepgram']->isConnected()) {
+            Logger::warn('[TTS Stream] Deepgram TTS 未连接，忽略文本');
+            return;
+        }
+        
         try {
             // 发送文本到 Deepgram TTS
             $session['deepgram']->sendText($text);
