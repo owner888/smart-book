@@ -92,6 +92,9 @@ $ttsWorker->count = 1;
 $ttsWorker->name = 'TTS-WebSocket-Server';
 
 $ttsWorker->onConnect = function(TcpConnection $connection) {
+    // 设置 WebSocket 为二进制模式（支持音频传输）
+    $connection->websocketType = \Workerman\Protocols\Websocket::BINARY_TYPE_ARRAYBUFFER;
+    
     \SmartBook\Http\Handlers\TTSStreamHandler::onConnect($connection);
 };
 
