@@ -159,6 +159,12 @@ class DeepgramStreamClient
             $messageType = $message['type'] ?? 'unknown';
             Logger::info('[Deepgram Stream] 消息类型: ' . $messageType);
             
+            // Metadata 消息（连接建立成功）
+            if ($messageType === 'Metadata') {
+                Logger::info('[Deepgram Stream] 收到 Metadata，连接已建立');
+                return; // 不需要进一步处理
+            }
+            
             // 识别结果
             if ($messageType === 'Results') {
                 $channel = $message['channel'] ?? [];
