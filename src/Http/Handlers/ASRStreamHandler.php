@@ -142,11 +142,28 @@ class ASRStreamHandler
     }
     
     /**
-     * 启动 Deepgram 连接
+     * 启动 Deepgram 连接（复用已有连接）
      */
     private static function startDeepgram(TcpConnection $connection, string $language, string $model): void
     {
         $connectionId = spl_object_id($connection);
+        $session = self::$sessions[$connectionId] ?? null;
+        
+        // 如果已经有连接，复用它
+        if ($session && $session['deepgram'] && $session['deepgram']->isConnected()) {
+            Logger::info('[ASR Stream] 复用现有 Deepgram 连接', [
+                'connection_id' => $connectionId
+            ]);
+            
+            $connection->send(json_encode([
+                'type' => 'started',
+                'language' => $language,
+                'model' => $model,
+                'reused' => true
+            ]));
+            
+            return;
+        }
         
         try {
             $deepgram = new DeepgramStreamClient();
@@ -232,7 +249,7 @@ class ASRStreamHandler
     }
     
     /**
-     * 停止 Deepgram 连接
+     * 停止录音（保持 Deepgram 连接）
      */
     private static function stopDeepgram(TcpConnection $connection): void
     {
@@ -240,22 +257,15 @@ class ASRStreamHandler
         $session = self::$sessions[$connectionId] ?? null;
         
         if ($session && $session['deepgram']) {
-            try {
-                $session['deepgram']->close();
-                self::$sessions[$connectionId]['deepgram'] = null;
-                
-                $connection->send(json_encode([
-                    'type' => 'stopped'
-                ]));
-                
-                Logger::info('[ASR Stream] Deepgram 已停止', [
-                    'connection_id' => $connectionId
-                ]);
-            } catch (\Exception $e) {
-                Logger::error('[ASR Stream] 停止 Deepgram 失败', [
-                    'error' => $e->getMessage()
-                ]);
-            }
+            // 不关闭 Deepgram 连接，保持长连接
+            // 只发送停止消息给客户端
+            $connection->send(json_encode([
+                'type' => 'stopped'
+            ]));
+            
+            Logger::info('[ASR Stream] 录音已停止（Deepgram 连接保持）', [
+                'connection_id' => $connectionId
+            ]);
         }
     }
     
