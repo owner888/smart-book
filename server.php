@@ -84,6 +84,30 @@ $wsWorker->onError = function(TcpConnection $connection, $code, $msg) {
 };
 
 // ===================================
+// TTS WebSocket 服务器 (流式语音合成)
+// ===================================
+
+$ttsWorker = new Worker('websocket://' . WEB_SERVER_LISTEN . ':8084');
+$ttsWorker->count = 1;
+$ttsWorker->name = 'TTS-WebSocket-Server';
+
+$ttsWorker->onConnect = function(TcpConnection $connection) {
+    \SmartBook\Http\Handlers\TTSStreamHandler::onConnect($connection);
+};
+
+$ttsWorker->onMessage = function(TcpConnection $connection, $data) {
+    \SmartBook\Http\Handlers\TTSStreamHandler::onMessage($connection, $data);
+};
+
+$ttsWorker->onClose = function(TcpConnection $connection) {
+    \SmartBook\Http\Handlers\TTSStreamHandler::onClose($connection);
+};
+
+$ttsWorker->onError = function(TcpConnection $connection, $code, $msg) {
+    \SmartBook\Http\Handlers\TTSStreamHandler::onError($connection, $code, $msg);
+};
+
+// ===================================
 // MCP Server (Streamable HTTP 协议 + SSE 支持)
 // ===================================
 
@@ -116,11 +140,14 @@ $mcpWorker->onMessage = function (TcpConnection $connection, string $data) use (
 echo "=========================================\n";
 echo "   AI 书籍助手 Smart Book 服务\n";
 echo "=========================================\n";
-echo "🌐 Web UI:    http://" . WEB_SERVER_HOST . ":" . WEB_SERVER_PORT . "\n";
-echo "🎙️ ASR Stream: ws://" . WEB_SERVER_HOST . ":8083\n";
+echo "🌐 Web UI:     http://" . WEB_SERVER_HOST . ":" . WEB_SERVER_PORT . "\n";
+echo "🎙️ ASR Stream:  ws://" . WEB_SERVER_HOST . ":8083\n";
 echo "   └─ Protocol: WebSocket\n";
 echo "   └─ Real-time speech recognition\n";
-echo "🔌 MCP:       http://" . MCP_SERVER_HOST . ":" . MCP_SERVER_PORT . "/mcp\n";
+echo "🔊 TTS Stream:  ws://" . WEB_SERVER_HOST . ":8084\n";
+echo "   └─ Protocol: WebSocket\n";
+echo "   └─ Real-time text-to-speech\n";
+echo "🔌 MCP:        http://" . MCP_SERVER_HOST . ":" . MCP_SERVER_PORT . "/mcp\n";
 echo "   └─ Protocol: Streamable HTTP\n";
 echo "   └─ Methods: POST (JSON-RPC), GET, DELETE\n";
 echo "=========================================\n";

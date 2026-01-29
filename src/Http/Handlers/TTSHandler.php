@@ -9,6 +9,7 @@ use SmartBook\Logger;
 use SmartBook\Http\Context;
 use SmartBook\Http\ErrorHandler;
 use SmartBook\AI\GoogleTTSClient;
+use SmartBook\AI\DeepgramTTSClient;
 use Workerman\Protocols\Http\Response;
 
 class TTSHandler
@@ -27,22 +28,33 @@ class TTSHandler
         $voice = $body['voice'] ?? null;
         $rate = floatval($body['rate'] ?? 1.0);
         $pitch = floatval($body['pitch'] ?? 0.0);
+        $provider = $body['provider'] ?? 'deepgram';  // 默认使用 Deepgram
         
         Logger::info('[TTS] 语音合成', [
+            'provider' => $provider,
             'text_length' => mb_strlen($text),
             'voice' => $voice,
             'rate' => $rate,
             'pitch' => $pitch
         ]);
         
-        $ttsClient = new GoogleTTSClient();
-        
-        $languageCode = GoogleTTSClient::detectLanguage($text);
-        if (!$voice) {
-            $voice = GoogleTTSClient::getDefaultVoice($languageCode);
+        // 根据 provider 选择 TTS 服务
+        if ($provider === 'deepgram') {
+            $ttsClient = new DeepgramTTSClient();
+            $languageCode = DeepgramTTSClient::detectLanguage($text);
+            if (!$voice) {
+                $voice = DeepgramTTSClient::getDefaultVoice($languageCode);
+            }
+            $result = $ttsClient->synthesize($text, $voice);
+        } else {
+            // Google TTS
+            $ttsClient = new GoogleTTSClient();
+            $languageCode = GoogleTTSClient::detectLanguage($text);
+            if (!$voice) {
+                $voice = GoogleTTSClient::getDefaultVoice($languageCode);
+            }
+            $result = $ttsClient->synthesize($text, $voice, $languageCode, $rate, $pitch);
         }
-        
-        $result = $ttsClient->synthesize($text, $voice, $languageCode, $rate, $pitch);
         
         ErrorHandler::logOperation('TTS::synthesize', 'success', [
             'language' => $languageCode,
