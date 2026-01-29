@@ -13,6 +13,38 @@ use Workerman\Connection\TcpConnection;
 class ASRStreamHandler
 {
     private static array $sessions = [];
+    private static ?DeepgramStreamClient $sharedDeepgram = null;
+    
+    /**
+     * 初始化 Deepgram 连接池（服务器启动时调用）
+     */
+    public static function initDeepgramPool(): void
+    {
+        Logger::info('[ASR Stream] 初始化 Deepgram 连接池');
+        
+        try {
+            self::$sharedDeepgram = new DeepgramStreamClient();
+            
+            // 预连接到 Deepgram
+            self::$sharedDeepgram->connect(
+                'zh-CN',
+                'nova-2',
+                null,  // onTranscript 每个会话单独处理
+                function($error) {
+                    Logger::error('[ASR Stream] Deepgram 共享连接错误', ['error' => $error]);
+                },
+                function() {
+                    Logger::info('[ASR Stream] Deepgram 共享连接关闭');
+                }
+            );
+            
+            Logger::info('[ASR Stream] ✅ Deepgram 连接池初始化成功');
+        } catch (\Exception $e) {
+            Logger::error('[ASR Stream] Deepgram 连接池初始化失败', [
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
     
     /**
      * 处理 WebSocket 连接

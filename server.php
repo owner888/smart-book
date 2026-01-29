@@ -67,6 +67,11 @@ $wsWorker = new Worker('websocket://' . WEB_SERVER_LISTEN . ':8083');
 $wsWorker->count = 1;
 $wsWorker->name = 'ASR-WebSocket-Server';
 
+$wsWorker->onWorkerStart = function() {
+    // 服务器启动时预连接 Deepgram
+    \SmartBook\Http\Handlers\ASRStreamHandler::initDeepgramPool();
+};
+
 $wsWorker->onConnect = function(TcpConnection $connection) {
     \SmartBook\Http\Handlers\ASRStreamHandler::onConnect($connection);
 };
