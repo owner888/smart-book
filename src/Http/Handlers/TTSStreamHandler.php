@@ -161,8 +161,8 @@ class TTSStreamHandler
                 // onAudio - 接收音频数据
                 function($audioData) use ($connection, $connectionId) {
                     try {
-                        // 转发音频数据给客户端
-                        $connection->send($audioData);
+                        // 转发音频数据给客户端（二进制帧）
+                        $connection->send($audioData, false);  // false = 二进制帧
                         
                         Logger::debug('[TTS Stream] 音频数据已发送', [
                             'size' => strlen($audioData)
