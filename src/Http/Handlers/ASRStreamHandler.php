@@ -118,17 +118,22 @@ class ASRStreamHandler
         $session = self::$sessions[$connectionId] ?? null;
         
         if (!$session || !$session['deepgram']) {
-            return; // 静默忽略
+            Logger::debug('[ASR Stream] Deepgram 未初始化，忽略音频数据');
+            return;
         }
         
         // 检查 Deepgram 是否真正连接成功
         if (!$session['deepgram']->isConnected()) {
-            return; // 握手未完成，静默忽略
+            Logger::debug('[ASR Stream] Deepgram 握手未完成，缓存音频数据');
+            return;
         }
         
         try {
             // 转发音频数据到 Deepgram
             $session['deepgram']->sendAudio($data);
+            Logger::debug('[ASR Stream] 音频数据已发送', [
+                'size' => strlen($data)
+            ]);
         } catch (\Exception $e) {
             Logger::error('[ASR Stream] 发送音频失败', [
                 'error' => $e->getMessage()
