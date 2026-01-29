@@ -8,6 +8,7 @@ namespace SmartBook\Http\Handlers;
 
 use SmartBook\Logger;
 use SmartBook\AI\DeepgramStreamTTSClient;
+use SmartBook\AI\GoogleStreamTTSClient;
 use Workerman\Connection\TcpConnection;
 
 class TTSStreamHandler
@@ -70,14 +71,36 @@ class TTSStreamHandler
             switch ($type) {
                 case 'start':
                     // 开始 TTS 会话
-                    $model = $message['model'] ?? 'aura-2-asteria-en';  // 英语女声（Deepgram 无中文）
-                    $encoding = $message['encoding'] ?? 'linear16';  // WebSocket 流式只支持 linear16
+                    $model = $message['model'] ?? null;
+                    $provider = $message['provider'] ?? 'auto';  // auto/deepgram/google
+                    $encoding = $message['encoding'] ?? 'mp3';
                     $sampleRate = intval($message['sample_rate'] ?? 24000);
                     
+                    // 自动选择 provider
+                    if ($provider === 'auto') {
+                        // 如果没有指定模型，检测语言
+                        if (!$model) {
+                            $provider = 'google';  // 默认 Google（支持中文）
+                            $model = 'cmn-CN-Wavenet-D';
+                        } elseif (str_contains($model, 'aura')) {
+                            $provider = 'deepgram';
+                        } elseif (str_contains($model, 'cmn') || str_contains($model, 'zh')) {
+                            $provider = 'google';
+                        } else {
+                            $provider = 'deepgram';  // 默认 Deepgram
+                            $model = 'aura-2-asteria-en';
+                        }
+                    }
+                    
                     self::$sessions[$connectionId]['model'] = $model;
+                    self::$sessions[$connectionId]['provider'] = $provider;
                     self::$sessions[$connectionId]['encoding'] = $encoding;
                     
-                    self::startDeepgramTTS($connection, $model, $encoding, $sampleRate);
+                    if ($provider === 'google') {
+                        self::startGoogleTTS($connection, $model, $encoding, $sampleRate);
+                    } else {
+                        self::startDeepgramTTS($connection, $model, $encoding, $sampleRate);
+                    }
                     break;
                     
                 case 'text':
@@ -112,6 +135,90 @@ class TTSStreamHandler
             $connection->send(json_encode([
                 'type' => 'error',
                 'message' => $e->getMessage()
+            ]));
+        }
+    }
+    
+    /**
+     * 启动 Google TTS 连接
+     */
+    private static function startGoogleTTS(
+        TcpConnection $connection,
+        string $model,
+        string $encoding,
+        int $sampleRate
+    ): void {
+        $connectionId = spl_object_id($connection);
+        
+        try {
+            $googleTTS = new GoogleStreamTTSClient();
+            
+            // 连接到 Google TTS（模拟）
+            $googleTTS->connect(
+                $model,
+                $encoding,
+                $sampleRate,
+                // onAudio - 接收音频数据
+                function($audioData) use ($connection, $connectionId) {
+                    try {
+                        // 转发音频数据给客户端
+                        $connection->send($audioData);
+                        
+                        Logger::debug('[TTS Stream] 音频数据已发送', [
+                            'size' => strlen($audioData)
+                        ]);
+                    } catch (\Exception $e) {
+                        Logger::error('[TTS Stream] 发送音频失败', [
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                },
+                // onReady - 立即就绪
+                function() use ($connection, $connectionId) {
+                    Logger::info('[TTS Stream] Google TTS 已就绪');
+                    
+                    // 发送缓存的文本
+                    self::sendBufferedText($connection);
+                },
+                // onError
+                function($error) use ($connection, $connectionId) {
+                    Logger::error('[TTS Stream] Google TTS 错误', [
+                        'error' => $error
+                    ]);
+                    
+                    $connection->send(json_encode([
+                        'type' => 'error',
+                        'message' => $error
+                    ]));
+                },
+                // onClose
+                function() use ($connection, $connectionId) {
+                    Logger::info('[TTS Stream] Google TTS 连接关闭');
+                }
+            );
+            
+            self::$sessions[$connectionId]['deepgram'] = $googleTTS;  // 使用同一个字段
+            
+            // 发送连接成功消息
+            $connection->send(json_encode([
+                'type' => 'started',
+                'model' => $model,
+                'provider' => 'google',
+                'encoding' => $encoding
+            ]));
+            
+            Logger::info('[TTS Stream] Google TTS 启动成功', [
+                'model' => $model
+            ]);
+            
+        } catch (\Throwable $e) {
+            Logger::error('[TTS Stream] Google TTS 启动失败', [
+                'error' => $e->getMessage()
+            ]);
+            
+            $connection->send(json_encode([
+                'type' => 'error',
+                'message' => 'Failed to start Google TTS: ' . $e->getMessage()
             ]));
         }
     }
