@@ -161,7 +161,11 @@ class DeepgramStreamClient
             
             // Metadata 消息（连接建立成功）
             if ($messageType === 'Metadata') {
-                Logger::info('[Deepgram Stream] 收到 Metadata，连接已建立');
+                Logger::info('[Deepgram Stream] 收到 Metadata，连接已建立', [
+                    'request_id' => $message['request_id'] ?? 'unknown',
+                    'model_info' => $message['model_info'] ?? [],
+                    'full_data' => $data // 记录完整数据
+                ]);
                 return; // 不需要进一步处理
             }
             
