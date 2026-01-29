@@ -118,8 +118,12 @@ class ASRStreamHandler
         $session = self::$sessions[$connectionId] ?? null;
         
         if (!$session || !$session['deepgram']) {
-            Logger::warn('[ASR Stream] Deepgram 未连接，忽略音频数据');
-            return;
+            return; // 静默忽略
+        }
+        
+        // 检查 Deepgram 是否真正连接成功
+        if (!$session['deepgram']->isConnected()) {
+            return; // 握手未完成，静默忽略
         }
         
         try {
