@@ -75,10 +75,10 @@ class GoogleStreamTTSClient
         // 累积文本
         $this->textBuffer[] = $text;
         
-        Logger::debug('[Google TTS Stream] 累积文本', [
-            'text_length' => mb_strlen($text),
-            'buffer_size' => count($this->textBuffer)
-        ]);
+        // Logger::debug('[Google TTS Stream] 累积文本', [
+        //     'text_length' => mb_strlen($text),
+        //     'buffer_size' => count($this->textBuffer)
+        // ]);
     }
     
     /**
