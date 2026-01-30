@@ -487,12 +487,12 @@ class TTSStreamHandler
         
         self::$errorLog[$errorKey] = $now;
         
-        Logger::error('[TTS Stream] WebSocket 错误', [
-            'connection_id' => $connectionId,
-            'code' => $code,
-            'message' => $msg,
-            'session_info' => self::$sessions[$connectionId] ?? null
-        ]);
+        // 输出详细错误信息（单行）
+        $session = self::$sessions[$connectionId] ?? [];
+        $provider = $session['provider'] ?? 'unknown';
+        $model = $session['model'] ?? 'unknown';
+        
+        Logger::error("[TTS Stream] WebSocket 错误: Code={$code}, Message={$msg}, Provider={$provider}, Model={$model}, ConnectionID={$connectionId}");
         
         // 发送错误给客户端
         try {
