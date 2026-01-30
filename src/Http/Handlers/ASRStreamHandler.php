@@ -131,9 +131,9 @@ class ASRStreamHandler
         try {
             // 转发音频数据到 Deepgram
             $session['deepgram']->sendAudio($data);
-            Logger::debug('[ASR Stream] 音频数据已发送', [
-                'size' => strlen($data)
-            ]);
+            // Logger::debug('[ASR Stream] 音频数据已发送', [
+            //     'size' => strlen($data)
+            // ]);
         } catch (\Exception $e) {
             Logger::error('[ASR Stream] 发送音频失败', [
                 'error' => $e->getMessage()

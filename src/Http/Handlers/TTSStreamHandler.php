@@ -164,9 +164,9 @@ class TTSStreamHandler
                         // 转发音频数据给客户端（二进制帧）
                         $connection->send($audioData, false);  // false = 二进制帧
                         
-                        Logger::debug('[TTS Stream] 音频数据已发送', [
-                            'size' => strlen($audioData)
-                        ]);
+                        // Logger::debug('[TTS Stream] 音频数据已发送', [
+                        //     'size' => strlen($audioData)
+                        // ]);
                     } catch (\Exception $e) {
                         Logger::error('[TTS Stream] 发送音频失败', [
                             'error' => $e->getMessage()
