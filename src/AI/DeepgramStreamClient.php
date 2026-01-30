@@ -143,9 +143,9 @@ class DeepgramStreamClient
         // 需要使用 send($data, false) 发送二进制帧，或者直接 send($data)
         $this->connection->send($audioData);
         
-        Logger::debug('[Deepgram Stream] 已发送音频数据', [
-            'size' => strlen($audioData)
-        ]);
+        // Logger::debug('[Deepgram Stream] 已发送音频数据', [
+        //     'size' => strlen($audioData)
+        // ]);
     }
     
     /**
