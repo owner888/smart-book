@@ -72,13 +72,33 @@ class GoogleStreamTTSClient
             throw new \Exception('Not connected');
         }
         
-        // 累积文本
-        $this->textBuffer[] = $text;
+        // 过滤 markdown 标签
+        $cleanText = $this->filterMarkdown($text);
         
-        // Logger::debug('[Google TTS Stream] 累积文本', [
-        //     'text_length' => mb_strlen($text),
-        //     'buffer_size' => count($this->textBuffer)
-        // ]);
+        // 累积文本
+        $this->textBuffer[] = $cleanText;
+    }
+    
+    /**
+     * 过滤 Markdown 标签
+     */
+    private function filterMarkdown(string $text): string
+    {
+        // 移除常见的 markdown 标记
+        $text = preg_replace('/\*\*(.+?)\*\*/', '$1', $text);  // 粗体 **text**
+        $text = preg_replace('/\*(.+?)\*/', '$1', $text);      // 斜体 *text*
+        $text = preg_replace('/__(.+?)__/', '$1', $text);      // 粗体 __text__
+        $text = preg_replace('/_(.+?)_/', '$1', $text);        // 斜体 _text_
+        $text = preg_replace('/~~(.+?)~~/', '$1', $text);      // 删除线 ~~text~~
+        $text = preg_replace('/`(.+?)`/', '$1', $text);        // 代码 `code`
+        $text = preg_replace('/```.*?```/s', '', $text);       // 代码块 ```code```
+        $text = preg_replace('/^#{1,6}\s+/m', '', $text);      // 标题 # ## ###
+        $text = preg_replace('/\[(.+?)\]\(.+?\)/', '$1', $text); // 链接 [text](url)
+        $text = preg_replace('/^[\*\-\+]\s+/m', '', $text);    // 列表 - * +
+        $text = preg_replace('/^\d+\.\s+/m', '', $text);       // 数字列表 1. 2.
+        $text = preg_replace('/^>\s+/m', '', $text);           // 引用 >
+        
+        return trim($text);
     }
     
     /**
