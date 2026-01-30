@@ -108,6 +108,10 @@ class GoogleStreamTTSClient
             $audioData = base64_decode($audioContent);
             $totalSize = strlen($audioData);
             
+            // 输出原始音频的 MD5
+            $md5 = md5($audioData);
+            Logger::info('[Google TTS Stream] 原始音频 MD5: ' . $md5);
+            
             while ($offset < $totalSize) {
                 $chunk = substr($audioData, $offset, $chunkSize);
                 $offset += $chunkSize;
