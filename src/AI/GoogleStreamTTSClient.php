@@ -18,7 +18,7 @@ class GoogleStreamTTSClient
     private $onClose;
     private bool $isConnected = false;
     private array $textBuffer = [];
-    private string $voice = 'cmn-CN-Wavenet-D';
+    private string $voice = 'cmn-CN-Wavenet-B';  // 男声（B/C 是男声，A/D 是女声）
     private string $language = 'cmn-CN';
     
     public function __construct(?string $apiKey = null)

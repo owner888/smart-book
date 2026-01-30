@@ -81,7 +81,7 @@ class TTSStreamHandler
                         // 如果没有指定模型，检测语言
                         if (!$model) {
                             $provider = 'google';  // 默认 Google（支持中文）
-                            $model = 'cmn-CN-Wavenet-D';
+                            $model = 'cmn-CN-Wavenet-B';  // 男声
                         } elseif (str_contains($model, 'aura')) {
                             $provider = 'deepgram';
                         } elseif (str_contains($model, 'cmn') || str_contains($model, 'zh')) {
