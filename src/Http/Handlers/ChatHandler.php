@@ -179,6 +179,13 @@ class ChatHandler
         $model = $body['model'] ?? 'gemini-2.5-flash';
         $assistantId = $body['assistant_id'] ?? 'chat';  // 新增：获取助手 ID
         
+        // 记录请求来源信息
+        $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
+        $referer = $_SERVER['HTTP_REFERER'] ?? 'none';
+        $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        
+        Logger::info("🔍 请求来源: IP={$remoteAddr} | UA={$userAgent} | Referer={$referer}");
+        
         // 过滤空消息或过短的消息（至少2个字符）
         $trimmedMessage = trim($message);
         if (mb_strlen($trimmedMessage) < 2) {
@@ -186,7 +193,7 @@ class ChatHandler
             return ['error' => 'Message too short (minimum 2 characters)'];
         }
         
-        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model}");
+        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model} | 💬 消息: {$trimmedMessage}");
         
         $clientSummary = $body['summary'] ?? null;
         $clientHistory = $body['history'] ?? null;
