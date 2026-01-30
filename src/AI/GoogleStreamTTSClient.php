@@ -84,19 +84,75 @@ class GoogleStreamTTSClient
      */
     private function filterMarkdown(string $text): string
     {
-        // 移除常见的 markdown 标记
+        // 1. 移除代码块（先处理多行的）
+        $text = preg_replace('/```.*?```/s', '', $text);       // 代码块 ```code```
+        
+        // 2. 移除 HTML 标签
+        $text = preg_replace('/<[^>]+>/', '', $text);          // HTML 标签 <tag>
+        
+        // 3. 移除图片
+        $text = preg_replace('/!\[.*?\]\(.*?\)/', '', $text);  // 图片 ![alt](url)
+        
+        // 4. 移除链接（保留文本）
+        $text = preg_replace('/\[(.+?)\]\(.+?\)/', '$1', $text); // 链接 [text](url)
+        
+        // 5. 移除粗体和斜体
+        $text = preg_replace('/\*\*\*(.+?)\*\*\*/', '$1', $text); // 粗斜体 ***text***
         $text = preg_replace('/\*\*(.+?)\*\*/', '$1', $text);  // 粗体 **text**
         $text = preg_replace('/\*(.+?)\*/', '$1', $text);      // 斜体 *text*
+        $text = preg_replace('/___(.+?)___/', '$1', $text);    // 粗斜体 ___text___
         $text = preg_replace('/__(.+?)__/', '$1', $text);      // 粗体 __text__
         $text = preg_replace('/_(.+?)_/', '$1', $text);        // 斜体 _text_
+        
+        // 5.1 移除所有剩余的星号（防止流式拆分导致的未配对星号）
+        $text = str_replace('*', '', $text);                   // 移除所有星号
+        $text = str_replace('_', '', $text);                   // 移除所有下划线（可能是未配对的）
+        
+        // 6. 移除其他格式
         $text = preg_replace('/~~(.+?)~~/', '$1', $text);      // 删除线 ~~text~~
-        $text = preg_replace('/`(.+?)`/', '$1', $text);        // 代码 `code`
-        $text = preg_replace('/```.*?```/s', '', $text);       // 代码块 ```code```
+        $text = preg_replace('/==(.+?)==/', '$1', $text);      // 高亮 ==text==
+        $text = preg_replace('/`(.+?)`/', '$1', $text);        // 行内代码 `code`
+        
+        // 7. 移除标题标记
         $text = preg_replace('/^#{1,6}\s+/m', '', $text);      // 标题 # ## ###
-        $text = preg_replace('/\[(.+?)\]\(.+?\)/', '$1', $text); // 链接 [text](url)
+        
+        // 8. 移除列表标记
         $text = preg_replace('/^[\*\-\+]\s+/m', '', $text);    // 列表 - * +
         $text = preg_replace('/^\d+\.\s+/m', '', $text);       // 数字列表 1. 2.
+        $text = preg_replace('/^- \[[ x]\]\s+/m', '', $text);  // 任务列表 - [ ] - [x]
+        
+        // 9. 移除引用和分隔线
         $text = preg_replace('/^>\s+/m', '', $text);           // 引用 >
+        $text = preg_replace('/^[\-\*_]{3,}$/m', '', $text);   // 分隔线 --- *** ___
+        
+        // 10. 移除表格分隔符
+        $text = preg_replace('/\|/', ' ', $text);              // 表格分隔符 |
+        $text = preg_replace('/^[\-\s\|:]+$/m', '', $text);    // 表格对齐行
+        
+        // 11. 移除转义字符
+        $text = preg_replace('/\\\\([*_`\[\]()#+\-.!])/', '$1', $text); // 转义 \* \_ etc
+        
+        // 12. 移除脚注
+        $text = preg_replace('/\[\^.*?\]/', '', $text);        // 脚注 [^1]
+        
+        // 13. 移除上下标（如果使用扩展语法）
+        $text = preg_replace('/\^(.+?)\^/', '$1', $text);      // 上标 ^text^
+        $text = preg_replace('/~(.+?)~/', '$1', $text);        // 下标 ~text~
+        
+        // 14. 移除数学公式
+        $text = preg_replace('/\$\$.*?\$\$/s', '', $text);     // 块级公式 $$...$$
+        $text = preg_replace('/\$(.+?)\$/', '', $text);        // 行内公式 $...$
+        
+        // 15. 移除 emoji 短代码
+        $text = preg_replace('/:[\w\-]+:/', '', $text);        // Emoji :smile: :heart:
+        
+        // 16. 移除多余的符号
+        $text = preg_replace('/\[TOC\]/i', '', $text);         // 目录标记
+        $text = preg_replace('/\{:.+?\}/', '', $text);         // 属性标记 {: .class}
+        
+        // 17. 清理多余的空行和空格
+        $text = preg_replace('/\n{3,}/', "\n\n", $text);       // 多个空行 → 2个
+        $text = preg_replace('/[ \t]+/', ' ', $text);          // 多个空格 → 1个
         
         return trim($text);
     }
