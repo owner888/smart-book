@@ -35,9 +35,14 @@ class ChatHandler
         $assistantId = $body['assistant_id'] ?? 'ask';
         $bookId = $body['book_id'] ?? '';
         
-        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model}" . ($bookId ? " | 📚 Book: {$bookId}" : ''));
+        // 过滤空问题或过短的问题（至少2个字符）
+        $trimmedQuestion = trim($question);
+        if (mb_strlen($trimmedQuestion) < 2) {
+            Logger::warn("⚠️ 问题太短或为空，拒绝处理: '{$trimmedQuestion}' (长度: " . mb_strlen($trimmedQuestion) . ")");
+            return ['error' => 'Question too short (minimum 2 characters)'];
+        }
         
-        if (empty($question)) return ['error' => 'Missing question'];
+        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model}" . ($bookId ? " | 📚 Book: {$bookId}" : ''));
         
         $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
         
@@ -174,12 +179,17 @@ class ChatHandler
         $model = $body['model'] ?? 'gemini-2.5-flash';
         $assistantId = $body['assistant_id'] ?? 'chat';  // 新增：获取助手 ID
         
+        // 过滤空消息或过短的消息（至少2个字符）
+        $trimmedMessage = trim($message);
+        if (mb_strlen($trimmedMessage) < 2) {
+            Logger::warn("⚠️ 消息太短或为空，拒绝处理: '{$trimmedMessage}' (长度: " . mb_strlen($trimmedMessage) . ")");
+            return ['error' => 'Message too short (minimum 2 characters)'];
+        }
+        
         Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model}");
         
         $clientSummary = $body['summary'] ?? null;
         $clientHistory = $body['history'] ?? null;
-        
-        if (empty($message)) return ['error' => 'Missing message'];
         
         $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
         
@@ -341,6 +351,13 @@ class ChatHandler
         $ragEnabled = $body['rag'] ?? false;
         $keywordWeight = floatval($body['keyword_weight'] ?? 0.5);
         $model = $body['model'] ?? 'gemini-2.5-flash';
+        
+        // 过滤空提示或过短的提示（至少2个字符）
+        $trimmedPrompt = trim($prompt);
+        if (mb_strlen($trimmedPrompt) < 2) {
+            Logger::warn("⚠️ 续写提示太短或为空，拒绝处理: '{$trimmedPrompt}' (长度: " . mb_strlen($trimmedPrompt) . ")");
+            return ['error' => 'Prompt too short (minimum 2 characters)'];
+        }
         
         $headers = ['Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache', 'Access-Control-Allow-Origin' => '*'];
         $connection->send(new Response(200, $headers, ''));
@@ -527,11 +544,14 @@ class ChatHandler
         $chatId = $body['chat_id'] ?? '';  // 新增：支持 chat_id
         $clientHistory = $body['history'] ?? null;  // 新增：支持客户端传入历史
         
-        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model} | 📚 Book: {$bookId} (Context Cache)");
-        
-        if (empty($question)) {
-            return ['error' => 'Missing question'];
+        // 过滤空问题或过短的问题（至少2个字符）
+        $trimmedQuestion = trim($question);
+        if (mb_strlen($trimmedQuestion) < 2) {
+            Logger::warn("⚠️ 问题太短或为空，拒绝处理: '{$trimmedQuestion}' (长度: " . mb_strlen($trimmedQuestion) . ")");
+            return ['error' => 'Question too short (minimum 2 characters)'];
         }
+        
+        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model} | 📚 Book: {$bookId} (Context Cache)");
         
         // 获取当前选中的书籍路径
         $bookPath = ConfigHandler::getCurrentBookPath();
@@ -731,11 +751,14 @@ class ChatHandler
         $model = $body['model'] ?? 'gemini-2.0-flash';
         $assistantId = $body['assistant_id'] ?? 'continue';
         
-        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model} (Context Cache 续写)");
-        
-        if (empty($prompt)) {
-            return ['error' => 'Missing prompt'];
+        // 过滤空提示或过短的提示（至少2个字符）
+        $trimmedPrompt = trim($prompt);
+        if (mb_strlen($trimmedPrompt) < 2) {
+            Logger::warn("⚠️ 续写提示太短或为空，拒绝处理: '{$trimmedPrompt}' (长度: " . mb_strlen($trimmedPrompt) . ")");
+            return ['error' => 'Prompt too short (minimum 2 characters)'];
         }
+        
+        Logger::info("🤖 Assistant: {$assistantId} | 🎯 Model: {$model} (Context Cache 续写)");
         
         // 获取当前选中的书籍路径
         $bookPath = ConfigHandler::getCurrentBookPath();
