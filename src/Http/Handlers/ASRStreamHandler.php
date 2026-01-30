@@ -149,7 +149,16 @@ class ASRStreamHandler
         $connectionId = spl_object_id($connection);
         
         try {
+            // 发送"正在连接"状态
+            $connection->send(json_encode([
+                'type' => 'connecting',
+                'message' => 'Connecting to Deepgram...'
+            ]));
+            
             $deepgram = new DeepgramStreamClient();
+            
+            // 记录开始连接时间，用于超时检测
+            $connectStartTime = time();
             
             // 连接到 Deepgram
             $deepgram->connect(
@@ -179,9 +188,13 @@ class ASRStreamHandler
                     ]);
                     
                     try {
+                        // 分析错误类型并提供更友好的提示
+                        $friendlyMessage = self::getFriendlyErrorMessage($error);
+                        
                         $connection->send(json_encode([
                             'type' => 'error',
-                            'message' => $error
+                            'message' => $friendlyMessage,
+                            'original_error' => $error
                         ]));
                     } catch (\Exception $e) {
                         // 忽略发送错误
@@ -195,7 +208,8 @@ class ASRStreamHandler
                     
                     try {
                         $connection->send(json_encode([
-                            'type' => 'deepgram_closed'
+                            'type' => 'deepgram_closed',
+                            'message' => 'Deepgram connection closed'
                         ]));
                     } catch (\Exception $e) {
                         // 忽略发送错误
@@ -204,31 +218,80 @@ class ASRStreamHandler
             );
             
             self::$sessions[$connectionId]['deepgram'] = $deepgram;
+            self::$sessions[$connectionId]['connect_time'] = $connectStartTime;
             
             // 发送连接成功消息
             $connection->send(json_encode([
                 'type' => 'started',
                 'language' => $language,
-                'model' => $model
+                'model' => $model,
+                'message' => 'Deepgram connected successfully'
             ]));
             
             Logger::info('[ASR Stream] Deepgram 启动成功', [
                 'connection_id' => $connectionId,
                 'language' => $language,
-                'model' => $model
+                'model' => $model,
+                'connect_duration' => time() - $connectStartTime
             ]);
             
         } catch (\Throwable $e) {
             Logger::error('[ASR Stream] Deepgram 启动失败', [
+                'connection_id' => $connectionId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
             
+            // 提供友好的错误信息
+            $friendlyMessage = self::getFriendlyErrorMessage($e->getMessage());
+            
             $connection->send(json_encode([
                 'type' => 'error',
-                'message' => 'Failed to start Deepgram: ' . $e->getMessage()
+                'message' => $friendlyMessage,
+                'original_error' => $e->getMessage()
             ]));
         }
+    }
+    
+    /**
+     * 将技术错误转换为用户友好的提示
+     */
+    private static function getFriendlyErrorMessage(string $error): string
+    {
+        $error = strtolower($error);
+        
+        // API Key 相关
+        if (strpos($error, 'api key') !== false || strpos($error, 'unauthorized') !== false || strpos($error, '401') !== false) {
+            return 'Deepgram API 认证失败，请检查 API Key 配置';
+        }
+        
+        // 网络连接相关
+        if (strpos($error, 'connection') !== false || strpos($error, 'timeout') !== false || strpos($error, 'network') !== false) {
+            return 'Deepgram 服务器连接超时，请检查网络连接';
+        }
+        
+        // DNS 解析失败
+        if (strpos($error, 'dns') !== false || strpos($error, 'resolve') !== false) {
+            return 'DNS 解析失败，无法连接到 Deepgram 服务器';
+        }
+        
+        // 服务器错误
+        if (strpos($error, '500') !== false || strpos($error, '503') !== false) {
+            return 'Deepgram 服务暂时不可用，请稍后再试';
+        }
+        
+        // 速率限制
+        if (strpos($error, 'rate limit') !== false || strpos($error, '429') !== false) {
+            return 'API 调用频率超限，请稍后再试';
+        }
+        
+        // SSL/TLS 相关
+        if (strpos($error, 'ssl') !== false || strpos($error, 'tls') !== false || strpos($error, 'certificate') !== false) {
+            return 'SSL 连接失败，请检查服务器网络配置';
+        }
+        
+        // 默认返回原始错误
+        return 'Deepgram 错误: ' . $error;
     }
     
     /**
