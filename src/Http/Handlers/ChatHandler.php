@@ -210,39 +210,9 @@ class ChatHandler
             
             $messages[] = ['role' => 'user', 'content' => $message];
             
-            Logger::info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            Logger::info("📋 提交给 Gemini 的完整 Prompt");
-            Logger::info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            Logger::info("🤖 模型: {$model}");
-            Logger::info("📊 消息数量: " . count($messages));
-            Logger::info("");
-            
-            foreach ($messages as $index => $msg) {
-                $role = match($msg['role']) {
-                    'system' => '⚙️ System',
-                    'user' => '👤 User',
-                    'assistant' => '🤖 Assistant',
-                    default => '❓ Unknown'
-                };
-                
-                $content = $msg['content'];
-                $length = mb_strlen($content);
-                
-                Logger::info("[消息 " . ($index + 1) . "] {$role} ({$length} 字符)");
-                Logger::info("---");
-                Logger::info($content);
-                Logger::info("---");
-                Logger::info("");
-            }
-            
-            $totalLength = array_reduce($messages, fn($sum, $msg) => $sum + mb_strlen($msg['content']), 0);
-            $estimatedTokens = intval($totalLength / 3);
-            
-            Logger::info("📊 统计信息:");
-            Logger::info("  • 总消息数: " . count($messages));
-            Logger::info("  • 总字符数: {$totalLength}");
-            Logger::info("  • 估算 Tokens: ~{$estimatedTokens}");
-            Logger::info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            // 输出完整的请求数据
+            Logger::info("📤 提交给 Gemini 的 JSON Body (Model: {$model}):");
+            Logger::info(print_r($messages, true));
             
             $asyncGemini = AIService::getAsyncGemini($model);
             $isConnectionAlive = true;
