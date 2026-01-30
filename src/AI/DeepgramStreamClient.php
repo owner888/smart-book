@@ -51,8 +51,8 @@ class DeepgramStreamClient
             'punctuate' => 'true',
             'smart_format' => 'true',
             'interim_results' => 'true',
-            'endpointing' => '300',  // 300ms 静音自动断句
-            'utterance_end_ms' => '1000',  // 1秒静音结束语句
+            'endpointing' => '800',  // 800ms 静音才断句（增加容忍度，避免说话停顿被误判）
+            'utterance_end_ms' => '2500',  // 2.5秒静音结束语句（给用户更多思考时间）
         ]);
         
         // 按照官方文档的 wss 客户端方式：ws:// + port 443 + transport ssl
