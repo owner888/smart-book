@@ -33,6 +33,8 @@ class TTSStreamHandler
             'model' => 'aura-2-asteria-en',
             'encoding' => 'linear16',
             'text_buffer' => [],  // 文本缓冲区（握手前缓存）
+            'text_count' => 0,    // 文本片段计数
+            'total_chars' => 0,   // 总字符数
         ];
         
         // 发送欢迎消息
@@ -338,9 +340,10 @@ class TTSStreamHandler
             // 发送文本到 Deepgram TTS
             $session['deepgram']->sendText($text);
             
-            Logger::debug('[TTS Stream] 文本已发送到 Deepgram', [
-                'text_length' => mb_strlen($text)
-            ]);
+            // 累计统计
+            self::$sessions[$connectionId]['text_count']++;
+            self::$sessions[$connectionId]['total_chars'] += mb_strlen($text);
+            
         } catch (\Exception $e) {
             Logger::error('[TTS Stream] 发送文本失败', [
                 'error' => $e->getMessage()
@@ -381,14 +384,35 @@ class TTSStreamHandler
         $session = self::$sessions[$connectionId] ?? null;
         
         if ($session && $session['deepgram']) {
-            // 先发送 stopped 消息，再调用 flush（因为 flush 可能会关闭连接）
+            // 输出汇总信息到服务器日志
+            $textCount = $session['text_count'] ?? 0;
+            $totalChars = $session['total_chars'] ?? 0;
+            $provider = $session['provider'] ?? 'unknown';
+            
+            Logger::info('[TTS Stream] 文本发送汇总', [
+                'text_count' => $textCount,
+                'total_chars' => $totalChars,
+                'provider' => $provider
+            ]);
+            
+            // 重置计数器
+            self::$sessions[$connectionId]['text_count'] = 0;
+            self::$sessions[$connectionId]['total_chars'] = 0;
+            
+            // 发送汇总信息给 iOS 客户端（可选，供调试使用）
+            $connection->send(json_encode([
+                'type' => 'summary',
+                'text_count' => $textCount,
+                'total_chars' => $totalChars,
+                'provider' => $provider
+            ]));
+            
+            // 再发送 stopped 消息
             $connection->send(json_encode([
                 'type' => 'stopped'
             ]));
-            Logger::info('[TTS Stream] 已发送 stopped 消息');
             
             $session['deepgram']->flush();
-            Logger::info('[TTS Stream] 已刷新 TTS');
         }
     }
     
