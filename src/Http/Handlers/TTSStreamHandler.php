@@ -470,16 +470,39 @@ class TTSStreamHandler
     }
     
     /**
-     * 处理 WebSocket 错误
+     * 处理 WebSocket 错误（防止重复日志）
      */
+    private static array $errorLog = [];  // 记录已输出的错误
+    
     public static function onError(TcpConnection $connection, $code, $msg): void
     {
         $connectionId = spl_object_id($connection);
+        $errorKey = "{$connectionId}_{$code}_{$msg}";
         
-        Logger::error('[TTS Stream] 连接错误', [
+        // 防止同一错误重复输出（60秒内）
+        $now = time();
+        if (isset(self::$errorLog[$errorKey]) && ($now - self::$errorLog[$errorKey]) < 60) {
+            return;  // 跳过重复错误
+        }
+        
+        self::$errorLog[$errorKey] = $now;
+        
+        Logger::error('[TTS Stream] WebSocket 错误', [
             'connection_id' => $connectionId,
             'code' => $code,
-            'message' => $msg
+            'message' => $msg,
+            'session_info' => self::$sessions[$connectionId] ?? null
         ]);
+        
+        // 发送错误给客户端
+        try {
+            $connection->send(json_encode([
+                'type' => 'error',
+                'code' => $code,
+                'message' => $msg
+            ]));
+        } catch (\Exception $e) {
+            // 忽略发送错误
+        }
     }
 }
