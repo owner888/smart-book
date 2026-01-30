@@ -164,15 +164,10 @@ class TTSStreamHandler
                 function($audioData) use ($connection, $connectionId) {
                     try {
                         // 转发音频数据给客户端（二进制帧）
-                        $connection->send($audioData, false);  // false = 二进制帧
-                        
-                        // Logger::debug('[TTS Stream] 音频数据已发送', [
-                        //     'size' => strlen($audioData)
-                        // ]);
+                        // Workerman 会自动处理缓冲区满的情况（Code=2 错误是正常的流量控制）
+                        $connection->send($audioData, true);  // false = 二进制帧
                     } catch (\Exception $e) {
-                        Logger::error('[TTS Stream] 发送音频失败', [
-                            'error' => $e->getMessage()
-                        ]);
+                        // 静默处理发送错误（缓冲区满时会自动丢包）
                     }
                 },
                 // onReady - 立即就绪
@@ -226,7 +221,7 @@ class TTSStreamHandler
     }
     
     /**
-     * 启动 Deepgram TTS 连接
+     * 启动 Deepgram TTS 连接，因为不支持中文，未使用
      */
     private static function startDeepgramTTS(
         TcpConnection $connection,

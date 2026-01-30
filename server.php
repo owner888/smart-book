@@ -93,7 +93,7 @@ $ttsWorker->name = 'TTS-WebSocket-Server';
 
 $ttsWorker->onConnect = function(TcpConnection $connection) {
     // 设置 WebSocket 为二进制模式（支持音频传输），会导致 {"type":"pong"} 消息变成二进制格式
-    $connection->websocketType = \Workerman\Protocols\Websocket::BINARY_TYPE_ARRAYBUFFER;
+    // $connection->websocketType = \Workerman\Protocols\Websocket::BINARY_TYPE_ARRAYBUFFER;
     
     \SmartBook\Http\Handlers\TTSStreamHandler::onConnect($connection);
 };
