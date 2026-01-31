@@ -17,6 +17,7 @@ use SmartBook\Http\Handlers\CacheHandler;
 use SmartBook\Http\Handlers\ContextCacheHandler;
 use SmartBook\Http\Handlers\EnhancedWriterHandler;
 use SmartBook\Http\Handlers\MCPHandler;
+use SmartBook\Http\Handlers\MediaHandler;
 
 // ===================================
 // 全局异常处理器
@@ -130,6 +131,16 @@ Router::group('/api', function() {
             Router::post('/delete', fn($ctx) => ContextCacheHandler::delete($ctx));
             Router::post('/get', fn($ctx) => ContextCacheHandler::get($ctx));
         });
+    });
+    
+    // ===================================
+    // 媒体上传管理 (/api/media/*)
+    // ===================================
+    Router::group('/media', function() {
+        Router::post('/upload/image', fn($ctx) => MediaHandler::uploadImage($ctx));
+        Router::post('/upload/document', fn($ctx) => MediaHandler::uploadDocument($ctx));
+        Router::post('/upload/batch', fn($ctx) => MediaHandler::uploadMedia($ctx));
+        Router::get('/{type}/{filename}', fn($ctx) => MediaHandler::getMedia($ctx));
     });
     
     // ===================================
