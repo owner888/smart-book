@@ -273,6 +273,44 @@ class AsyncGeminiClient
     }
     
     /**
+     * 从URL获取图片并转为base64
+     */
+    private function fetchImageAsBase64(string $url): ?array
+    {
+        try {
+            // 从文件系统或HTTP获取图片
+            if (file_exists($url)) {
+                $imageData = file_get_contents($url);
+            } else {
+                $imageData = @file_get_contents($url);
+            }
+            
+            if ($imageData === false) {
+                return null;
+            }
+            
+            // 检测MIME类型
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mimeType = $finfo->buffer($imageData);
+            
+            // 确保是图片类型
+            if (!str_starts_with($mimeType, 'image/')) {
+                return null;
+            }
+            
+            // 转换为base64
+            $base64 = base64_encode($imageData);
+            
+            return [
+                'mime_type' => $mimeType,
+                'data' => $base64
+            ];
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+    
+    /**
      * 清理网页内容，提取有意义的文本
      */
     private function cleanWebContent(string $content): string
@@ -325,7 +363,39 @@ class AsyncGeminiClient
                 }
                 $contents[] = ['role' => 'model', 'parts' => $parts];
             } else {
-                $contents[] = ['role' => $role === 'assistant' ? 'model' : 'user', 'parts' => [['text' => $content]]];
+                // 支持图片：检查是否有images数组
+                $parts = [['text' => $content]];
+                
+                if (isset($msg['images']) && is_array($msg['images'])) {
+                    // 添加图片到parts
+                    foreach ($msg['images'] as $image) {
+                        if (isset($image['data']) && isset($image['mime_type'])) {
+                            // base64编码的图片
+                            $parts[] = [
+                                'inlineData' => [
+                                    'mimeType' => $image['mime_type'],
+                                    'data' => $image['data']
+                                ]
+                            ];
+                        } elseif (isset($image['url'])) {
+                            // URL图片（需要先下载转base64）
+                            $imageData = $this->fetchImageAsBase64($image['url']);
+                            if ($imageData) {
+                                $parts[] = [
+                                    'inlineData' => [
+                                        'mimeType' => $imageData['mime_type'],
+                                        'data' => $imageData['data']
+                                    ]
+                                ];
+                            }
+                        }
+                    }
+                }
+                
+                $contents[] = [
+                    'role' => $role === 'assistant' ? 'model' : 'user',
+                    'parts' => $parts
+                ];
             }
         }
         
